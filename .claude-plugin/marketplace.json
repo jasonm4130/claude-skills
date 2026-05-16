@@ -1,0 +1,23 @@
+{
+  "name": "jasonm4130-claude-skills",
+  "owner": {
+    "name": "Jason Matthew"
+  },
+  "metadata": {
+    "description": "Jason Matthew's personal Claude Code skills marketplace."
+  },
+  "plugins": [
+    {
+      "name": "jm-skills",
+      "source": "./",
+      "description": "adversarial-agents (configurable panel review for any artefact) and deep-research (DAG-orchestrated multi-source research with critic/judge passes).",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": ["skills", "adversarial-review", "deep-research", "red-team", "panel-review"],
+      "category": "productivity"
+    }
+  ]
+}
