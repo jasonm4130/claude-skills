@@ -3,7 +3,7 @@ set -euo pipefail
 WORKDIR=$(mktemp -d); trap 'rm -rf "$WORKDIR"' EXIT
 export CLAUDE_PLUGIN_DATA="$WORKDIR"
 export CLAUDE_SESSION_ID="test-stop-suppressed"
-STOP="$(cd "$(dirname "$0")/.." && pwd)/scripts/stop-suggest-retro.sh"
+STOP="$(cd "$(dirname "$0")/.." && pwd)/scripts/stop-write-retro-flag.sh"
 
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Generous events that would trigger if not suppressed
@@ -16,6 +16,7 @@ JSONL
 # Retro already fired this session
 touch "$WORKDIR/retro-fired-test-stop-suppressed.flag"
 
-OUT=$(echo '{}' | bash "$STOP")
-[ -z "$OUT" ] || { echo "FAIL: expected empty stdout when retro-fired, got: $OUT"; exit 1; }
+echo '{}' | bash "$STOP"
+FLAG="$WORKDIR/retro-nudge-test-stop-suppressed.flag"
+[ ! -f "$FLAG" ] || { echo "FAIL: expected no nudge flag when retro-fired, but flag exists"; exit 1; }
 echo "PASS"

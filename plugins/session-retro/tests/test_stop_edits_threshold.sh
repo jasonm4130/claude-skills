@@ -3,7 +3,7 @@ set -euo pipefail
 WORKDIR=$(mktemp -d); trap 'rm -rf "$WORKDIR"' EXIT
 export CLAUDE_PLUGIN_DATA="$WORKDIR"
 export CLAUDE_SESSION_ID="test-stop-edits"
-STOP="$(cd "$(dirname "$0")/.." && pwd)/scripts/stop-suggest-retro.sh"
+STOP="$(cd "$(dirname "$0")/.." && pwd)/scripts/stop-write-retro-flag.sh"
 
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 cat > "$WORKDIR/events-test-stop-edits.jsonl" <<JSONL
@@ -12,9 +12,9 @@ cat > "$WORKDIR/events-test-stop-edits.jsonl" <<JSONL
 {"ts":"$NOW","tool":"Edit","input":{"file_path":"/a.ts"}}
 JSONL
 
-OUT=$(echo '{}' | bash "$STOP")
-[ -n "$OUT" ] || { echo "FAIL: expected stdout, got empty"; exit 1; }
-MSG=$(echo "$OUT" | jq -r '.systemMessage')
-echo "$MSG" | grep -q "3 edits across 2 files" || { echo "FAIL: msg missing '3 edits across 2 files': $MSG"; exit 1; }
-echo "$MSG" | grep -q "/retro" || { echo "FAIL: msg missing '/retro': $MSG"; exit 1; }
+echo '{}' | bash "$STOP"
+FLAG="$WORKDIR/retro-nudge-test-stop-edits.flag"
+[ -f "$FLAG" ] || { echo "FAIL: expected nudge flag to exist, got none"; exit 1; }
+CONTENT=$(cat "$FLAG")
+echo "$CONTENT" | grep -q "3 edits across 2 files" || { echo "FAIL: flag missing '3 edits across 2 files': $CONTENT"; exit 1; }
 echo "PASS"

@@ -33,10 +33,22 @@
       "category": "productivity"
     },
     {
+      "name": "handoff",
+      "source": "./plugins/handoff",
+      "description": "Context-fill-triggered handoff skill — writes a structured resume doc when context fills, auto-loads it on next session.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": ["handoff", "context", "resume", "session-continuity"],
+      "category": "productivity"
+    },
+    {
       "name": "session-retro",
       "source": "./plugins/session-retro",
       "description": "Interactive session retrospectives — deterministic Stop/PreCompact triggers, diff-driven interview, native memory entries. No external services.",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "author": {
         "name": "Jason Matthew"
       },

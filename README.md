@@ -1,6 +1,31 @@
 # jm-skills
 
-Personal [Claude Code](https://github.com/anthropics/claude-code) skills, distributed as a plugin.
+A Claude Code plugin **marketplace** hosting multiple independent plugins. Install the whole marketplace with one command, then pick which plugins to enable.
+
+## Install
+
+### Add the marketplace
+
+```
+/plugin marketplace add jasonm4130/claude-skills
+```
+
+### Install individual plugins
+
+| Plugin | Description | Install command |
+|---|---|---|
+| `adversarial-agents` | Configurable adversarial panel review for any artefact | `/plugin install adversarial-agents@jasonm4130-claude-skills` |
+| `deep-research` | Multi-source research via parallel sub-agents and synthesis | `/plugin install deep-research@jasonm4130-claude-skills` |
+| `session-retro` | Interactive session retrospectives that capture learnings to memory | `/plugin install session-retro@jasonm4130-claude-skills` |
+| `handoff` | Context-fill-triggered handoff skill that auto-loads on next session | `/plugin install handoff@jasonm4130-claude-skills` |
+
+For full details on each plugin, see its own README:
+- [`plugins/adversarial-agents/README.md`](plugins/adversarial-agents/README.md)
+- [`plugins/deep-research/README.md`](plugins/deep-research/README.md)
+- [`plugins/session-retro/README.md`](plugins/session-retro/README.md)
+- [`plugins/handoff/README.md`](plugins/handoff/README.md)
+
+> **Note for handoff users:** The handoff plugin requires an additional `statusLine` wiring step in your `~/.claude/settings.json` — see [`plugins/handoff/README.md`](plugins/handoff/README.md) for the snippet.
 
 ## Skills
 

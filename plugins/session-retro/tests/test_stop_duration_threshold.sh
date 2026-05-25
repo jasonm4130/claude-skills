@@ -3,7 +3,7 @@ set -euo pipefail
 WORKDIR=$(mktemp -d); trap 'rm -rf "$WORKDIR"' EXIT
 export CLAUDE_PLUGIN_DATA="$WORKDIR"
 export CLAUDE_SESSION_ID="test-stop-dur"
-STOP="$(cd "$(dirname "$0")/.." && pwd)/scripts/stop-suggest-retro.sh"
+STOP="$(cd "$(dirname "$0")/.." && pwd)/scripts/stop-write-retro-flag.sh"
 
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 if date -u -v-25M +%Y-%m-%dT%H:%M:%SZ >/dev/null 2>&1; then
@@ -16,8 +16,9 @@ cat > "$WORKDIR/events-test-stop-dur.jsonl" <<JSONL
 {"ts":"$NOW","tool":"Bash","input":{"command":"echo done"}}
 JSONL
 
-OUT=$(echo '{}' | bash "$STOP")
-[ -n "$OUT" ] || { echo "FAIL: expected stdout for 25-min session, got empty"; exit 1; }
-MSG=$(echo "$OUT" | jq -r '.systemMessage')
-echo "$MSG" | grep -q "minutes of work" || { echo "FAIL: msg missing duration phrase: $MSG"; exit 1; }
+echo '{}' | bash "$STOP"
+FLAG="$WORKDIR/retro-nudge-test-stop-dur.flag"
+[ -f "$FLAG" ] || { echo "FAIL: expected nudge flag for 25-min session, got none"; exit 1; }
+CONTENT=$(cat "$FLAG")
+echo "$CONTENT" | grep -q "minutes of work" || { echo "FAIL: flag missing duration phrase: $CONTENT"; exit 1; }
 echo "PASS"

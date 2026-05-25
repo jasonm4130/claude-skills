@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# When multiple thresholds match, the message should include ALL of them
+# When multiple thresholds match, the flag should include ALL of them
 # joined by " + ", not just the first match.
 set -euo pipefail
 WORKDIR=$(mktemp -d); trap 'rm -rf "$WORKDIR"' EXIT
 export CLAUDE_PLUGIN_DATA="$WORKDIR"
 export CLAUDE_SESSION_ID="test-stop-compound"
-STOP="$(cd "$(dirname "$0")/.." && pwd)/scripts/stop-suggest-retro.sh"
+STOP="$(cd "$(dirname "$0")/.." && pwd)/scripts/stop-write-retro-flag.sh"
 
 # 25-min span + 3 edits across 2 files + a commit = 3 matching conditions
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -21,13 +21,14 @@ cat > "$WORKDIR/events-test-stop-compound.jsonl" <<JSONL
 {"ts":"$NOW","tool":"Bash","input":{"command":"git commit -m foo"}}
 JSONL
 
-OUT=$(echo '{}' | bash "$STOP")
-[ -n "$OUT" ] || { echo "FAIL: expected trigger, got empty"; exit 1; }
-MSG=$(echo "$OUT" | jq -r '.systemMessage')
+echo '{}' | bash "$STOP"
+FLAG="$WORKDIR/retro-nudge-test-stop-compound.flag"
+[ -f "$FLAG" ] || { echo "FAIL: expected nudge flag to exist, got none"; exit 1; }
+CONTENT=$(cat "$FLAG")
 # All three reasons should appear
-echo "$MSG" | grep -q "3 edits across 2 files" || { echo "FAIL: missing edits reason: $MSG"; exit 1; }
-echo "$MSG" | grep -q "minutes of work" || { echo "FAIL: missing duration reason: $MSG"; exit 1; }
-echo "$MSG" | grep -q "committed during session" || { echo "FAIL: missing commit reason: $MSG"; exit 1; }
+echo "$CONTENT" | grep -q "3 edits across 2 files" || { echo "FAIL: missing edits reason: $CONTENT"; exit 1; }
+echo "$CONTENT" | grep -q "minutes of work" || { echo "FAIL: missing duration reason: $CONTENT"; exit 1; }
+echo "$CONTENT" | grep -q "committed during session" || { echo "FAIL: missing commit reason: $CONTENT"; exit 1; }
 # Joined with " + "
-echo "$MSG" | grep -q " + " || { echo "FAIL: reasons not joined with ' + ': $MSG"; exit 1; }
+echo "$CONTENT" | grep -q " + " || { echo "FAIL: reasons not joined with ' + ': $CONTENT"; exit 1; }
 echo "PASS"

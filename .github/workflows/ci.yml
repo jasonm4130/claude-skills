@@ -37,3 +37,23 @@ jobs:
       - name: Run session-retro bash tests
         working-directory: plugins/session-retro
         run: bash tests/run-all.sh
+
+  test-handoff:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null; then
+            if [ "${{ matrix.os }}" = "macos-latest" ]; then
+              brew install jq
+            else
+              sudo apt-get update && sudo apt-get install -y jq
+            fi
+          fi
+      - name: Run handoff bash tests
+        working-directory: plugins/handoff
+        run: bash tests/run-all.sh
