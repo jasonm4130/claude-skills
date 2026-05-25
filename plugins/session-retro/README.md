@@ -6,26 +6,27 @@ Claude Code plugin for interactive session retrospectives. Captures decisions, l
 
 At the end of a productive Claude Code session, you've made decisions, hit errors, changed approach, discovered patterns. None of it gets captured by default. session-retro fixes that with two complementary mechanisms:
 
-1. **Deterministic suggestions.** A `Stop` hook scores your session (edits, files touched, duration, commits, tests) and suggests `/retro` when work crosses sensible thresholds. A `PreCompact` hook always nudges before context is compacted away.
+1. **Deterministic suggestions.** A `Stop` hook scores your session (edits, files touched, duration, commits, tests) and writes a nudge flag when work crosses sensible thresholds. A `PreCompact` hook always sets the flag before context is compacted away. A `UserPromptSubmit` hook consumes the flag and injects `additionalContext` so the agent surfaces the nudge in its own voice on your next prompt.
 2. **Diff-driven interview.** When you run `/retro`, the skill reads the per-session event log plus `git status`, `git diff --stat`, and `git log` since session start, then asks specific questions about the actual changes ("you edited `auth.ts` 4 times — what was the iteration about?"). No generic "what did you learn" prompts.
 
 ## What it does
 
 - **Logs your work** — a tiny `PostToolUse` hook appends one JSONL line per Edit/Write/Bash event to `events-{session_id}.jsonl` (single jq fork, atomic POSIX append, race-free under parallel tool calls)
-- **Suggests retros** — `Stop` hook aggregates the event log and emits a one-liner when thresholds are met; `PreCompact` always suggests
+- **Suggests retros** — `Stop` hook aggregates the event log and writes a nudge flag when thresholds are met; `PreCompact` always writes the flag; `UserPromptSubmit` consumes the flag and injects `additionalContext` so the agent delivers the nudge naturally
 - **Walks you through** — `/retro` uses the event log + git diff to ask specific, non-generic questions, one at a time
 - **Writes native memory** — entries land in your project memory dir using `feedback` / `project` / `reference` types with `**Why:**` and `**How to apply:**` slots
 
 ## How it works
 
-Four hooks + one skill, all bash:
+Five hooks + one skill, all bash:
 
 | Component | What it does |
 |---|---|
 | `SessionStart` | `mark-session-start.sh` writes the session start timestamp |
 | `PostToolUse` (Edit\|Write\|Bash) | `posttooluse-append-event.sh` appends one JSONL event |
-| `Stop` | `stop-suggest-retro.sh` aggregates events and emits a suggestion if retro-worthy |
-| `PreCompact` | `precompact-suggest-retro.sh` always emits a suggestion before compaction |
+| `Stop` | `stop-write-retro-flag.sh` aggregates events and writes a nudge flag if retro-worthy |
+| `PreCompact` | `precompact-write-retro-flag.sh` always writes a nudge flag before compaction |
+| `UserPromptSubmit` | `check-retro-flag.sh` reads the flag and injects `additionalContext` (fire-once) |
 | `/session-retro:retro` | The skill — reads events + git, walks you through, writes memory |
 
 No external services. No SQLite. No MCP server. No Python. Just bash, jq, git.
@@ -86,13 +87,30 @@ v0.2 → v3 is a force-push redesign. To upgrade:
 
 Claude Code will prompt to approve the new hooks (`PostToolUse`, `Stop`, `PreCompact`). Existing memory files keep working — same format. claude-mem is no longer a requirement; remove it if you only had it installed for session-retro.
 
+## Migration from v0.3 to v0.4
+
+v0.3 → v0.4 changes only the nudge mechanism — `/retro` behaviour itself is unchanged.
+
+**What changed:** The `Stop` and `PreCompact` hooks previously emitted a `systemMessage` directly. In v0.4 they instead write a flag file (`retro-nudge-{session_id}.flag`). A new `UserPromptSubmit` hook (`check-retro-flag.sh`) picks up the flag on your next prompt and injects an `additionalContext` block, which the agent surfaces in its own voice. The flag is consumed immediately (fire-once).
+
+**Why:** `systemMessage` is passive — the nudge appeared in the hook output panel and users consistently scrolled past it. `additionalContext` feeds directly into the agent's response, making the nudge much harder to miss.
+
+**To upgrade:**
+
+```
+/plugin update session-retro@jasonm4130-session-retro
+/reload-plugins
+```
+
+Claude Code will prompt to approve the new `UserPromptSubmit` hook.
+
 ## Tests
 
 ```
 bash tests/run-all.sh
 ```
 
-10 bash tests cover event-log init/parallel-writes (race regression), Stop hook threshold scoring (silent-under-threshold, edits, duration, commit, retro-fired suppression, malformed-line resilience, compound reasons), and PreCompact always-fires.
+12 bash tests cover event-log init/parallel-writes (race regression), Stop hook threshold scoring (no-trigger, edits, duration, commit, retro-fired suppression, compound reasons), PreCompact flag-write, and the new check-retro-flag handler (consumes flag + emits additionalContext; silent when no flag).
 
 ## License
 

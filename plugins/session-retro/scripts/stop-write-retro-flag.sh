@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Stop hook: aggregate events-{session_id}.jsonl, evaluate thresholds, emit
-# additionalContext suggestion if retro-worthy AND no retro fired this session.
+# Stop hook: aggregate events-{session_id}.jsonl, evaluate thresholds, write
+# a retro-nudge flag file if retro-worthy AND no retro fired this session.
+# The flag is consumed by check-retro-flag.sh on UserPromptSubmit.
 # Silent otherwise. Cost target <50ms per invocation.
 set -euo pipefail
 
@@ -12,6 +13,7 @@ SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 [ -z "$SESSION_ID" ] && SESSION_ID="${CLAUDE_SESSION_ID:-unknown}"
 EVENTS="$PLUGIN_DATA/events-${SESSION_ID}.jsonl"
 FIRED_FLAG="$PLUGIN_DATA/retro-fired-${SESSION_ID}.flag"
+NUDGE_FLAG="$PLUGIN_DATA/retro-nudge-${SESSION_ID}.flag"
 
 # No events recorded yet → no work to suggest a retro on
 [ -f "$EVENTS" ] || exit 0
@@ -94,9 +96,8 @@ for ((i = 1; i < ${#REASONS[@]}; i++)); do
     TRIGGER_REASON="${TRIGGER_REASON} + ${REASONS[i]}"
 done
 
-MSG="[session-retro] This session: ${TRIGGER_REASON}. Suggest running /retro to capture decisions/learnings before /clear."
-# Stop hook output schema (validated by Claude Code) — does NOT support
-# `hookSpecificOutput`; that's PreToolUse/UserPromptSubmit/PostToolUse only.
-# Use `systemMessage` to surface a passive notice to the user without blocking.
-jq -n --arg msg "$MSG" '{systemMessage: $msg}'
+# Write the trigger reasons to the nudge flag file.
+# check-retro-flag.sh (UserPromptSubmit) will consume this and inject
+# additionalContext so the agent surfaces it in its own voice.
+printf '%s' "${TRIGGER_REASON}" > "$NUDGE_FLAG"
 exit 0
