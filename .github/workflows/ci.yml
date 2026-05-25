@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate JSON manifests parse
+        run: |
+          set -e
+          for f in .claude-plugin/marketplace.json plugins/*/.claude-plugin/plugin.json; do
+            echo "Checking $f"
+            jq -e . "$f" > /dev/null
+          done
+
+  test-session-retro:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null; then
+            if [ "${{ matrix.os }}" = "macos-latest" ]; then
+              brew install jq
+            else
+              sudo apt-get update && sudo apt-get install -y jq
+            fi
+          fi
+      - name: Run session-retro bash tests
+        working-directory: plugins/session-retro
+        run: bash tests/run-all.sh
