@@ -69,6 +69,7 @@ Composable statusLine support is tracked as a follow-up.
 | Env var | Default | Description |
 |---|---|---|
 | `HANDOFF_THRESHOLD_PCT` | `70` | Context % at which to fire the nudge |
+| `HANDOFF_EFFECTIVE_MAX_TOKENS` | _(unset)_ | Token ceiling to compute pct against — mirror your `autoCompactWindow` setting |
 | `CLAUDE_PLUGIN_DATA` | `<os.tmpdir>/handoff-data` | Where flag and last-pct state files are stored |
 
 Set env vars in `~/.claude/settings.json` under `"env"`:
@@ -76,10 +77,34 @@ Set env vars in `~/.claude/settings.json` under `"env"`:
 ```json
 {
   "env": {
-    "HANDOFF_THRESHOLD_PCT": "65"
+    "HANDOFF_THRESHOLD_PCT": "65",
+    "HANDOFF_EFFECTIVE_MAX_TOKENS": "400000"
   }
 }
 ```
+
+### Why `HANDOFF_EFFECTIVE_MAX_TOKENS`?
+
+Claude Code's statusLine stdin reports `used_percentage` against the model's
+**full context window** (e.g. 1M tokens for extended-context Sonnet), not
+against your `autoCompactWindow` setting. If you have
+`"autoCompactWindow": 400000` and you're 96% through your effective window,
+the bar would otherwise show ~35% and the nudge would fire far too late
+(or never).
+
+Setting `HANDOFF_EFFECTIVE_MAX_TOKENS` to match your `autoCompactWindow`
+makes the plugin compute pct from the input-only token fields in stdin's
+`context_window.current_usage` against your effective ceiling. The bar and
+nudge then track CC's native "% until auto-compact" indicator.
+
+When unset (or 0 / non-numeric / negative), the plugin falls back to the raw
+`used_percentage` field — same behavior as v0.2.0.
+
+This is a workaround for upstream
+[anthropics/claude-code#62210](https://github.com/anthropics/claude-code/issues/62210)
+(stdin doesn't expose `autoCompactWindow` or a pre-computed
+"% until auto-compact"). Tracked locally as
+[issue #4](https://github.com/jasonm4130/claude-skills/issues/4).
 
 ## Example flow
 
@@ -103,6 +128,9 @@ Set env vars in `~/.claude/settings.json` under `"env"`:
 - Check the last-pct file is updating: `cat $TMPDIR/handoff-data/last-context-pct-<session-id>.txt`
   (or wherever `CLAUDE_PLUGIN_DATA` points).
 - Make sure the threshold env var is not set higher than the current context %.
+- If the bar shows a much lower % than CC's native "% until auto-compact",
+  set `HANDOFF_EFFECTIVE_MAX_TOKENS` to match your `autoCompactWindow` — see
+  Configuration above.
 
 **Nudge fires repeatedly on every prompt:**
 - The `UserPromptSubmit` hook (`check-handoff-flag.mjs`) should delete the flag after consuming it.

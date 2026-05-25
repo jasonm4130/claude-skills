@@ -60,6 +60,15 @@ CLAUDE_PLUGIN_DATA=/tmp/test-handoff \
   echo '{"session_id":"dev"}' | node plugins/handoff/scripts/check-handoff-flag.mjs
 ```
 
+## Configuration env vars
+
+- `HANDOFF_THRESHOLD_PCT` — context % at which to fire the nudge (default `70`).
+- `HANDOFF_EFFECTIVE_MAX_TOKENS` — when set to a positive number, pct is
+  computed from `context_window.current_usage` input-token fields against
+  this ceiling instead of using stdin's `used_percentage`. Workaround for
+  upstream CC issue #62210 (stdin doesn't expose `autoCompactWindow`). See
+  README for details.
+
 ## Conventions
 
 - **ESM only.** Every script is `.mjs`. No CommonJS, no `package.json`,
