@@ -264,6 +264,36 @@ CI workflow (`.github/workflows/ci.yml`) adds a `test-handoff` job mirroring `te
 
 JSON manifest validation already covers the new `plugins/handoff/.claude-plugin/plugin.json` via the existing glob.
 
+## Documentation deliverables
+
+The work ships three README updates so the install path is obvious to a first-time visitor:
+
+**Repo root `README.md` (update):**
+- Add an "Install" section near the top with the canonical marketplace-add command:
+  ```
+  /plugin marketplace add jasonm4130/claude-skills
+  /plugin install <plugin>@jasonm4130-claude-skills
+  ```
+- One-line description per plugin so a visitor can decide which to install
+- Link to each plugin's own README for details
+- Note that this is a marketplace hosting multiple plugins, not a single skill
+
+**`plugins/handoff/README.md` (new):**
+- Plugin overview (purpose, when it fires, what it writes)
+- Install command
+- **Required wiring step**: explicit copy-pasteable settings.json snippet showing how to add the statusLine entry. Includes the path resolution decision from open question #5 below.
+- Notes on integrating with an existing user-configured statusLine (composable use of the underlying script)
+- Configuration: `HANDOFF_THRESHOLD_PCT` env var (default 70), `.pending` staleness window
+- Example handoff doc + example resume flow
+- Troubleshooting (no nudge firing → check `last-context-pct` file is updating; nudge fires repeatedly → flag wasn't consumed)
+
+**`plugins/session-retro/README.md` (update):**
+- Note the v0.3.0 → v0.4.0 nudge mechanism change in the changelog section
+- Replace any doc that referenced the old `systemMessage` surface with the new `additionalContext` model-mediated pattern
+- Confirm that `/retro` behaviour itself is unchanged
+
+**Parallel cleanup (NOT in this spec's scope):** `plugins/adversarial-agents/README.md` and `plugins/deep-research/README.md` don't currently exist. Adding minimal READMEs there would be useful as a follow-up but is not blocking on this work.
+
 ## Release sequencing
 
 **Recommended: one PR for both changes.** They're complementary and the full demo flow ("activity + context-fill both nudge, agent synthesises") only works with both shipped.
@@ -276,6 +306,7 @@ Alternative if a safer rollout is preferred: PR 1 = handoff plugin standalone (n
 2. **Pending-flag staleness window.** Default to 24h. If user typically resumes within a day, fine; longer pauses lose handoffs. Could move to 7d, or never-expire with a staleness warning. Decide on first feedback.
 3. **`/handoff` argument format.** Default to free-form description (mattpocock-style). Reconsider if usage suggests structured args are useful.
 4. **Post-resume `/retro` behaviour.** After SessionStart loads a handoff, the new session's `events-{sid}.jsonl` is empty. `/retro` quick-skip gate will fire. Correct, but document in README.
+5. **Plugin-relative paths in statusLine.** `${CLAUDE_PLUGIN_ROOT}` is substituted inside plugin-shipped hook commands, but statusLine lives in user `settings.json` and may not have plugin context. If the user must hardcode the install path (e.g. `~/.claude/plugins/cache/jasonm4130-claude-skills/handoff/0.1.0/scripts/status-and-flag.sh`), it breaks on every plugin update because the version segment changes. Options to evaluate during implementation: (a) verify whether CC actually resolves `${CLAUDE_PLUGIN_ROOT}` in statusLine commands — if yes, this is moot; (b) ship a stable launcher script in a non-versioned location maintained by the plugin's SessionStart hook (e.g. `~/.claude/handoff-statusline` symlink → current version); (c) document the install path with a version variable and accept the manual-update cost. Decide before writing the handoff README so the wiring snippet is correct.
 
 ## References
 
