@@ -17,8 +17,7 @@ A Claude Code plugin that provides interactive session retrospectives powered by
 ```
 session-retro/
 ├── .claude-plugin/
-│   ├── plugin.json
-│   └── marketplace.json
+│   └── plugin.json
 ├── hooks/
 │   └── hooks.json
 ├── scripts/

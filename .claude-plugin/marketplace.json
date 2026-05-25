@@ -4,19 +4,44 @@
     "name": "Jason Matthew"
   },
   "metadata": {
-    "description": "Jason Matthew's personal Claude Code skills marketplace."
+    "description": "Jason Matthew's personal Claude Code skills marketplace.",
+    "pluginRoot": "./plugins"
   },
   "plugins": [
     {
-      "name": "jm-skills",
-      "source": "./",
-      "description": "adversarial-agents (configurable panel review for any artefact) and deep-research (DAG-orchestrated multi-source research with critic/judge passes).",
+      "name": "adversarial-agents",
+      "source": "./plugins/adversarial-agents",
+      "description": "Configurable adversarial panel review for any artefact — plans, code, design docs, prose, model outputs.",
       "version": "0.1.0",
       "author": {
         "name": "Jason Matthew"
       },
       "license": "MIT",
-      "keywords": ["skills", "adversarial-review", "deep-research", "red-team", "panel-review"],
+      "keywords": ["adversarial-review", "red-team", "panel-review", "code-review"],
+      "category": "productivity"
+    },
+    {
+      "name": "deep-research",
+      "source": "./plugins/deep-research",
+      "description": "Multi-source research via parallel sub-agents and synthesis with citations.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": ["deep-research", "research", "multi-agent", "synthesis"],
+      "category": "productivity"
+    },
+    {
+      "name": "session-retro",
+      "source": "./plugins/session-retro",
+      "description": "Interactive session retrospectives — deterministic Stop/PreCompact triggers, diff-driven interview, native memory entries. No external services.",
+      "version": "0.3.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": ["session", "retrospective", "memory", "hooks"],
       "category": "productivity"
     }
   ]
