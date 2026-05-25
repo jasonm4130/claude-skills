@@ -25,7 +25,7 @@ For full details on each plugin, see its own README:
 - [`plugins/session-retro/README.md`](plugins/session-retro/README.md)
 - [`plugins/handoff/README.md`](plugins/handoff/README.md)
 
-> **Note for handoff users:** The handoff plugin requires an additional `statusLine` wiring step in your `~/.claude/settings.json` — see [`plugins/handoff/README.md`](plugins/handoff/README.md) for the snippet.
+> **Note for handoff + session-retro users:** Both plugins now require **Node.js 18+** on `PATH` (one-time install via Homebrew, WinGet, or your distro's package manager). The handoff plugin also needs a one-time `statusLine` wire-up — run `node "$(echo ~/.claude/plugins/cache/jasonm4130-claude-skills/handoff/0.2.0)/scripts/setup.mjs"` after install. See [`plugins/handoff/README.md`](plugins/handoff/README.md) for details.
 
 ## Skills
 

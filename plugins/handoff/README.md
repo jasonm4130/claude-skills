@@ -16,50 +16,42 @@ when your context window fills up, and auto-loads it in the next session.
    The SessionStart hook reads it and injects the handoff as context so the next
    session resumes seamlessly. The marker expires after 24 hours.
 
+## Prerequisites
+
+- **Node.js 18+** on `PATH`. The Claude Code installer does not bring Node — install
+  it via your platform package manager (Homebrew, WinGet, your distro's apt/dnf/pacman,
+  or [nodejs.org](https://nodejs.org)).
+- Claude Code `>= 2.1.110`.
+
 ## Install
 
 ```
 /plugin install handoff@jasonm4130-claude-skills
 ```
 
-## Required wiring: statusLine
+After install, run the one-time `setup.mjs` helper to wire the context-fill bar into
+your user-level `statusLine`:
 
-The context-fill bar is NOT wired automatically — Claude Code's `statusLine` is a
-singleton in your user settings and plugins cannot claim it. You must add it manually.
-
-Add to `~/.claude/settings.json`:
-
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "${CLAUDE_PLUGIN_ROOT}/scripts/status-and-flag.sh"
-  }
-}
+```bash
+node "$(echo ~/.claude/plugins/cache/jasonm4130-claude-skills/handoff/*/scripts/setup.mjs | tr ' ' '\n' | tail -n1)"
 ```
 
-**IMPORTANT — Open Question on path resolution:**
-`${CLAUDE_PLUGIN_ROOT}` substitution works inside plugin-registered hook commands
-(e.g., `hooks/hooks.json`), but whether Claude Code also resolves it inside
-user-level `settings.json` `statusLine` entries is **unverified** as of v0.1.0
-(see spec Open Question #5).
+The setup script:
 
-If `${CLAUDE_PLUGIN_ROOT}` does NOT resolve in `statusLine`, use the explicit path:
+1. Reads (or creates) `~/.claude/settings.json`.
+2. Backs the current file up to `~/.claude/settings.json.pre-handoff.bak`.
+3. Writes a `statusLine` entry pointing at this plugin's `status-and-flag.mjs`
+   using its absolute path.
+4. Tells you to restart Claude Code.
 
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "~/.claude/plugins/cache/jasonm4130-claude-skills/handoff/0.1.0/scripts/status-and-flag.sh"
-  }
-}
-```
+If you already have a custom `statusLine` configured, setup will refuse to overwrite
+it. Re-run with `--force` if you want to replace it, or merge manually — see "Existing
+statusLine" below.
 
-**Warning:** The explicit path includes the version segment (`0.1.0`). It will
-break when you update the plugin and must be manually updated each time.
-
-Verify and test this before relying on the statusLine wiring. Contributions
-documenting the correct approach are welcome.
+After you upgrade the plugin to a new version, re-run `setup.mjs` so the statusLine
+points at the new path. (`${CLAUDE_PLUGIN_ROOT}` substitution works only inside plugin
+hook commands, not inside user-level `settings.json` — that's why setup writes an
+absolute path.)
 
 ### Existing statusLine
 
@@ -68,16 +60,16 @@ to merge the outputs. Composable statusLine (running multiple commands and combi
 output) is not yet supported by Claude Code. For now, the options are:
 
 - Replace your existing statusLine with this plugin's script, or
-- Run your existing script from inside `status-and-flag.sh` and append its output
+- Run your existing script from inside `status-and-flag.mjs` and append its output.
 
-Composable statusLine support is tracked as a follow-up for v0.2.0.
+Composable statusLine support is tracked as a follow-up.
 
 ## Configuration
 
 | Env var | Default | Description |
 |---|---|---|
 | `HANDOFF_THRESHOLD_PCT` | `70` | Context % at which to fire the nudge |
-| `CLAUDE_PLUGIN_DATA` | `/tmp/handoff-data` | Where flag and last-pct state files are stored |
+| `CLAUDE_PLUGIN_DATA` | `<os.tmpdir>/handoff-data` | Where flag and last-pct state files are stored |
 
 Set env vars in `~/.claude/settings.json` under `"env"`:
 
@@ -106,14 +98,16 @@ Set env vars in `~/.claude/settings.json` under `"env"`:
 ## Troubleshooting
 
 **No nudge firing even though context is high:**
-- Check that `status-and-flag.sh` is being called (verify statusLine wiring).
-- Check the last-pct file is updating: `cat /tmp/handoff-data/last-context-pct-<session-id>.txt`
+- Check that `status-and-flag.mjs` is being called (verify statusLine wiring;
+  re-run `setup.mjs` if unsure).
+- Check the last-pct file is updating: `cat $TMPDIR/handoff-data/last-context-pct-<session-id>.txt`
+  (or wherever `CLAUDE_PLUGIN_DATA` points).
 - Make sure the threshold env var is not set higher than the current context %.
 
 **Nudge fires repeatedly on every prompt:**
-- The `UserPromptSubmit` hook (`check-handoff-flag.sh`) should delete the flag after consuming it.
-- Check for errors in the hook: run `check-handoff-flag.sh` manually with test input.
-- If `CLAUDE_PLUGIN_DATA` is unset and `/tmp/handoff-data` is not writable, the flag may
+- The `UserPromptSubmit` hook (`check-handoff-flag.mjs`) should delete the flag after consuming it.
+- Check for errors in the hook: run `check-handoff-flag.mjs` manually with test input.
+- If `CLAUDE_PLUGIN_DATA` is unset and the tmpdir fallback is not writable, the flag may
   not be created or deleted correctly.
 
 **Handoff not auto-loading in new session:**

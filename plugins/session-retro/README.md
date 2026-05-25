@@ -11,25 +11,25 @@ At the end of a productive Claude Code session, you've made decisions, hit error
 
 ## What it does
 
-- **Logs your work** — a tiny `PostToolUse` hook appends one JSONL line per Edit/Write/Bash event to `events-{session_id}.jsonl` (single jq fork, atomic POSIX append, race-free under parallel tool calls)
+- **Logs your work** — a tiny `PostToolUse` hook appends one JSONL line per Edit/Write/Bash event to `events-{session_id}.jsonl` (POSIX `O_APPEND`, atomic per PIPE_BUF, race-free under parallel tool calls)
 - **Suggests retros** — `Stop` hook aggregates the event log and writes a nudge flag when thresholds are met; `PreCompact` always writes the flag; `UserPromptSubmit` consumes the flag and injects `additionalContext` so the agent delivers the nudge naturally
 - **Walks you through** — `/retro` uses the event log + git diff to ask specific, non-generic questions, one at a time
 - **Writes native memory** — entries land in your project memory dir using `feedback` / `project` / `reference` types with `**Why:**` and `**How to apply:**` slots
 
 ## How it works
 
-Five hooks + one skill, all bash:
+Five hooks + one skill. The hooks are Node `.mjs` scripts (stdlib only, no third-party deps).
 
 | Component | What it does |
 |---|---|
-| `SessionStart` | `mark-session-start.sh` writes the session start timestamp |
-| `PostToolUse` (Edit\|Write\|Bash) | `posttooluse-append-event.sh` appends one JSONL event |
-| `Stop` | `stop-write-retro-flag.sh` aggregates events and writes a nudge flag if retro-worthy |
-| `PreCompact` | `precompact-write-retro-flag.sh` always writes a nudge flag before compaction |
-| `UserPromptSubmit` | `check-retro-flag.sh` reads the flag and injects `additionalContext` (fire-once) |
+| `SessionStart` | `mark-session-start.mjs` writes the session start timestamp |
+| `PostToolUse` (Edit\|Write\|Bash) | `posttooluse-append-event.mjs` appends one JSONL event |
+| `Stop` | `stop-write-retro-flag.mjs` aggregates events and writes a nudge flag if retro-worthy |
+| `PreCompact` | `precompact-write-retro-flag.mjs` always writes a nudge flag before compaction |
+| `UserPromptSubmit` | `check-retro-flag.mjs` reads the flag and injects `additionalContext` (fire-once) |
 | `/session-retro:retro` | The skill — reads events + git, walks you through, writes memory |
 
-No external services. No SQLite. No MCP server. No Python. Just bash, jq, git.
+No external services. No SQLite. No MCP server. No Python. Just Node 18+ and git.
 
 ## Install
 
@@ -44,8 +44,7 @@ On first load, Claude Code will prompt you to approve the hooks. This is normal 
 ## Requirements
 
 - Claude Code ≥ 2.1.110
-- bash
-- jq
+- **Node.js 18+ on PATH** — the native Claude Code installer does not bring Node. Install via Homebrew (`brew install node`), WinGet (`winget install OpenJS.NodeJS.LTS`), or your distro's package manager.
 - git (optional — interview-only mode if not in a git repo)
 
 ## Usage
@@ -107,10 +106,10 @@ Claude Code will prompt to approve the new `UserPromptSubmit` hook.
 ## Tests
 
 ```
-bash tests/run-all.sh
+node --test plugins/session-retro/tests/
 ```
 
-12 bash tests cover event-log init/parallel-writes (race regression), Stop hook threshold scoring (no-trigger, edits, duration, commit, retro-fired suppression, compound reasons), PreCompact flag-write, and the new check-retro-flag handler (consumes flag + emits additionalContext; silent when no flag).
+The Node `node:test` suite covers event-log init/parallel-writes (race regression), Stop hook threshold scoring (no-trigger, edits, duration, commit, tests-trigger, tool-calls, retro-fired suppression, compound reasons, malformed-line resilience, session_id from stdin), PreCompact flag-write, check-retro-flag handler (consumes flag + emits additionalContext; silent when no flag), and an end-to-end integration test that runs the full SessionStart → PostToolUse → Stop → UserPromptSubmit pipeline.
 
 ## License
 

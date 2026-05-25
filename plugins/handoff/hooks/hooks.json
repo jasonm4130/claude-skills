@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/check-handoff-flag.sh",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/check-handoff-flag.mjs\"",
             "timeout": 5
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/load-pending-handoff.sh",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/load-pending-handoff.mjs\"",
             "timeout": 5
           }
         ]
