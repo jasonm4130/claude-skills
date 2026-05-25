@@ -1,0 +1,10 @@
+node_modules/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.op
+*.log
+.DS_Store
+tmp/
+.worktrees/

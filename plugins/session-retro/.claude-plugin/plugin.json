@@ -1,0 +1,12 @@
+{
+  "name": "session-retro",
+  "description": "Interactive session retrospectives — deterministic Stop/PreCompact triggers, diff-driven interview, native memory entries. No external services.",
+  "version": "0.3.0",
+  "author": {
+    "name": "Jason Matthew"
+  },
+  "license": "MIT",
+  "engines": {
+    "claude-code": ">=2.1.110"
+  }
+}
