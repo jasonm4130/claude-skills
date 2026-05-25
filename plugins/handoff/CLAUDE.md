@@ -13,28 +13,32 @@ auto-loads the document via `additionalContext` injection.
 ```
 handoff/
 ├── .claude-plugin/
-│   └── plugin.json          — name, version, author, engines
+│   └── plugin.json           — name, version, author, engines
 ├── hooks/
-│   └── hooks.json           — UserPromptSubmit + SessionStart
+│   └── hooks.json            — UserPromptSubmit + SessionStart
 ├── scripts/
-│   ├── status-and-flag.sh   — statusLine: renders bar, writes flag at threshold
-│   ├── check-handoff-flag.sh — UserPromptSubmit: consumes flag → additionalContext
-│   └── load-pending-handoff.sh — SessionStart: loads .pending handoff → additionalContext
+│   ├── lib.mjs               — shared stdin/env/flag helpers
+│   ├── status-and-flag.mjs   — statusLine: renders bar, writes flag at threshold
+│   ├── check-handoff-flag.mjs— UserPromptSubmit: consumes flag → additionalContext
+│   ├── load-pending-handoff.mjs — SessionStart: loads .pending handoff → additionalContext
+│   └── setup.mjs             — one-time helper that wires statusLine into ~/.claude/settings.json
 ├── skills/
 │   └── handoff/
-│       └── SKILL.md         — /handoff skill definition
+│       └── SKILL.md          — /handoff skill definition
 ├── tests/
-│   ├── run-all.sh
-│   └── test_*.sh            — per-script bash tests
+│   ├── lib.test.mjs
+│   ├── status-and-flag.test.mjs
+│   ├── check-handoff-flag.test.mjs
+│   ├── load-pending-handoff.test.mjs
+│   └── integration.test.mjs
 ├── README.md
-└── CLAUDE.md                — this file
+└── CLAUDE.md                 — this file
 ```
 
 ## Dependencies
 
-- **jq** — required for JSON parsing in all three scripts. Install via
-  `brew install jq` (macOS) or `apt install jq` (Debian/Ubuntu).
-- **bash** — POSIX bash with `set -euo pipefail`. No Python, no Node.
+- **Node.js 18+ on PATH.** No third-party packages, no `package.json`.
+  Stdlib only.
 - **Claude Code >= 2.1.110** — required for `hooks.json` plugin hook registration.
 
 ## Development
@@ -42,41 +46,35 @@ handoff/
 Test scripts:
 ```bash
 # Run all tests
-bash plugins/handoff/tests/run-all.sh
+node --test plugins/handoff/tests/
 
-# Run a single test
-bash plugins/handoff/tests/test_statusline_crossing.sh
+# Run a single test file
+node --test plugins/handoff/tests/status-and-flag.test.mjs
 
-# Manual statusLine test
+# Manual statusLine smoke test
 echo '{"session_id":"dev","context_window":{"used_percentage":75}}' \
-  | bash plugins/handoff/scripts/status-and-flag.sh
+  | node plugins/handoff/scripts/status-and-flag.mjs
 
-# Manual check-flag test
+# Manual check-flag smoke test
 CLAUDE_PLUGIN_DATA=/tmp/test-handoff \
-  echo '{"session_id":"dev"}' | bash plugins/handoff/scripts/check-handoff-flag.sh
+  echo '{"session_id":"dev"}' | node plugins/handoff/scripts/check-handoff-flag.mjs
 ```
-
-## Open questions (as of v0.1.0)
-
-**Open Question #5: statusLine path resolution.**
-It is unverified whether `${CLAUDE_PLUGIN_ROOT}` is substituted by Claude Code
-when it appears inside a user-level `settings.json` `statusLine` command (vs.
-inside a plugin's own `hooks/hooks.json`). Plugin hooks use `${CLAUDE_PLUGIN_ROOT}`
-and work correctly; statusLine lives in user settings and may not receive the same
-substitution context.
-
-Before v0.2.0: test `${CLAUDE_PLUGIN_ROOT}` substitution in a statusLine command
-and document the result. If it does not work, evaluate:
-- (a) Shipping a stable launcher symlink maintained by a SessionStart hook
-- (b) Documenting the explicit version-segmented path and accepting manual-update cost
-
-See `README.md` for current user-facing guidance on both forms.
 
 ## Conventions
 
-- All scripts: `#!/usr/bin/env bash` + `set -euo pipefail`
-- Graceful degradation: any JSON parse error or missing dependency → exit 0 silently
-  (or output `?` for statusLine)
-- Flag files are plain text, not JSON
-- `additionalContext` output uses the full `hookSpecificOutput` envelope (issue #53682 safe)
-- No external services, no transcript parsing
+- **ESM only.** Every script is `.mjs`. No CommonJS, no `package.json`,
+  no `require`.
+- **Stdlib only.** Allowed imports: `node:fs`, `node:fs/promises`,
+  `node:path`, `node:os`, `node:process`, `node:child_process`, `node:url`,
+  `node:test`, `node:assert/strict`.
+- **`// @ts-check` at the top of every file**, with JSDoc `@typedef` for stdin
+  payload shapes. Editors get IntelliSense without a build step.
+- Graceful degradation: any JSON parse error or missing input → `process.exit(0)`
+  silently (or `?` to stdout for the statusLine script).
+- Flag files are plain text, not JSON; the on-disk format is wire-compatible
+  with v0.1.0 bash scripts.
+- `additionalContext` output uses the full `hookSpecificOutput` envelope
+  (Claude Code issue #53682 safe form).
+- Use `path.join`, never string concatenation, for cross-platform path
+  correctness. Use `os.tmpdir()`, never `/tmp`.
+- No external services, no transcript parsing.

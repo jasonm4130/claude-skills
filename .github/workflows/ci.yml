@@ -22,38 +22,26 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
-      - name: Install jq
-        run: |
-          if ! command -v jq >/dev/null; then
-            if [ "${{ matrix.os }}" = "macos-latest" ]; then
-              brew install jq
-            else
-              sudo apt-get update && sudo apt-get install -y jq
-            fi
-          fi
-      - name: Run session-retro bash tests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run session-retro tests
         working-directory: plugins/session-retro
-        run: bash tests/run-all.sh
+        run: node --test tests/
 
   test-handoff:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
-      - name: Install jq
-        run: |
-          if ! command -v jq >/dev/null; then
-            if [ "${{ matrix.os }}" = "macos-latest" ]; then
-              brew install jq
-            else
-              sudo apt-get update && sudo apt-get install -y jq
-            fi
-          fi
-      - name: Run handoff bash tests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run handoff tests
         working-directory: plugins/handoff
-        run: bash tests/run-all.sh
+        run: node --test tests/
