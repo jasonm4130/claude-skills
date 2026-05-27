@@ -15,11 +15,9 @@ import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const setupScript = path.join(here, "..", "scripts", "setup.mjs");
-const wrapperScript = path.join(here, "..", "scripts", "statusline-wrapper.mjs");
 
 /**
  * Creates a temporary CLAUDE_HOME directory with a fake plugin cache.
@@ -85,34 +83,6 @@ function runSetup(extraArgs, fakeHome) {
     child.stderr.on("data", (b) => (stderr += b.toString("utf8")));
     child.on("error", reject);
     child.on("close", (code) => resolve({ code: code ?? 0, stdout, stderr }));
-    child.stdin.end();
-  });
-}
-
-/**
- * Run the generated wrapper script from a fake home, returning stdout/exit code.
- * @param {string} wrapperPath
- * @param {string} claudeDir - the fake claude dir (used as CLAUDE_PLUGIN_CACHE_DIR if needed)
- * @returns {Promise<{ code: number, stdout: string, stderr: string }>}
- */
-function runWrapper(wrapperPath, claudeDir) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [wrapperPath], {
-      env: {
-        ...process.env,
-        CLAUDE_PLUGIN_DATA: path.join(os.tmpdir(), `wrapper-test-${randomUUID()}`),
-        CLAUDE_HOME_OVERRIDE: claudeDir,
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (b) => (stdout += b.toString("utf8")));
-    child.stderr.on("data", (b) => (stderr += b.toString("utf8")));
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ code: code ?? 0, stdout, stderr }));
-    // Feed minimal valid JSON so the actual status-and-flag.mjs doesn't bail
-    child.stdin.write(JSON.stringify({ session_id: "test", context_window: { used_percentage: 10 } }));
     child.stdin.end();
   });
 }
