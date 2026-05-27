@@ -24,8 +24,12 @@ const checkScript = path.join(scriptsDir, "check-handoff-flag.mjs");
  */
 function run(script, stdinPayload, extraEnv) {
   return new Promise((resolve, reject) => {
+    // Strip HANDOFF_EFFECTIVE_MAX_TOKENS so the developer's shell setting
+    // doesn't bleed into tests that rely on the default (no effective max) path.
+    const baseEnv = { ...process.env };
+    delete baseEnv.HANDOFF_EFFECTIVE_MAX_TOKENS;
     const child = spawn(process.execPath, [script], {
-      env: { ...process.env, ...extraEnv },
+      env: { ...baseEnv, ...extraEnv },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -107,5 +111,7 @@ test("setup.mjs wires statusLine in a fresh ~/.claude/settings.json", async (t) 
   const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
   assert.ok(settings.statusLine, "statusLine not set");
   assert.equal(settings.statusLine.type, "command");
-  assert.match(settings.statusLine.command, /status-and-flag\.mjs/);
+  // setup.mjs now writes a stable wrapper (handoff-statusline.mjs) rather than
+  // pointing directly at the versioned plugin path.
+  assert.match(settings.statusLine.command, /handoff-statusline\.mjs/);
 });

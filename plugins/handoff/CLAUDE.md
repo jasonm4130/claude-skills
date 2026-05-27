@@ -8,6 +8,11 @@ triggers a handoff suggestion at a configurable threshold. When triggered, the
 `$PROJECT_ROOT/.claude/handoffs/`. The next session's `SessionStart` hook
 auto-loads the document via `additionalContext` injection.
 
+`setup.mjs` wires `statusLine` into `~/.claude/settings.json` and (since 0.3.0)
+writes a stable wrapper at `~/.claude/handoff-statusline.mjs` that auto-resolves
+the highest installed plugin version at run time, so plugin upgrades no longer
+break the statusLine.
+
 ## Plugin structure
 
 ```
@@ -86,4 +91,6 @@ CLAUDE_PLUGIN_DATA=/tmp/test-handoff \
   (Claude Code issue #53682 safe form).
 - Use `path.join`, never string concatenation, for cross-platform path
   correctness. Use `os.tmpdir()`, never `/tmp`.
-- No external services, no transcript parsing.
+- No external services. Transcript JSONL parsing is permitted as a fallback for
+  context-bar derivation (`lib.mjs: lastAssistantUsageFromTranscript`) — stdlib
+  only, no network.
