@@ -40,18 +40,18 @@ The setup script:
 
 1. Reads (or creates) `~/.claude/settings.json`.
 2. Backs the current file up to `~/.claude/settings.json.pre-handoff.bak`.
-3. Writes a `statusLine` entry pointing at this plugin's `status-and-flag.mjs`
-   using its absolute path.
-4. Tells you to restart Claude Code.
+3. Writes a stable wrapper at `~/.claude/handoff-statusline.mjs` that
+   auto-resolves the highest installed plugin version at run time.
+4. Writes a `statusLine` entry pointing at that stable wrapper.
+5. Tells you to restart Claude Code.
+
+Because the statusLine now points at the stable wrapper rather than a
+version-specific path, **plugin upgrades no longer require re-running setup**.
+The wrapper picks up the new version automatically on the next Claude Code restart.
 
 If you already have a custom `statusLine` configured, setup will refuse to overwrite
 it. Re-run with `--force` if you want to replace it, or merge manually — see "Existing
 statusLine" below.
-
-After you upgrade the plugin to a new version, re-run `setup.mjs` so the statusLine
-points at the new path. (`${CLAUDE_PLUGIN_ROOT}` substitution works only inside plugin
-hook commands, not inside user-level `settings.json` — that's why setup writes an
-absolute path.)
 
 ### Existing statusLine
 
@@ -69,7 +69,7 @@ Composable statusLine support is tracked as a follow-up.
 | Env var | Default | Description |
 |---|---|---|
 | `HANDOFF_THRESHOLD_PCT` | `70` | Context % at which to fire the nudge |
-| `HANDOFF_EFFECTIVE_MAX_TOKENS` | _(unset)_ | Token ceiling to compute pct against — mirror your `autoCompactWindow` setting |
+| `HANDOFF_EFFECTIVE_MAX_TOKENS` | _(unset)_ | Token ceiling to compute pct against — mirror your `autoCompactWindow` setting. When set, a JSONL transcript fallback (added in 0.3.0) is used if `current_usage` is missing from stdin. |
 | `CLAUDE_PLUGIN_DATA` | `<os.tmpdir>/handoff-data` | Where flag and last-pct state files are stored |
 
 Set env vars in `~/.claude/settings.json` under `"env"`:
@@ -131,6 +131,10 @@ This is a workaround for upstream
 - If the bar shows a much lower % than CC's native "% until auto-compact",
   set `HANDOFF_EFFECTIVE_MAX_TOKENS` to match your `autoCompactWindow` — see
   Configuration above.
+- If `current_usage` is missing from stdin (can happen early in a session),
+  the bar will fall back to reading the transcript JSONL for the last assistant
+  turn's token count. If both are unavailable (no assistant turns yet), the bar
+  renders `?`.
 
 **Nudge fires repeatedly on every prompt:**
 - The `UserPromptSubmit` hook (`check-handoff-flag.mjs`) should delete the flag after consuming it.
@@ -152,6 +156,7 @@ gives you context, but the retro waits until you've actually done work in the ne
 
 | File | Location | Description |
 |---|---|---|
+| `handoff-statusline.mjs` | `~/.claude/` | Stable wrapper script that auto-resolves the latest installed plugin version (written by setup.mjs) |
 | `last-context-pct-<sid>.txt` | `$CLAUDE_PLUGIN_DATA` | Tracks last seen context % for crossing detection |
 | `handoff-nudge-<sid>.flag` | `$CLAUDE_PLUGIN_DATA` | One-shot nudge flag, consumed by UserPromptSubmit |
 | `<ts>-<slug>.md` | `$PROJECT_ROOT/.claude/handoffs/` | The handoff document (agent-authored) |
