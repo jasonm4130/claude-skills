@@ -556,7 +556,7 @@ test("effective_max + JSONL fallback: last assistant turn with all-zero usage re
   });
 
   assert.equal(result.code, 0);
-  assert.match(result.stdout, /0%/);
+  assert.match(result.stdout, /\] 0%/);
   assert.doesNotMatch(result.stdout, /50%/);
 });
 
