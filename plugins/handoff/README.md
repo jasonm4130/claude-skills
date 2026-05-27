@@ -69,7 +69,7 @@ Composable statusLine support is tracked as a follow-up.
 | Env var | Default | Description |
 |---|---|---|
 | `HANDOFF_THRESHOLD_PCT` | `70` | Context % at which to fire the nudge |
-| `HANDOFF_EFFECTIVE_MAX_TOKENS` | _(unset)_ | Token ceiling to compute pct against — mirror your `autoCompactWindow` setting. When set, a JSONL transcript fallback (added in 0.3.0) is used if `current_usage` is missing from stdin. |
+| `HANDOFF_EFFECTIVE_MAX_TOKENS` | _(unset)_ | Token ceiling to compute pct against — mirror your `autoCompactWindow` setting. When set, a JSONL transcript fallback (added in 0.3.0) is used if `current_usage` is absent or all-zero in stdin. |
 | `CLAUDE_PLUGIN_DATA` | `<os.tmpdir>/handoff-data` | Where flag and last-pct state files are stored |
 
 Set env vars in `~/.claude/settings.json` under `"env"`:
