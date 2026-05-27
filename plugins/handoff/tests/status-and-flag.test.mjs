@@ -530,6 +530,36 @@ test("effective_max + JSONL fallback: current_usage all-zero uses JSONL when tra
   assert.doesNotMatch(result.stdout, /10%/);
 });
 
+test("effective_max + JSONL fallback: last assistant turn with all-zero usage renders 0%", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-jsonl-zero-tokens";
+  // current_usage missing, transcript exists, last assistant turn has all-zero usage.
+  // Documented behavior: still uses it (0%); not bailing to '?'.
+  const transcriptPath = writeTranscript(dir, [
+    {
+      type: "assistant",
+      isSidechain: false,
+      message: { usage: { input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+    },
+  ]);
+
+  const input = JSON.stringify({
+    session_id: sid,
+    transcript_path: transcriptPath,
+    context_window: { used_percentage: 50 },
+  });
+  const result = await run(input, {
+    CLAUDE_PLUGIN_DATA: dir,
+    HANDOFF_EFFECTIVE_MAX_TOKENS: "400000",
+  });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /0%/);
+  assert.doesNotMatch(result.stdout, /50%/);
+});
+
 test("effective_max NOT set + current_usage missing: preserves existing behavior using raw used_percentage", async (t) => {
   const dir = mkTmp();
   t.after(() => rmSync(dir, { recursive: true, force: true }));

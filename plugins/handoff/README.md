@@ -33,7 +33,7 @@ After install, run the one-time `setup.mjs` helper to wire the context-fill bar 
 your user-level `statusLine`:
 
 ```bash
-node "$(echo ~/.claude/plugins/cache/jasonm4130-claude-skills/handoff/*/scripts/setup.mjs | tr ' ' '\n' | tail -n1)"
+node "$(echo ~/.claude/plugins/cache/jasonm4130-claude-skills/handoff/*/scripts/setup.mjs | tr ' ' '\n' | sort -V | tail -n1)"
 ```
 
 The setup script:
