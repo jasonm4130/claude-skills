@@ -111,5 +111,7 @@ test("setup.mjs wires statusLine in a fresh ~/.claude/settings.json", async (t) 
   const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
   assert.ok(settings.statusLine, "statusLine not set");
   assert.equal(settings.statusLine.type, "command");
-  assert.match(settings.statusLine.command, /status-and-flag\.mjs/);
+  // setup.mjs now writes a stable wrapper (handoff-statusline.mjs) rather than
+  // pointing directly at the versioned plugin path.
+  assert.match(settings.statusLine.command, /handoff-statusline\.mjs/);
 });
