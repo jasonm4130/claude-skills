@@ -24,8 +24,12 @@ const checkScript = path.join(scriptsDir, "check-handoff-flag.mjs");
  */
 function run(script, stdinPayload, extraEnv) {
   return new Promise((resolve, reject) => {
+    // Strip HANDOFF_EFFECTIVE_MAX_TOKENS so the developer's shell setting
+    // doesn't bleed into tests that rely on the default (no effective max) path.
+    const baseEnv = { ...process.env };
+    delete baseEnv.HANDOFF_EFFECTIVE_MAX_TOKENS;
     const child = spawn(process.execPath, [script], {
-      env: { ...process.env, ...extraEnv },
+      env: { ...baseEnv, ...extraEnv },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";

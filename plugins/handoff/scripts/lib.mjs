@@ -1,7 +1,7 @@
 // @ts-check
 // Shared helpers for handoff plugin scripts. Stdlib only.
 
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import process from "node:process";
@@ -97,4 +97,56 @@ export function emitAdditionalContext(eventName, additionalContext) {
  */
 export function nowIso() {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+/**
+ * @typedef {Object} AssistantUsage
+ * @property {number} inputTokens
+ * @property {number} cacheCreationTokens
+ * @property {number} cacheReadTokens
+ */
+
+/**
+ * Scan a JSONL transcript file backwards for the last main-chain assistant
+ * entry and return its token usage. Main-chain = type "assistant" AND
+ * isSidechain !== true. Returns null if the file doesn't exist, is empty,
+ * has no matching entry, or any I/O error occurs.
+ * @param {string} transcriptPath - Absolute path to the session's JSONL file.
+ * @returns {AssistantUsage | null}
+ */
+export function lastAssistantUsageFromTranscript(transcriptPath) {
+  /** @type {string} */
+  let content;
+  try {
+    content = readFileSync(transcriptPath, "utf8");
+  } catch {
+    return null;
+  }
+
+  const lines = content.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (line.length === 0) continue;
+    /** @type {any} */
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (
+      entry !== null &&
+      typeof entry === "object" &&
+      entry.type === "assistant" &&
+      entry.isSidechain !== true
+    ) {
+      const usage = entry.message && entry.message.usage ? entry.message.usage : {};
+      return {
+        inputTokens: Number(usage.input_tokens ?? 0) || 0,
+        cacheCreationTokens: Number(usage.cache_creation_input_tokens ?? 0) || 0,
+        cacheReadTokens: Number(usage.cache_read_input_tokens ?? 0) || 0,
+      };
+    }
+  }
+  return null;
 }

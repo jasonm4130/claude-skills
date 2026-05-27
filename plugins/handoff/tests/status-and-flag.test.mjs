@@ -11,6 +11,7 @@ import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const script = path.join(here, "..", "scripts", "status-and-flag.mjs");
@@ -22,8 +23,13 @@ const script = path.join(here, "..", "scripts", "status-and-flag.mjs");
  */
 function run(stdinPayload, extraEnv) {
   return new Promise((resolve, reject) => {
+    // Strip HANDOFF_EFFECTIVE_MAX_TOKENS from the inherited env so that a
+    // developer's shell setting doesn't bleed into tests that don't set it.
+    // Tests that need the env var pass it explicitly via extraEnv.
+    const baseEnv = { ...process.env };
+    delete baseEnv.HANDOFF_EFFECTIVE_MAX_TOKENS;
     const child = spawn(process.execPath, [script], {
-      env: { ...process.env, ...extraEnv },
+      env: { ...baseEnv, ...extraEnv },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -192,11 +198,27 @@ test("effective_max: crossing triggers flag with computed pct in message", async
   assert.doesNotMatch(flagContent, /35/);
 });
 
-test("effective_max: falls back to used_percentage when current_usage is null", async (t) => {
+/**
+ * Write a JSONL transcript file with the given entries.
+ * @param {string} dir
+ * @param {object[]} entries
+ * @returns {string} absolute path to the written file
+ */
+function writeTranscript(dir, entries) {
+  const filePath = path.join(dir, `${randomUUID()}.jsonl`);
+  writeFileSync(filePath, entries.map((e) => JSON.stringify(e)).join("\n"));
+  return filePath;
+}
+
+// --- Updated tests: current_usage null/missing with HANDOFF_EFFECTIVE_MAX_TOKENS set ---
+// Per issue #6: when effective max is set but current_usage is absent, we now attempt
+// JSONL fallback rather than silently falling back to raw used_percentage.
+
+test("effective_max: bails to '?' when current_usage is null and no transcript_path", async (t) => {
   const dir = mkTmp();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  const sid = "test-effective-null";
+  const sid = "test-effective-null-no-transcript";
   const input = JSON.stringify({
     session_id: sid,
     context_window: {
@@ -210,17 +232,16 @@ test("effective_max: falls back to used_percentage when current_usage is null", 
   });
 
   assert.equal(result.code, 0);
-  assert.match(result.stdout, /42%/);
-
-  const lastPct = readFileSync(path.join(dir, `last-context-pct-${sid}.txt`), "utf8");
-  assert.equal(lastPct, "42");
+  assert.match(result.stdout, /^\?/);
+  // Must NOT fall back to raw 42%
+  assert.doesNotMatch(result.stdout, /42%/);
 });
 
-test("effective_max: falls back to used_percentage when current_usage is missing", async (t) => {
+test("effective_max: bails to '?' when current_usage is missing and no transcript_path", async (t) => {
   const dir = mkTmp();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  const sid = "test-effective-missing";
+  const sid = "test-effective-missing-no-transcript";
   const input = JSON.stringify({
     session_id: sid,
     context_window: { used_percentage: 23 },
@@ -231,7 +252,8 @@ test("effective_max: falls back to used_percentage when current_usage is missing
   });
 
   assert.equal(result.code, 0);
-  assert.match(result.stdout, /23%/);
+  assert.match(result.stdout, /^\?/);
+  assert.doesNotMatch(result.stdout, /23%/);
 });
 
 test("effective_max: falls back when env var is '0'", async (t) => {
@@ -298,7 +320,9 @@ test("effective_max: falls back when env var is negative", async (t) => {
   assert.match(result.stdout, /35%/);
 });
 
-test("effective_max: renders 0% when input tokens are 0 (early session)", async (t) => {
+test("effective_max: bails to '?' when current_usage is all-zero and no transcript_path (issue #6)", async (t) => {
+  // Per issue #6: all-zero current_usage means the new turn hasn't been recorded yet.
+  // Without a transcript to fall back to, we bail rather than show a stale/wrong 0%.
   const dir = mkTmp();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -316,7 +340,210 @@ test("effective_max: renders 0% when input tokens are 0 (early session)", async 
   });
 
   assert.equal(result.code, 0);
-  assert.match(result.stdout, /0%/);
-  // Should not have fallen back to 5%
+  assert.match(result.stdout, /^\?/);
+  // Must not show 0% or 5% — both are wrong without transcript fallback
   assert.doesNotMatch(result.stdout, /5%/);
+});
+
+// --- JSONL fallback tests (issue #6) ---
+
+test("effective_max + JSONL fallback: uses transcript when current_usage is missing", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-jsonl-fallback-missing";
+  // 200000 / 400000 = 50%
+  const transcriptPath = writeTranscript(dir, [
+    {
+      type: "assistant",
+      isSidechain: false,
+      message: { usage: { input_tokens: 200000, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+    },
+  ]);
+
+  const input = JSON.stringify({
+    session_id: sid,
+    transcript_path: transcriptPath,
+    context_window: { used_percentage: 20 },
+  });
+  const result = await run(input, {
+    CLAUDE_PLUGIN_DATA: dir,
+    HANDOFF_EFFECTIVE_MAX_TOKENS: "400000",
+  });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /50%/);
+  assert.doesNotMatch(result.stdout, /20%/);
+});
+
+test("effective_max + JSONL fallback: uses transcript when current_usage is null", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-jsonl-fallback-null";
+  // 320000 + 80000 = 400000 / 400000 = 100%
+  const transcriptPath = writeTranscript(dir, [
+    {
+      type: "assistant",
+      isSidechain: false,
+      message: {
+        usage: {
+          input_tokens: 320000,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 80000,
+        },
+      },
+    },
+  ]);
+
+  const input = JSON.stringify({
+    session_id: sid,
+    transcript_path: transcriptPath,
+    context_window: {
+      used_percentage: 40,
+      current_usage: null,
+    },
+  });
+  const result = await run(input, {
+    CLAUDE_PLUGIN_DATA: dir,
+    HANDOFF_EFFECTIVE_MAX_TOKENS: "400000",
+  });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /100%/);
+  assert.doesNotMatch(result.stdout, /40%/);
+});
+
+test("effective_max + JSONL fallback: uses LAST main-chain assistant turn", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-jsonl-last-turn";
+  // Last turn: 300000 / 400000 = 75%
+  const transcriptPath = writeTranscript(dir, [
+    {
+      type: "assistant",
+      isSidechain: false,
+      message: { usage: { input_tokens: 100000, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+    },
+    {
+      type: "assistant",
+      isSidechain: true, // sidechain — should be skipped
+      message: { usage: { input_tokens: 999999, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+    },
+    {
+      type: "assistant",
+      isSidechain: false,
+      message: { usage: { input_tokens: 300000, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+    },
+  ]);
+
+  const input = JSON.stringify({
+    session_id: sid,
+    transcript_path: transcriptPath,
+    context_window: { used_percentage: 25 },
+  });
+  const result = await run(input, {
+    CLAUDE_PLUGIN_DATA: dir,
+    HANDOFF_EFFECTIVE_MAX_TOKENS: "400000",
+  });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /75%/);
+  assert.doesNotMatch(result.stdout, /25%/);
+});
+
+test("effective_max + JSONL fallback: bails to '?' when transcript_path doesn't exist", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-jsonl-missing-file";
+  const input = JSON.stringify({
+    session_id: sid,
+    transcript_path: "/nonexistent/no-such-file.jsonl",
+    context_window: { used_percentage: 33 },
+  });
+  const result = await run(input, {
+    CLAUDE_PLUGIN_DATA: dir,
+    HANDOFF_EFFECTIVE_MAX_TOKENS: "400000",
+  });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /^\?/);
+  assert.doesNotMatch(result.stdout, /33%/);
+});
+
+test("effective_max + JSONL fallback: bails to '?' when transcript exists but is empty", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-jsonl-empty-file";
+  const transcriptPath = path.join(dir, "empty.jsonl");
+  writeFileSync(transcriptPath, "");
+
+  const input = JSON.stringify({
+    session_id: sid,
+    transcript_path: transcriptPath,
+    context_window: { used_percentage: 33 },
+  });
+  const result = await run(input, {
+    CLAUDE_PLUGIN_DATA: dir,
+    HANDOFF_EFFECTIVE_MAX_TOKENS: "400000",
+  });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /^\?/);
+  assert.doesNotMatch(result.stdout, /33%/);
+});
+
+test("effective_max + JSONL fallback: current_usage all-zero uses JSONL when transcript has data", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-jsonl-zero-current-usage";
+  // current_usage is all zeros (new turn hasn't been recorded yet) → fall through to JSONL
+  // Transcript has 200k tokens → 50%
+  const transcriptPath = writeTranscript(dir, [
+    {
+      type: "assistant",
+      isSidechain: false,
+      message: { usage: { input_tokens: 200000, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+    },
+  ]);
+
+  const input = JSON.stringify({
+    session_id: sid,
+    transcript_path: transcriptPath,
+    context_window: {
+      used_percentage: 10,
+      current_usage: { input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+    },
+  });
+  const result = await run(input, {
+    CLAUDE_PLUGIN_DATA: dir,
+    HANDOFF_EFFECTIVE_MAX_TOKENS: "400000",
+  });
+
+  assert.equal(result.code, 0);
+  // The all-zero current_usage is "present and non-zero"=false → JSONL fallback → 50%
+  assert.match(result.stdout, /50%/);
+  assert.doesNotMatch(result.stdout, /10%/);
+});
+
+test("effective_max NOT set + current_usage missing: preserves existing behavior using raw used_percentage", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-no-effective-max";
+  const input = JSON.stringify({
+    session_id: sid,
+    context_window: { used_percentage: 47 },
+  });
+  const result = await run(input, {
+    CLAUDE_PLUGIN_DATA: dir,
+    // HANDOFF_EFFECTIVE_MAX_TOKENS deliberately not set
+  });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /47%/);
 });
