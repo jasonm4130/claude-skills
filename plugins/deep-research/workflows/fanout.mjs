@@ -86,3 +86,96 @@ ${findings}
 Return per schema: angleId="${angle.id}", overallReliability (high/medium/low), and the per-claim flags.`;
 }
 // <<< PURE
+
+const RESEARCH_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["angleId", "kind", "summary", "findings"],
+  properties: {
+    angleId: { type: "string" },
+    kind: { type: "string", enum: ["core", "background", "follow-up"] },
+    summary: { type: "string" },
+    findings: {
+      type: "array",
+      items: {
+        type: "object", additionalProperties: false,
+        required: ["claim", "sourceUrl", "sourceTitle", "sourceDate"],
+        properties: {
+          claim: { type: "string" }, sourceUrl: { type: "string" },
+          sourceTitle: { type: "string" }, sourceDate: { type: "string" },
+        },
+      },
+    },
+  },
+};
+
+const VERIFY_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["angleId", "overallReliability", "flags"],
+  properties: {
+    angleId: { type: "string" },
+    overallReliability: { type: "string", enum: ["high", "medium", "low"] },
+    flags: {
+      type: "array",
+      items: {
+        type: "object", additionalProperties: false,
+        required: ["claim", "verdict", "note"],
+        properties: {
+          claim: { type: "string" },
+          verdict: { type: "string", enum: ["supported", "partial", "unsupported", "unreachable"] },
+          note: { type: "string" },
+        },
+      },
+    },
+  },
+};
+
+if (typeof phase === "function") {
+  const cfg = validateArgs(args);
+  const { wave1, wave2 } = partitionWaves(cfg.angles);
+  const wavesRun = cfg.mode === "scout" || wave2.length === 0 ? 1 : 2;
+
+  // Run one angle fully: research -> tier-1 verify -> conditional tier-2 escalation.
+  async function runAngle(angle, waveCtx) {
+    const research = await agent(researchPrompt(cfg.topic, angle, cfg.mode, waveCtx), {
+      label: `research:${angle.id}`, phase: "Research", model: angle.model, schema: RESEARCH_SCHEMA,
+    });
+    if (!research) return null;
+    let verify = await agent(verifyPrompt(angle, research), {
+      label: `verify:${angle.id}`, phase: "Verify", model: "sonnet", schema: VERIFY_SCHEMA,
+    });
+    let escalated = false;
+    if (cfg.mode !== "scout" && verify && shouldEscalate(verify, cfg.verify.escalateOn)) {
+      const recheck = await agent(
+        `Independently re-verify ONLY these flagged claims for "${angle.question}" using a fresh search and WebFetch; correct the verdicts where warranted. Prior flags:\n${JSON.stringify(verify.flags)}`,
+        { label: `escalate:${angle.id}`, phase: "Verify", model: "sonnet", schema: VERIFY_SCHEMA }
+      );
+      if (recheck) { verify = recheck; escalated = true; }
+    }
+    return { angle, research, verify, escalated };
+  }
+
+  phase("Research");
+  const wave1Results = (await parallel(wave1.map((a) => () => runAngle(a, null)))).filter(Boolean);
+
+  let wave2Results = [];
+  if (wavesRun === 2) {
+    const digest = wave1Results
+      .map((r) => `### ${r.angle.question}\n${r.research.summary}`)
+      .join("\n\n");
+    wave2Results = (await parallel(wave2.map((a) => () => runAngle(a, digest)))).filter(Boolean);
+  }
+
+  const all = [...wave1Results, ...wave2Results];
+  log(`Completed ${all.length}/${cfg.angles.length} angles (${wavesRun} wave(s))`);
+
+  return {
+    reports: all.map((r) => ({
+      angleId: r.research.angleId, kind: r.research.kind,
+      summary: r.research.summary, findings: r.research.findings,
+    })),
+    verification: all.map((r) => ({
+      angleId: r.verify.angleId, reliability: r.verify.overallReliability, flags: r.verify.flags,
+    })),
+    meta: tallyMeta(cfg.mode, wavesRun, all),
+  };
+}
