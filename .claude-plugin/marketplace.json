@@ -24,7 +24,7 @@
       "name": "deep-research",
       "source": "./plugins/deep-research",
       "description": "Multi-source research via parallel sub-agents and synthesis with citations.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": {
         "name": "Jason Matthew"
       },
