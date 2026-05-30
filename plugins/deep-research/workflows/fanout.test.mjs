@@ -77,6 +77,12 @@ test("shouldEscalate: true only when reliability is low", () => {
   assert.equal(PURE.shouldEscalate(null, "low"), false);
 });
 
+test("shouldEscalate: threshold semantics — escalateOn=medium covers low and medium, not high", () => {
+  assert.equal(PURE.shouldEscalate({ reliability: "low" }, "medium"), true);
+  assert.equal(PURE.shouldEscalate({ reliability: "medium" }, "medium"), true);
+  assert.equal(PURE.shouldEscalate({ reliability: "high" }, "medium"), false);
+});
+
 test("tallyMeta: counts completed, failed, escalated", () => {
   const results = [
     { angleId: "a", escalated: false },

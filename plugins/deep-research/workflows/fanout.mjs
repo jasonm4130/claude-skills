@@ -53,7 +53,11 @@ function validateArgs(input) {
 }
 
 function shouldEscalate(verification, escalateOn) {
-  return !!(verification && verification.reliability === (escalateOn || "low"));
+  if (!verification) return false;
+  const rank = { low: 0, medium: 1, high: 2 };
+  const r = rank[verification.reliability];
+  const threshold = escalateOn in rank ? rank[escalateOn] : rank.low;
+  return typeof r === "number" && r <= threshold;
 }
 
 function tallyMeta(mode, wavesRun, results) {
@@ -150,6 +154,7 @@ if (typeof phase === "function") {
     let verify = await agent(verifyPrompt(angle, research), {
       label: `verify:${angle.id}`, phase: "Verify", model: "sonnet", schema: VERIFY_SCHEMA,
     });
+    if (!verify) return null;
     let escalated = false;
     if (cfg.mode !== "scout" && verify && shouldEscalate(verify, cfg.verify.escalateOn)) {
       const recheck = await agent(
@@ -166,6 +171,7 @@ if (typeof phase === "function") {
 
   let wave2Results = [];
   if (wavesRun === 2) {
+    // NOTE: every wave-2 angle gets the full wave-1 digest (deps are not used to scope context).
     const digest = wave1Results
       .map((r) => `### ${r.angle.question}\n${r.research.summary}`)
       .join("\n\n");
