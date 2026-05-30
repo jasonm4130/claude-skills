@@ -37,7 +37,11 @@ function validateArgs(input) {
       deps: Array.isArray(a.deps) ? a.deps : [],
     };
   });
-  const escalateOn = input.verify && input.verify.escalateOn === "low" ? "low" : "low";
+  const allowed = ["low", "medium", "high"];
+  const escalateOn =
+    input.verify && allowed.includes(input.verify.escalateOn)
+      ? input.verify.escalateOn
+      : "low";
   return { topic: input.topic, mode, angles, verify: { escalateOn } };
 }
 

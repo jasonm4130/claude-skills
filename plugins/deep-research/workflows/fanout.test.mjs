@@ -49,6 +49,25 @@ test("validateArgs: defaults mode=deep and angle.model=sonnet", () => {
   assert.equal(out.angles[0].model, "sonnet");
   assert.equal(out.angles[0].kind, "core");
   assert.deepEqual(out.angles[0].deps, []);
+  assert.equal(out.verify.escalateOn, "low");
+});
+
+test("validateArgs: honors a valid verify.escalateOn, ignores invalid", () => {
+  const ok = PURE.validateArgs({ topic: "t", angles: [{ question: "q" }], verify: { escalateOn: "medium" } });
+  assert.equal(ok.verify.escalateOn, "medium");
+  const bad = PURE.validateArgs({ topic: "t", angles: [{ question: "q" }], verify: { escalateOn: "bogus" } });
+  assert.equal(bad.verify.escalateOn, "low");
+});
+
+test("verifyPrompt: lists findings and handles empty findings", () => {
+  const withFindings = PURE.verifyPrompt(
+    { id: "a", question: "Q" },
+    { findings: [{ claim: "C1", sourceUrl: "http://x", sourceTitle: "T1", sourceDate: "2026" }] }
+  );
+  assert.match(withFindings, /C1/);
+  assert.match(withFindings, /independent/i);
+  const empty = PURE.verifyPrompt({ id: "a", question: "Q" }, {});
+  assert.match(empty, /angleId="a"/);
 });
 
 test("shouldEscalate: true only when reliability is low", () => {
