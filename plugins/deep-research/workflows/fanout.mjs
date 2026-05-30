@@ -20,6 +20,13 @@ function partitionWaves(angles) {
 }
 
 function validateArgs(input) {
+  if (typeof input === "string") {
+    try {
+      input = JSON.parse(input);
+    } catch {
+      throw new Error("args string is not valid JSON");
+    }
+  }
   if (!input || typeof input !== "object") throw new Error("args must be an object");
   if (typeof input.topic !== "string" || input.topic.length === 0)
     throw new Error("args.topic is required");

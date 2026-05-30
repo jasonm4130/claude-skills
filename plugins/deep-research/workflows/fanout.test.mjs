@@ -100,3 +100,14 @@ test("researchPrompt: deep vs scout wording, and wave context", () => {
   assert.match(withCtx, /WAVE-1 FINDINGS/);
   assert.match(withCtx, /PRIOR/);
 });
+
+test("validateArgs: parses a JSON string (runtime delivers args as a string)", () => {
+  const out = PURE.validateArgs(JSON.stringify({ topic: "t", angles: [{ question: "q" }] }));
+  assert.equal(out.topic, "t");
+  assert.equal(out.mode, "deep");
+  assert.equal(out.angles[0].question, "q");
+});
+
+test("validateArgs: throws on an invalid JSON string", () => {
+  assert.throws(() => PURE.validateArgs("{not json"), /JSON/);
+});
