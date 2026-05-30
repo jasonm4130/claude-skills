@@ -134,6 +134,9 @@ The Workflow runtime is a **sealed sandbox** — verified with a throwaway probe
 - **Primitives are injected globals** (`typeof agent === "function"`), so a
   `typeof phase === "function"` guard can fence the orchestration off from any non-runtime
   evaluation.
+- **`args` is delivered to the script as a JSON *string*** (not a parsed object), confirmed by
+  the T4 live smoke run. `validateArgs` therefore `JSON.parse`s a string input. The skill still
+  passes a normal object to `Workflow({args})` — the runtime stringifies it in transit.
 - **`${CLAUDE_PLUGIN_ROOT}` is NOT set in the main session**, so the skill cannot rely on
   shell expansion. The script path is resolved by glob:
   `ls -d "$HOME"/.claude/plugins/cache/jasonm4130-claude-skills/deep-research/*/workflows/fanout.mjs | sort -V | tail -1`
