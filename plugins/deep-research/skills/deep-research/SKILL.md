@@ -19,6 +19,11 @@ Before spawning agents, decide: deep research or quick lookup?
 
 When in doubt, ask. Burning 4 parallel agents on a question that needed one search wastes tokens and time.
 
+**Scout mode:** for an open-ended "map the option space" question, you may run a cheap first
+pass with `mode: "scout"` (breadth, single wave, no escalation) to discover the angles, then
+run a full `mode: "deep"` pass. Depth-vs-breadth was a wash in testing for well-scoped
+questions, so default to `deep`; use `scout` only for scoping.
+
 ## Process
 
 ### 1. Plan the angles as a DAG, then ASK
@@ -28,32 +33,58 @@ Don't decompose once and fan out once. Real research questions have dependencies
 1. List 3–5 distinct research angles. Default to 3; go to 5 only if the topic genuinely splits that many ways.
 2. For each angle, name its **dependencies** — does it need another angle's output to be well-posed? Most angles are independent (root nodes). Some are conditional ("only worth researching if angle 2 returns X").
 3. Render the plan as a small DAG: root angles first (run in parallel), dependent angles in a second wave.
+4. Tag each angle **core** (directly answers the question), **background** (context needed to
+   answer), or **follow-up** (implications). When you show the DAG at the gate, show which
+   **core** sub-questions are covered — core coverage is the quality bar. Aim to cover every
+   core sub-question before dispatch.
 
 **Always show the DAG to the user and wait for explicit go-ahead before dispatching.** Even when the user said "do deep research" — that's permission for the topic, not for the dispatch. A reply like "looks good, go" or "yes" is the gate.
 
 The only exception: the user explicitly said "skip the confirmation, just run it" or equivalent.
 
-### 2. Dispatch root angles in parallel (wave 1)
+### 2. Dispatch via the fanout workflow
 
-Spawn one `Agent` per root angle, **all in a single message**, so they run concurrently.
+Once the user says "go", do NOT spawn `Agent` calls yourself. Build an `args` object from the
+confirmed DAG and hand it to the shipped workflow.
 
-**Cost-aware defaults:**
-- `subagent_type=general-purpose`
-- `model="haiku"` for recall-style angles (recall, list-gathering, source enumeration). Haiku is ~5–10× cheaper than Sonnet/Opus for this role and matches quality for pattern-recognition work.
-- `model="sonnet"` (default) for synthesis-heavy angles (cross-source reasoning, contradictions).
-- Reserve `model="opus"` for the orchestrator (this session), not sub-agents — research shows asymmetric models (frontier orchestrator + cheap subs) is the cost-effective configuration. Same-model panels lose the Data Processing Inequality argument.
+1. Resolve the script's absolute path (`${CLAUDE_PLUGIN_ROOT}` is not available in this
+   session, so glob the install and pick the highest version):
 
-Each agent's prompt must include:
-- The specific angle/question.
-- The broader research topic for context.
-- "Use both Exa and Tavily MCP tools (any `mcp__exa__*` and `mcp__tavily__*` tools). Fall back to WebSearch for breadth and WebFetch for specific URLs."
-- "Read 2–4 sources deeply, not 10 shallowly."
-- "Cite every claim: URL + title + date."
-- "Report under 400 words."
+   ```bash
+   ls -d "$HOME"/.claude/plugins/cache/jasonm4130-claude-skills/deep-research/*/workflows/fanout.mjs | sort -V | tail -1
+   ```
 
-### 3. Dispatch dependent angles (wave 2, optional)
+   In local development, use the repo path `plugins/deep-research/workflows/fanout.mjs` directly.
 
-If any wave-1 result triggers a dependent angle on the DAG, dispatch wave 2 now — again, all in one message. Stop at wave 2 unless an answer is materially blocked; deeper recursion is rarely worth the cost.
+2. Build `args` (pass it as a normal object — the runtime delivers it to the script, which
+   parses it) and invoke:
+
+   ```
+   Workflow({ scriptPath: "<resolved path>", args: {
+     topic: "<the research topic>",
+     mode: "deep",                       // or "scout" for a cheap breadth-first scoping pass
+     angles: [
+       { id, question, kind: "core"|"background"|"follow-up", model: "sonnet", deps: [] },
+       // wave-2 angles carry deps: ["<id>"]; default workers to "sonnet" — only use "haiku"
+       // for pure list/URL enumeration (it misses subtle cross-source contradictions).
+     ],
+     verify: { escalateOn: "low" }
+   }})
+   ```
+
+**Worker model:** default to `"sonnet"`. An in-repo orchestration experiment found Haiku
+workers missed a load-bearing cross-source contradiction that Sonnet workers caught — so only
+use `"haiku"` for genuinely pure enumeration (gathering lists/URLs), accepting the correctness
+risk. Reserve Opus for this orchestrator session (planning + synthesis), not the workers.
+
+The workflow runs wave-1, then any wave-2 (dependent) angles built on wave-1 findings, runs a
+factored tier-1 verifier per angle (blind to the draft, re-fetches sources), escalates to a
+tier-2 cross-check only on low-reliability angles, and returns `{ reports, verification, meta }`.
+
+### 3. Waves are handled by the workflow
+
+Wave-2 (dependent) angles are declared via each angle's `deps` in the `args` above; the workflow
+runs them automatically after wave-1. You do not dispatch them manually.
 
 ### 4. Synthesize (critic + citation-judge + final-judge passes)
 
@@ -65,10 +96,12 @@ Three roles, distinct system prompts, in order. Conflating roles causes deadlock
 - Internally critique it — what's missing, what's hand-waved, what's a single-source claim. Revise once.
 - Hard cap at 2 critic passes; a 3rd produces churn, not improvement.
 
-**Citation-quality judge (1 pass):**
-- For each cited claim, verify: does the URL still resolve, does the cited source actually support the claim, is the source date present and reasonable?
-- Flag (don't silently drop) any claim where the source is weak, missing, or where the cited text doesn't actually support the claim.
-- Single-domain runs ≥3 findings get a "single-perspective" warning.
+**Citation verification (handled by the workflow):**
+- The workflow already ran a factored tier-1 verifier (and tier-2 on low-reliability angles).
+  Read `verification[]`: each angle carries a `reliability` and per-claim `flags`
+  (supported/partial/unsupported/unreachable).
+- In your synthesis, DOWNWEIGHT or explicitly flag any claim marked partial/unsupported/
+  unreachable, and warn on any `reliability: "low"` angle. Do not silently drop them.
 
 **Final-judge pass (1 pass):**
 - Read the critiqued, citation-checked synthesis.
