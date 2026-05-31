@@ -46,13 +46,21 @@ const loopy =
 const expensive = agentCount >= 4 || fanout || (loopy && agentCount >= 1);
 if (!expensive) process.exit(0);
 
-const fanoutNote = fanout ? ", parallel/pipeline fan-out" : "";
+// Name only the signals that actually fired, so the reason never reads "~0 agent() calls".
+const signals = [];
+if (agentCount >= 1) {
+  signals.push(`~${agentCount} agent() call${agentCount === 1 ? "" : "s"}`);
+}
+if (fanout) signals.push("parallel/pipeline fan-out");
+if (loopy) signals.push("a spawn loop");
+const what = signals.join(" + ");
+
 const reason =
-  `workflow-model-guard: ~${agentCount} agent() call${agentCount === 1 ? "" : "s"}${fanoutNote} ` +
-  "and no per-agent model: override — every spawned agent defaults to the main-loop " +
-  "model (Opus 4.8), which burns usage limits fast. Add model:'claude-sonnet-4-6' (or " +
-  "'claude-haiku-4-5') to worker agents that don't need Opus. If Opus is genuinely " +
-  "required for all of them, add a `// model-guard:ack` comment to the script and re-run.";
+  `workflow-model-guard: this workflow has ${what} and no per-agent model: override — ` +
+  "every spawned agent defaults to the main-loop model (Opus 4.8), which burns usage " +
+  "limits fast. Add model:'claude-sonnet-4-6' (or 'claude-haiku-4-5') to worker agents " +
+  "that don't need Opus. If Opus is genuinely required for all of them, add a " +
+  "`// model-guard:ack` comment to the script and re-run.";
 
 emitPermissionDecision("deny", reason);
 process.exit(0);
