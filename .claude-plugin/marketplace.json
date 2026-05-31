@@ -55,6 +55,18 @@
       "license": "MIT",
       "keywords": ["session", "retrospective", "memory", "hooks"],
       "category": "productivity"
+    },
+    {
+      "name": "workflow-model-guard",
+      "source": "./plugins/workflow-model-guard",
+      "description": "PreToolUse hook that nudges Claude to tier models in high-fan-out Workflow scripts — denies a Workflow call that spawns many agents with no per-agent model: override.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": ["workflow", "model-selection", "cost", "hooks"],
+      "category": "productivity"
     }
   ]
 }
