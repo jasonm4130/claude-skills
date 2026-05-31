@@ -66,6 +66,13 @@ test("deny reason names the estimated agent count", () => {
   assert.match(parseDecision(stdout).permissionDecisionReason, /~2 agent\(\) calls/);
 });
 
+test("deny reason omits the count when no agent() calls are statically visible", () => {
+  // parallel( fan-out with zero static agent() matches — must not read "~0 agent() calls".
+  const reason = parseDecision(run(wf("await parallel([])")).stdout).permissionDecisionReason;
+  assert.doesNotMatch(reason, /~0/);
+  assert.match(reason, /parallel\/pipeline fan-out/);
+});
+
 test("allows when a model: override is present", () => {
   const { status, stdout } = run(
     wf('await parallel(items.map(i => () => agent("do", {model: "sonnet"})))'),
