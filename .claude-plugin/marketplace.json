@@ -21,15 +21,15 @@
       "category": "productivity"
     },
     {
-      "name": "deep-research",
-      "source": "./plugins/deep-research",
-      "description": "Multi-source research via parallel sub-agents and synthesis with citations.",
-      "version": "0.2.0",
+      "name": "deep-dive",
+      "source": "./plugins/deep-dive",
+      "description": "Model-tiered, adversarially-verified multi-source research via parallel sub-agents and synthesis with citations. Cheaper alternative to the built-in all-Opus deep-research.",
+      "version": "0.3.0",
       "author": {
         "name": "Jason Matthew"
       },
       "license": "MIT",
-      "keywords": ["deep-research", "research", "multi-agent", "synthesis"],
+      "keywords": ["deep-dive", "deep-research", "research", "multi-agent", "synthesis"],
       "category": "productivity"
     },
     {

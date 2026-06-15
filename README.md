@@ -15,13 +15,13 @@ A Claude Code plugin **marketplace** hosting multiple independent plugins. Insta
 | Plugin | Description | Install command |
 |---|---|---|
 | `adversarial-agents` | Configurable adversarial panel review for any artefact | `/plugin install adversarial-agents@jasonm4130-claude-skills` |
-| `deep-research` | Multi-source research via parallel sub-agents and synthesis | `/plugin install deep-research@jasonm4130-claude-skills` |
+| `deep-dive` | Model-tiered, adversarially-verified multi-source research via parallel sub-agents | `/plugin install deep-dive@jasonm4130-claude-skills` |
 | `session-retro` | Interactive session retrospectives that capture learnings to memory | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `handoff` | Context-fill-triggered handoff skill that auto-loads on next session | `/plugin install handoff@jasonm4130-claude-skills` |
 
 For full details on each plugin, see its own README:
 - [`plugins/adversarial-agents/README.md`](plugins/adversarial-agents/README.md)
-- [`plugins/deep-research/README.md`](plugins/deep-research/README.md)
+- [`plugins/deep-dive/README.md`](plugins/deep-dive/README.md)
 - [`plugins/session-retro/README.md`](plugins/session-retro/README.md)
 - [`plugins/handoff/README.md`](plugins/handoff/README.md)
 
@@ -42,9 +42,9 @@ Configurable adversarial panel review for any artefact — plans, code, design d
 
 Trigger phrases include `grill me`, `stress-test this`, `red-team`, `adversarial review`, `panel critique`, `find holes`.
 
-### `deep-research`
+### `deep-dive`
 
-Multi-source research with DAG-planned dispatch, cost-aware model selection (Haiku critics + Sonnet synthesis + Opus orchestrator), and three-pass synthesis (critic → citation-quality judge → final-judge).
+Multi-source research with DAG-planned dispatch, cost-aware model selection (Sonnet workers + Opus orchestrator only — never all-Opus), and three-pass synthesis (critic → citation-quality judge → final-judge). Deliberately named to avoid colliding with Claude Code's built-in all-Opus `deep-research`.
 
 Follows the lead-researcher → parallel sub-agents → synthesis pattern from [Anthropic's multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system), extended with 2025–26 patterns (plan-as-DAG, role-separated critic vs judge, asymmetric models).
 
@@ -65,7 +65,7 @@ This plugin uses the Claude Code plugin marketplace mechanism. Add to your `~/.c
 }
 ```
 
-Then run `/plugins` in Claude Code to sync. Skills will be invokable as `jm-skills:adversarial-agents` and `jm-skills:deep-research`, plus by their natural trigger phrases.
+Then run `/plugins` in Claude Code to sync. Skills will be invokable as `jm-skills:adversarial-agents` and `jm-skills:deep-dive`, plus by their natural trigger phrases.
 
 ## Repo layout
 
@@ -77,7 +77,7 @@ skills/
     personas/
       yagni.md, premortem.md, hidden_assumptions.md   # plan panel
       saboteur.md, new_hire.md, security_auditor.md   # code panel
-  deep-research/
+  deep-dive/
     SKILL.md
 ```
 

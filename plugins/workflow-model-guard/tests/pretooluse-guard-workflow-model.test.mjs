@@ -7,6 +7,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const HOOK = fileURLToPath(
   new URL("../scripts/pretooluse-guard-workflow-model.mjs", import.meta.url),
@@ -32,6 +35,14 @@ function wf(script) {
 function parseDecision(stdout) {
   const obj = JSON.parse(stdout);
   return obj.hookSpecificOutput;
+}
+
+/** Write content to a throwaway .mjs file; returns its path + a cleanup fn. */
+function tmpScript(content) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "wmg-"));
+  const p = path.join(dir, "wf.mjs");
+  writeFileSync(p, content);
+  return { p, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
 test("denies parallel fan-out with no model override", () => {
@@ -121,5 +132,65 @@ test("treats phase meta model field as consideration (bypass)", () => {
   const { stdout } = run(
     wf('export const meta = { phases: [{ title: "x", model: "haiku" }] }; await parallel([() => agent("a"), () => agent("b")])'),
   );
+  assert.equal(stdout.trim(), "");
+});
+
+// ---- scriptPath inspection (read the file, apply the same heuristic) ----
+
+test("denies a scriptPath workflow that fans out with no model override", () => {
+  const { p, cleanup } = tmpScript('await parallel(items.map(i => () => agent("do " + i)))');
+  try {
+    const { stdout } = run({ tool_name: "Workflow", tool_input: { scriptPath: p } });
+    assert.equal(parseDecision(stdout).permissionDecision, "deny");
+  } finally {
+    cleanup();
+  }
+});
+
+test("allows a scriptPath workflow that sets a model override", () => {
+  const { p, cleanup } = tmpScript('await parallel(items.map(i => () => agent("do", {model: "sonnet"})))');
+  try {
+    const { stdout } = run({ tool_name: "Workflow", tool_input: { scriptPath: p } });
+    assert.equal(stdout.trim(), "");
+  } finally {
+    cleanup();
+  }
+});
+
+test("allows the shipped deep-dive fanout.mjs by scriptPath (already tiered)", () => {
+  const fanout = fileURLToPath(
+    new URL("../../deep-dive/workflows/fanout.mjs", import.meta.url),
+  );
+  const { stdout } = run({ tool_name: "Workflow", tool_input: { scriptPath: fanout } });
+  assert.equal(stdout.trim(), "");
+});
+
+test("allows when scriptPath points to a missing/unreadable file", () => {
+  const { stdout } = run({
+    tool_name: "Workflow",
+    tool_input: { scriptPath: "/no/such/file-xyz-12345.mjs" },
+  });
+  assert.equal(stdout.trim(), "");
+});
+
+// ---- name: denylist (un-editable built-ins) → ask the user ----
+
+test("asks the user before the all-Opus built-in name:deep-research", () => {
+  const { status, stdout } = run({
+    tool_name: "Workflow",
+    tool_input: { name: "deep-research", args: "some question" },
+  });
+  assert.equal(status, 0);
+  const d = parseDecision(stdout);
+  assert.equal(d.permissionDecision, "ask");
+  assert.match(d.permissionDecisionReason, /workflow-model-guard/);
+  assert.match(d.permissionDecisionReason, /Opus|session model/i);
+});
+
+test("ignores named workflows not on the denylist", () => {
+  const { stdout } = run({
+    tool_name: "Workflow",
+    tool_input: { name: "some-other-saved-workflow" },
+  });
   assert.equal(stdout.trim(), "");
 });

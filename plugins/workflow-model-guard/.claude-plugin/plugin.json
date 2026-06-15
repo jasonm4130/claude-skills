@@ -1,7 +1,7 @@
 {
   "name": "workflow-model-guard",
-  "description": "PreToolUse hook that nudges Claude to tier models in high-fan-out Workflow scripts — denies a Workflow call that spawns many agents with no per-agent model: override so worker agents don't silently all default to Opus.",
-  "version": "0.1.0",
+  "description": "PreToolUse hook that tiers models in high-fan-out Workflow runs — denies inline/scriptPath scripts that spawn many agents with no per-agent model: override, and asks before all-Opus built-in named workflows (e.g. deep-research) that can't be tiered from the session.",
+  "version": "0.2.0",
   "author": {
     "name": "Jason Matthew"
   },

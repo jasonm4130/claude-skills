@@ -1,17 +1,25 @@
-# deep-research
+# deep-dive
 
 Multi-angle research via parallel sub-agents and synthesis with citations. Follows the lead-researcher → parallel sub-agents → critic/judge pattern from Anthropic's [multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system).
+
+> **Why not the built-in `/deep-research`?** Claude Code ships an all-Opus `deep-research`
+> workflow that runs *every* worker on your session model — expensive on Opus. This skill
+> does the same job but **model-tiers** the workers (Sonnet, not Opus) and adds adversarial
+> verification. It's deliberately named `deep-dive` so it never collides with the built-in.
+> A same-named shadow doesn't work (the built-in always wins name resolution — tested), so a
+> distinct name is the clean handle. The `workflow-model-guard` plugin still guards accidental
+> built-in invocations.
 
 ## Install
 
 ```
 /plugin marketplace add jasonm4130/claude-skills
-/plugin install deep-research@claude-skills
+/plugin install deep-dive@claude-skills
 ```
 
 ## Use
 
-Trigger phrases: "deep research", "research X", "what's the state of Y", "compare approaches for Z".
+Trigger phrases: "deep research", "research X", "what's the state of Y", "compare approaches for Z" — or invoke it directly as `/deep-dive`.
 
 For one-shot factual questions ("what does this return", "syntax for X"), the skill triages out and answers directly — it won't burn 4 parallel agents on a single lookup.
 

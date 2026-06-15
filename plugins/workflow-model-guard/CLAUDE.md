@@ -2,10 +2,12 @@
 
 ## What this is
 
-A single `PreToolUse` hook (matcher `Workflow`) that denies a high-fan-out Workflow
-call when the script sets no per-agent `model:` override — so worker agents don't
-silently all default to the main-loop model (Opus 4.8) and burn usage limits. The deny
-reason is fed back to Claude, which revises the script to tier its workers and re-runs.
+A single `PreToolUse` hook (matcher `Workflow`) that stops a high-fan-out Workflow run
+from silently defaulting every worker agent to the main-loop model (Opus 4.8). For a
+script it can read — inline `script` or one read from `scriptPath` — it **denies** when
+there's no per-agent `model:` override; the reason is fed back to Claude, which tiers the
+workers and re-runs. For a `name:`-invoked built-in it can't edit (e.g. the `deep-research`
+harness), it **asks the user** instead, since a deny would dead-end.
 
 ## Plugin structure
 
@@ -27,15 +29,38 @@ workflow-model-guard/
 ## How it works
 
 The hook is **stateless** — no JSONL log, no flag files, no external services. On each
-`Workflow` call it reads the inline `tool_input.script` and decides:
+`Workflow` call it first resolves a script to inspect:
 
-1. **Not a Workflow call, or no inline `script`** (a `scriptPath`/`name` re-run) → `exit 0`.
-2. **Bypass** — `script` contains `model:` (tiers already considered) OR the marker
+- **inline `tool_input.script`** → inspect it directly.
+- **`tool_input.scriptPath`** → read the file off disk and inspect it the same way. An
+  unreadable path → `exit 0`.
+- **`tool_input.name`** (no script to read or rewrite) → if the name is on `NAME_DENYLIST`
+  (known all-Opus built-ins like `deep-research`) emit an **`ask`** envelope so the *user*
+  decides; otherwise → `exit 0`.
+
+With a script in hand (inline or from `scriptPath`):
+
+1. **Bypass** — `script` contains `model:` (tiers already considered) OR the marker
    `model-guard:ack` (all-Opus intent asserted) → `exit 0`.
-3. **Scale gate** — `expensive = agentCount >= 4 OR parallel(/pipeline( OR
+2. **Scale gate** — `expensive = agentCount >= 4 OR parallel(/pipeline( OR
    (while/for/budget.remaining AND agentCount >= 1)`. If not expensive → `exit 0`.
-4. **Otherwise** → emit a `deny` `hookSpecificOutput` envelope; Claude gets the reason
-   and revises.
+3. **Otherwise** → emit a `deny` `hookSpecificOutput` envelope; Claude gets the reason and
+   revises the script (inline or the `scriptPath` file) + re-runs.
+
+**Why `ask` for `name:` but `deny` for scripts?** A `deny` is meant to make Claude
+*rewrite* the offending script — but a built-in/saved `name:` workflow isn't editable from
+the session, so a deny would dead-end (and there's nowhere to put a `model-guard:ack`
+marker). `ask` routes the call to the human, who can switch the session to Sonnet
+(`/model sonnet`) so the inherited model is cheap, or proceed on Opus deliberately. The
+session model is **not** available to a PreToolUse hook (not in stdin or env), so the hook
+can't auto-detect Opus-vs-Sonnet and gate on it — hence the denylist + `ask`.
+
+**Why not a cleaner auto-fix?** The tempting alternatives were researched and tested
+(2026-06-15); see README's "Alternatives & limitations" for the full write-up. Short version:
+shadowing the built-in with a same-named `.claude/workflows/deep-research.js` **does not work**
+(name resolution hits the built-in first; verified empirically), `CLAUDE_CODE_SUBAGENT_MODEL`
+is the only session lever but is global/blunt + startup-read, and there's no `--workflow-model`
+flag. The `ask` stays the least-bad surgical option.
 
 `agentCount` is a static lower bound (`/\bagent\s*\(/g`); loops and `.map()` over items
 mean the real spawn count is higher, so fan-out/loop presence is the stronger signal.

@@ -5,18 +5,28 @@
 // model (Opus 4.8) unless each agent() call sets opts.model. A big fan-out with no
 // model overrides silently runs every worker on Opus and burns usage limits.
 //
-// This hook denies such a call and feeds a reason back to Claude, which then revises
-// the script to give workers cheaper models — or adds an ack marker to assert that
-// all-Opus is intended. Scale-gated: small/cheap workflows pass silently so the hook
-// doesn't fight the tool's own "omit model by default" guidance.
+// Three invocation forms, three responses:
+//   - inline `script`  → inspect it; deny if it fans out untiered (Claude revises + re-runs).
+//   - `scriptPath`     → read the file and inspect the same way (Claude edits the file + re-runs).
+//   - `name`           → can't read or rewrite a built-in/saved workflow. If it's a known
+//                        all-Opus one (NAME_DENYLIST), ASK the user (deny-to-Claude can't be
+//                        resolved — Claude can't edit a built-in, so it would dead-end).
+// Scale-gated: small/cheap inline/scriptPath workflows pass silently so the hook doesn't
+// fight the tool's own "omit model by default" guidance.
 
 import process from "node:process";
+import { readFileSync } from "node:fs";
 import { readStdin, safeJsonParse, emitPermissionDecision } from "./lib.mjs";
+
+// Named workflows known to spawn every agent on the session model (no per-agent
+// model: override) that Claude cannot edit — e.g. the built-in `deep-research`
+// harness. We can't rewrite these, so we ASK the user rather than deny-to-Claude.
+const NAME_DENYLIST = ["deep-research"];
 
 /**
  * @typedef {object} PreToolUseInput
  * @property {string} [tool_name]
- * @property {{ script?: string }} [tool_input]
+ * @property {{ script?: string, scriptPath?: string, name?: string }} [tool_input]
  */
 
 const raw = await readStdin();
@@ -25,10 +35,36 @@ const payload = /** @type {PreToolUseInput | null} */ (safeJsonParse(raw));
 // Only guard the Workflow tool. Anything else → proceed normally.
 if (!payload || payload.tool_name !== "Workflow") process.exit(0);
 
-// Inline `script` is the only inspectable form. A scriptPath/name re-run has no
-// script to read, so allow it (named/saved workflows are presumed vetted).
-const script = payload.tool_input?.script;
-if (typeof script !== "string" || script.length === 0) process.exit(0);
+const input = payload.tool_input || {};
+
+// Resolve the inspectable script: inline first, then read scriptPath off disk.
+let script =
+  typeof input.script === "string" && input.script.length ? input.script : null;
+
+if (!script && typeof input.scriptPath === "string" && input.scriptPath.length) {
+  try {
+    script = readFileSync(input.scriptPath, "utf8");
+  } catch {
+    process.exit(0); // unreadable path → don't guess, allow.
+  }
+}
+
+// No inspectable script (a `name:` invocation). Ask the user only for known
+// all-Opus named workflows; leave every other named/saved workflow alone.
+if (!script) {
+  const name = typeof input.name === "string" ? input.name : "";
+  if (name && NAME_DENYLIST.includes(name)) {
+    emitPermissionDecision(
+      "ask",
+      `workflow-model-guard: the "${name}" workflow sets no per-agent model: override, so ` +
+        "every agent it spawns inherits this session's model. If you're on Opus 4.8 that's a " +
+        "large all-Opus fan-out that burns usage limits fast — and it can't be tiered from " +
+        "here (it's not an editable script). Cheaper: switch this session to Sonnet " +
+        "(/model sonnet) before running it, or run a model-tiered workflow instead. Proceed anyway?",
+    );
+  }
+  process.exit(0);
+}
 
 // Bypass 1: any `model:` means Claude already weighed tiers (even one override counts).
 // Bypass 2: explicit ack that all-Opus is intended — prevents an infinite deny loop.

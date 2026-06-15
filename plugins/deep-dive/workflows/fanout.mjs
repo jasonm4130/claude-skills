@@ -1,11 +1,11 @@
 // @ts-check
-// Deep-research fan-out + tiered verification. Self-contained Workflow script
+// Deep-dive fan-out + tiered verification. Self-contained Workflow script
 // (the runtime is a sealed sandbox: no imports, body wrapped in a function).
 // Pure helpers live between the PURE markers so fanout.test.mjs can extract them.
 export const meta = {
-  name: "deep-research-fanout",
+  name: "deep-dive-fanout",
   description:
-    "Args-driven deep-research fan-out: two-wave research with factored tier-1 verification and uncertainty-gated tier-2 escalation; returns schema-validated reports + verification + meta.",
+    "Args-driven deep-dive fan-out: two-wave research with factored tier-1 verification and uncertainty-gated tier-2 escalation; returns schema-validated reports + verification + meta.",
   phases: [
     { title: "Research", detail: "wave-1 + conditional wave-2 gather, per-angle Sonnet workers" },
     { title: "Verify", detail: "factored verifier per angle, blind to draft" },
