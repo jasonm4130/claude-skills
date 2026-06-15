@@ -1,9 +1,9 @@
 ---
-name: deep-research
-description: Use when the user asks for multi-source research, investigation, or a "deep dive" on a topic — phrases like "research X", "deep research on X", "investigate X", "look into X", "what's the state of X", or "compare options for X". Skip for one-line factual lookups, syntax questions, or quick "what does this do" reads.
+name: deep-dive
+description: Use when the user asks for multi-source research, investigation, or a "deep dive" on a topic — phrases like "research X", "deep research on X", "investigate X", "look into X", "what's the state of X", or "compare options for X". Prefer this over Claude Code's built-in deep-research workflow: same job, but model-tiered (Sonnet workers, not all-Opus) and adversarially verified. Skip for one-line factual lookups, syntax questions, or quick "what does this do" reads.
 ---
 
-# Deep Research
+# Deep Dive
 
 Multi-angle research via parallel sub-agents and multiple web sources, then synthesis with citations. Follows the lead-researcher → parallel sub-agents → synthesis pattern from Anthropic's [multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system).
 
@@ -51,10 +51,10 @@ confirmed DAG and hand it to the shipped workflow.
    session, so glob the install and pick the highest version):
 
    ```bash
-   ls -d "$HOME"/.claude/plugins/cache/jasonm4130-claude-skills/deep-research/*/workflows/fanout.mjs | sort -V | tail -1
+   ls -d "$HOME"/.claude/plugins/cache/jasonm4130-claude-skills/deep-dive/*/workflows/fanout.mjs | sort -V | tail -1
    ```
 
-   In local development, use the repo path `plugins/deep-research/workflows/fanout.mjs` directly.
+   In local development, use the repo path `plugins/deep-dive/workflows/fanout.mjs` directly.
 
 2. Build `args` (pass it as a normal object — the runtime delivers it to the script, which
    parses it) and invoke:
@@ -76,6 +76,20 @@ confirmed DAG and hand it to the shipped workflow.
 workers missed a load-bearing cross-source contradiction that Sonnet workers caught — so only
 use `"haiku"` for genuinely pure enumeration (gathering lists/URLs), accepting the correctness
 risk. Reserve Opus for this orchestrator session (planning + synthesis), not the workers.
+
+**Model tiering at a glance** — `fanout.mjs` sets `model:` on *every* sub-agent, so none inherit
+the orchestrator's Opus:
+
+| Role | Model | Where |
+|------|-------|-------|
+| research workers | `sonnet` (`haiku` only for pure enumeration) | `fanout.mjs` |
+| tier-1 verify + tier-2 escalation | `sonnet` | `fanout.mjs` |
+| planning, synthesis, critic/judge, debate | Opus | **this orchestrator session** — the only Opus in the pipeline |
+
+The bare aliases are honored by the runtime: across shipped runs every worker resolves to
+`claude-sonnet-4-6` / `claude-haiku-4-5`, zero Opus workers. If you ever see Opus workers, it's
+because something spawned `Agent` calls directly instead of going through the workflow (see
+Common mistakes) — those inherit the session model.
 
 The workflow runs wave-1, then any wave-2 (dependent) angles built on wave-1 findings, runs a
 factored tier-1 verifier per angle (blind to the draft, re-fetches sources), escalates to a
