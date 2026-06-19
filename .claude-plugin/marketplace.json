@@ -67,6 +67,18 @@
       "license": "MIT",
       "keywords": ["workflow", "model-selection", "cost", "hooks"],
       "category": "productivity"
+    },
+    {
+      "name": "visual-plan",
+      "source": "./plugins/visual-plan",
+      "description": "Writes a durable, committed Markdown ADR/plan as the source-of-truth record, and — only when the content needs visuals markdown can't express (wireframes, annotated split-diffs, before/after columns) — also emits a self-contained rich plan.html to /tmp. Markdown canonical, HTML disposable; no backend.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": ["visual-plan", "adr", "visual-recap", "diagram", "local"],
+      "category": "productivity"
     }
   ]
 }

@@ -1,0 +1,438 @@
+/* ============================================================================
+   visual-plan — plan.css
+   The "renderer" for the on-demand rich HTML view. Inlined into a <style> block
+   in the generated plan.html / recap.html (never linked — the HTML must be a
+   single self-contained file).
+
+   This file is the CANONICAL CLASS CONTRACT. references/blocks.md and any sample
+   HTML may only use classes/tokens defined here. Add a class here first, then
+   document it in blocks.md. Light, neutral, print-friendly; no dependencies.
+   ========================================================================== */
+
+:root {
+  /* shared document tokens */
+  --doc-bg:        #f6f7f9;
+  --doc-surface:   #ffffff;
+  --doc-text:      #1c2024;
+  --doc-muted:     #6b7280;
+  --doc-border:    #d7dbe0;
+  --doc-accent:    #2563eb;
+  --doc-add-bg:    #e6f4ea;
+  --doc-add-text:  #1a7f37;
+  --doc-del-bg:    #fce8e8;
+  --doc-del-text:  #b3261e;
+  --doc-mono:      ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --doc-sans:      system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --doc-radius:    10px;
+  --doc-gap:       16px;
+
+  /* wireframe system tokens — kept separate so wireframes read as "sketch" */
+  --wf-bg:          #fbfbfc;
+  --wf-surface:     #ffffff;
+  --wf-border:      #c4c9d0;
+  --wf-text:        #2a2f36;
+  --wf-muted:       #9aa1ab;
+  --wf-primary:     #2563eb;
+  --wf-primary-text:#ffffff;
+  --wf-radius:      8px;
+  --wf-gap:         12px;
+  --wf-font:        var(--doc-sans);
+}
+
+/* ---- page chrome ---------------------------------------------------------- */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 40px 20px;
+  background: var(--doc-bg);
+  color: var(--doc-text);
+  font-family: var(--doc-sans);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.plan {
+  max-width: 920px;
+  margin: 0 auto;
+  background: var(--doc-surface);
+  border: 1px solid var(--doc-border);
+  border-radius: var(--doc-radius);
+  padding: 36px 40px;
+}
+
+.plan h1 { font-size: 1.7rem; margin: 0 0 4px; }
+.plan h2 { font-size: 1.25rem; margin: 32px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--doc-border); }
+.plan h3 { font-size: 1.05rem; margin: 22px 0 8px; }
+.plan p  { margin: 10px 0; }
+.plan a  { color: var(--doc-accent); text-decoration: none; }
+.plan a:hover { text-decoration: underline; }
+
+.plan code {
+  font-family: var(--doc-mono);
+  font-size: 0.86em;
+  background: var(--doc-bg);
+  border: 1px solid var(--doc-border);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+.plan pre {
+  font-family: var(--doc-mono);
+  font-size: 0.84rem;
+  background: #0f1115;
+  color: #e6e9ef;
+  border-radius: var(--doc-radius);
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+.plan pre code { background: none; border: none; padding: 0; color: inherit; }
+
+/* meta line under the title (status · date · etc.) */
+.meta { color: var(--doc-muted); font-size: 0.9rem; margin: 0 0 8px; }
+
+/* ---- callouts ------------------------------------------------------------- */
+
+.callout {
+  border-left: 4px solid var(--doc-accent);
+  background: var(--doc-bg);
+  border-radius: 0 var(--doc-radius) var(--doc-radius) 0;
+  padding: 12px 16px;
+  margin: 16px 0;
+}
+.callout.warn { border-left-color: var(--doc-del-text); }
+.callout.note { border-left-color: var(--doc-muted); }
+.callout p:first-child { margin-top: 0; }
+.callout p:last-child  { margin-bottom: 0; }
+
+/* ============================================================================
+   WIREFRAME SYSTEM  —  content-only UI sketches inside a surface preset.
+   <div class="wf browser"> … .wf-card / .wf-pill / button.primary … </div>
+   ========================================================================== */
+
+.wf {
+  font-family: var(--wf-font);
+  color: var(--wf-text);
+  background: var(--wf-bg);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius);
+  padding: var(--wf-gap);
+  margin: 18px 0;
+}
+
+/* surface presets give the sketch a recognizable frame via ::before chrome */
+.wf.browser { padding-top: 0; }
+.wf.browser::before {
+  content: "●  ●  ●        ⌗ example.com";
+  display: block;
+  font-family: var(--doc-mono);
+  font-size: 0.72rem;
+  letter-spacing: 1px;
+  color: var(--wf-muted);
+  background: var(--wf-surface);
+  border-bottom: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius) var(--wf-radius) 0 0;
+  margin: 0 calc(-1 * var(--wf-gap)) var(--wf-gap);
+  padding: 8px 12px;
+}
+
+.wf.desktop { padding-top: 0; }
+.wf.desktop::before {
+  content: "Application";
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--wf-muted);
+  background: var(--wf-surface);
+  border-bottom: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius) var(--wf-radius) 0 0;
+  margin: 0 calc(-1 * var(--wf-gap)) var(--wf-gap);
+  padding: 8px 12px;
+}
+
+.wf.mobile {
+  max-width: 320px;
+  margin-left: auto;
+  margin-right: auto;
+  border-width: 2px;
+  border-radius: 22px;
+  padding-top: 22px;
+  position: relative;
+}
+.wf.mobile::before {
+  content: "";
+  position: absolute;
+  top: 8px; left: 50%;
+  transform: translateX(-50%);
+  width: 84px; height: 5px;
+  border-radius: 3px;
+  background: var(--wf-border);
+}
+
+.wf.popover {
+  max-width: 280px;
+  box-shadow: 0 8px 24px rgba(15, 17, 21, 0.16);
+  border-radius: 12px;
+}
+
+.wf.panel {
+  max-width: 340px;
+  margin-left: auto;
+  border-radius: var(--wf-radius) 0 0 var(--wf-radius);
+  border-right: none;
+}
+
+/* wireframe content primitives */
+.wf-card {
+  background: var(--wf-surface);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius);
+  padding: 12px 14px;
+  margin: var(--wf-gap) 0;
+}
+.wf-card:first-child { margin-top: 0; }
+.wf-card:last-child  { margin-bottom: 0; }
+
+.wf-pill {
+  display: inline-block;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  background: var(--wf-bg);
+  border: 1px solid var(--wf-border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  margin: 2px 4px 2px 0;
+}
+
+.wf-muted { color: var(--wf-muted); }
+
+.wf-row { display: flex; gap: var(--wf-gap); align-items: center; flex-wrap: wrap; }
+.wf-col { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+
+.wf button,
+.wf .button {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--wf-text);
+  background: var(--wf-surface);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius);
+  padding: 6px 14px;
+  cursor: default;
+}
+.wf button.primary,
+.wf .button.primary {
+  color: var(--wf-primary-text);
+  background: var(--wf-primary);
+  border-color: var(--wf-primary);
+}
+
+/* ============================================================================
+   ANNOTATED SPLIT-DIFF  —  two columns, before | after, with line tints.
+   <div class="diff"> <div class="diff-pane before">…</div>
+                      <div class="diff-pane after">…</div> </div>
+   ========================================================================== */
+
+.diff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--doc-border);
+  border: 1px solid var(--doc-border);
+  border-radius: var(--doc-radius);
+  overflow: hidden;
+  margin: 18px 0;
+}
+.diff-pane {
+  background: var(--doc-surface);
+  font-family: var(--doc-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  padding: 0;
+}
+.diff-pane::before {
+  display: block;
+  font-family: var(--doc-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--doc-muted);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--doc-border);
+}
+.diff-pane.before::before { content: "Before"; }
+.diff-pane.after::before  { content: "After"; }
+
+/* line classes — apply to a block inside a pane */
+.diff-add, .diff-del, .diff-ctx { display: block; padding: 1px 12px; white-space: pre-wrap; }
+.diff-add { background: var(--doc-add-bg); color: var(--doc-add-text); }
+.diff-del { background: var(--doc-del-bg); color: var(--doc-del-text); }
+.diff-ctx { color: var(--doc-text); }
+
+/* an inline annotation tying a change to a reason */
+.diff-note {
+  grid-column: 1 / -1;
+  background: var(--doc-bg);
+  border-top: 1px solid var(--doc-border);
+  font-family: var(--doc-sans);
+  font-size: 0.82rem;
+  color: var(--doc-muted);
+  padding: 8px 12px;
+}
+
+/* ============================================================================
+   BEFORE / AFTER COLUMNS  —  labeled, responsive two-up for prose or sketches.
+   <div class="columns"> <div class="col"><div class="col-label">Before</div>…</div>
+                         <div class="col"><div class="col-label">After</div>…</div> </div>
+   ========================================================================== */
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--doc-gap);
+  margin: 18px 0;
+}
+.col {
+  background: var(--doc-surface);
+  border: 1px solid var(--doc-border);
+  border-radius: var(--doc-radius);
+  padding: 14px 16px;
+}
+.col-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--doc-muted);
+  margin-bottom: 8px;
+}
+@media (max-width: 640px) {
+  .columns, .diff { grid-template-columns: 1fr; }
+}
+
+/* ============================================================================
+   CSS-ONLY TABS  —  no JavaScript. Radios drive panel visibility via :checked.
+   DOM order: all <input.tab-toggle> + <label.tab-label> pairs, then all
+   <div.tab-panel> in the same order. Supports up to 8 tabs (recap budget).
+   ========================================================================== */
+
+.tabs {
+  border: 1px solid var(--doc-border);
+  border-radius: var(--doc-radius);
+  overflow: hidden;
+  margin: 18px 0;
+}
+.tab-toggle { position: absolute; opacity: 0; pointer-events: none; }
+
+.tab-label {
+  display: inline-block;
+  font-size: 0.85rem;
+  color: var(--doc-muted);
+  background: var(--doc-bg);
+  border-right: 1px solid var(--doc-border);
+  border-bottom: 1px solid var(--doc-border);
+  padding: 9px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.tab-label:hover { color: var(--doc-text); }
+
+.tab-panel { display: none; padding: 16px; }
+.tab-panel pre { margin: 0; }
+
+/* nth-of-type pairs the nth radio with the nth label and nth panel.
+   inputs / labels / divs are each counted within their own element type. */
+.tab-toggle:nth-of-type(1):checked ~ .tab-label:nth-of-type(1),
+.tab-toggle:nth-of-type(2):checked ~ .tab-label:nth-of-type(2),
+.tab-toggle:nth-of-type(3):checked ~ .tab-label:nth-of-type(3),
+.tab-toggle:nth-of-type(4):checked ~ .tab-label:nth-of-type(4),
+.tab-toggle:nth-of-type(5):checked ~ .tab-label:nth-of-type(5),
+.tab-toggle:nth-of-type(6):checked ~ .tab-label:nth-of-type(6),
+.tab-toggle:nth-of-type(7):checked ~ .tab-label:nth-of-type(7),
+.tab-toggle:nth-of-type(8):checked ~ .tab-label:nth-of-type(8) {
+  color: var(--doc-text);
+  background: var(--doc-surface);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--doc-accent);
+}
+
+.tab-toggle:nth-of-type(1):checked ~ .tab-panel:nth-of-type(1),
+.tab-toggle:nth-of-type(2):checked ~ .tab-panel:nth-of-type(2),
+.tab-toggle:nth-of-type(3):checked ~ .tab-panel:nth-of-type(3),
+.tab-toggle:nth-of-type(4):checked ~ .tab-panel:nth-of-type(4),
+.tab-toggle:nth-of-type(5):checked ~ .tab-panel:nth-of-type(5),
+.tab-toggle:nth-of-type(6):checked ~ .tab-panel:nth-of-type(6),
+.tab-toggle:nth-of-type(7):checked ~ .tab-panel:nth-of-type(7),
+.tab-toggle:nth-of-type(8):checked ~ .tab-panel:nth-of-type(8) {
+  display: block;
+}
+/* keyboard focus visibility — adjacent sibling so only the PAIRED label is
+   outlined (a bare `~` would outline every following label). Each label
+   immediately follows its own radio in DOM order. */
+.tab-toggle:focus-visible + .tab-label { outline: 2px solid var(--doc-accent); outline-offset: -2px; }
+
+/* ============================================================================
+   ANNOTATED CODE  —  code lines with side notes.
+   <div class="annotated-code"> <div class="ac-line">code<span class="ac-note">why</span></div> </div>
+   ========================================================================== */
+
+.annotated-code {
+  font-family: var(--doc-mono);
+  font-size: 0.82rem;
+  background: #0f1115;
+  color: #e6e9ef;
+  border-radius: var(--doc-radius);
+  padding: 12px 0;
+  margin: 18px 0;
+  overflow-x: auto;
+}
+.ac-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 1px 16px;
+  white-space: pre;
+}
+.ac-note {
+  font-family: var(--doc-sans);
+  font-size: 0.75rem;
+  color: #aab2c0;
+  white-space: normal;
+  text-align: right;
+  flex-shrink: 0;
+  max-width: 40%;
+}
+
+/* ============================================================================
+   MERMAID  —  source stays readable if the CDN is unreachable (offline fallback);
+   once the pinned module renders, it replaces the <pre> content with an <svg>.
+   NOTE: `pre.mermaid` and `.plan pre` (dark code block) share specificity;
+   this block must stay AFTER `.plan pre` so source order gives mermaid the
+   light background. Do not raise `.plan pre` specificity above this.
+   ========================================================================== */
+
+pre.mermaid {
+  background: var(--doc-surface);
+  color: var(--doc-text);
+  border: 1px dashed var(--doc-border);
+  border-radius: var(--doc-radius);
+  font-family: var(--doc-mono);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  padding: 16px;
+  margin: 18px 0;
+  overflow-x: auto;
+  text-align: left;
+}
+/* after mermaid renders, center the produced svg and drop the dashed sketch border */
+pre.mermaid[data-processed="true"] { border-style: solid; text-align: center; }
+pre.mermaid svg { max-width: 100%; height: auto; }
+
+/* ---- print ---------------------------------------------------------------- */
+
+@media print {
+  body { background: #fff; padding: 0; }
+  .plan { border: none; max-width: none; padding: 0; }
+  .tab-panel { display: block !important; } /* print shows every tab */
+}
