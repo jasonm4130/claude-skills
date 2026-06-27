@@ -19,8 +19,8 @@ intent → GROUND → ADR (you approve) → SDD loop → you ratify
 **Stay thin.** This skill is a four-phase orchestrator — prose plus the two
 embedded blocks below. The determinism lives in `sdd.mjs`, not here. One ADR doc,
 not a multi-file apparatus. For exploratory "not sure what I want yet" work use
-`brainstorming` first; for visual planning/recaps use `visual-plan` (this skill
-borrows its ADR template only).
+`brainstorming` first; for visual planning/recaps use `visual-plan` (which keeps
+the visual niche — `adr` carries its own build-oriented template).
 
 ## Phase 1 — Ground (scaled)
 
