@@ -21,6 +21,27 @@ Grep the branch diff for `ponytail:` markers introduced on this branch. List eac
 in `ponytailDebt[]` with its ceiling and upgrade trigger. Flag any marker that
 names **no upgrade trigger** — those are the ones that silently rot.
 
+## ADR success criteria (done-oracle — only when the run is ADR-driven)
+
+When the dispatch includes ADR **Success criteria**, judge the whole branch
+against them — this is the done-oracle the human ratifies.
+
+- Each criterion is either **oracle-backed** (it names a test, CI signal, or a
+  concrete assertion) or **[checker]** (no oracle — a statement only a reader can
+  judge). For oracle-backed criteria, confirm the test/assertion is present and
+  satisfied on the branch; **do not re-run** suites the per-task gates already ran.
+  For **[checker]** criteria, judge them against the diff.
+- One **holistic** pass: do these changes add up to the stated intent?
+- Any criterion you judge **unmet** also goes in `findings[]` so it gets fixed —
+  the structured `criteria[]` is for the human's ratification; the finding is what
+  drives the fix.
+- Record each in `criteria[]` as `{criterion, kind, verdict, evidence}` (kind:
+  `oracle`|`checker`; verdict: `met`|`unmet`|`cannot-verify`) and the holistic
+  judgment in `holistic`.
+
+When the dispatch carries no ADR criteria, omit `criteria[]`/`holistic` and review
+exactly as below.
+
 ## Verdict
 
 Decide `verdict`: `"approve"` (ready to merge) or `"changes"` (findings must be

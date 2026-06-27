@@ -41,3 +41,11 @@ test("final reviewer prompt is whole-branch and harvests ponytail debt", () => {
   assert.match(s, /ponytail:/);
   assert.match(s, /approve|changes/);
 });
+
+test("final reviewer documents the ADR success-criteria done-oracle", () => {
+  const s = read("final-reviewer.md");
+  assert.match(s, /success criteria/i);
+  assert.match(s, /done-oracle|done oracle/i);
+  assert.match(s, /holistic/i);
+  assert.match(s, /do not re-run|don't re-run|do not rerun/i);
+});
