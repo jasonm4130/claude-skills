@@ -1,0 +1,10 @@
+{
+  "name": "adr",
+  "description": "Turns an intent into a grounded, cited, build-ready ADR (docs/adr/YYYY-MM-DD-<slug>.md) — every claim cited, load-bearing decisions surfaced to the human — then hands it to the subagent-driven-development loop. Front-end for adr → sdd.",
+  "version": "0.1.0",
+  "author": { "name": "Jason Matthew", "email": "jasonm4130@gmail.com" },
+  "homepage": "https://github.com/jasonm4130/claude-skills",
+  "repository": "https://github.com/jasonm4130/claude-skills",
+  "license": "MIT",
+  "keywords": ["adr", "architecture-decision-record", "grounding", "subagent-driven-development", "sdd"]
+}
