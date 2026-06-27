@@ -37,6 +37,24 @@ test("validateArgs rejects missing fields", () => {
   );
 });
 
+test("validateArgs accepts adrPath as an alias for planPath", () => {
+  const { planPath: _drop, ...rest } = okArgs();
+  const c = H.validateArgs({ ...rest, adrPath: "docs/adr/2026-06-27-x.md" });
+  assert.equal(c.planPath, "docs/adr/2026-06-27-x.md");
+});
+
+test("validateArgs still requires a path when neither planPath nor adrPath is given", () => {
+  assert.throws(() => H.validateArgs({}), /planPath is required/);
+  const { planPath: _drop, ...rest } = okArgs();
+  assert.throws(() => H.validateArgs(rest), /planPath is required/);
+});
+
+test("validateArgs threads successCriteria, defaulting to empty string", () => {
+  assert.equal(H.validateArgs(okArgs()).successCriteria, "");
+  const c = H.validateArgs({ ...okArgs(), successCriteria: "GET /x returns 200 with shape Y" });
+  assert.equal(c.successCriteria, "GET /x returns 200 with shape Y");
+});
+
 test("sequenceTasks sorts by n and rejects forward deps", () => {
   assert.deepEqual(
     H.sequenceTasks([{ n: 2, title: "b", deps: [1] }, { n: 1, title: "a", deps: [] }]).map((t) => t.n),

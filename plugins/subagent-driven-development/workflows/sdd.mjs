@@ -21,7 +21,14 @@ function validateArgs(input) {
     try { input = JSON.parse(input); } catch { throw new Error("args string is not valid JSON"); }
   }
   if (!input || typeof input !== "object") throw new Error("args must be an object");
-  for (const k of ["planPath", "workdir", "pluginDir", "mergeBase"]) {
+  // ADR adapter: adrPath is an alias for planPath — the file task-brief reads.
+  // The `# Task N` planPath flow is unchanged; an ADR supplies its tasks via its
+  // `### Task N` Decomposition section, read by the same task-brief script.
+  const planPath = input.planPath || input.adrPath;
+  if (typeof planPath !== "string" || !planPath) {
+    throw new Error("args.planPath is required (or pass adrPath)");
+  }
+  for (const k of ["workdir", "pluginDir", "mergeBase"]) {
     if (typeof input[k] !== "string" || !input[k]) throw new Error(`args.${k} is required`);
   }
   if (!Array.isArray(input.tasks) || input.tasks.length === 0)
@@ -42,8 +49,9 @@ function validateArgs(input) {
     escalateAttempts: Number.isInteger(li.escalateAttempts) ? li.escalateAttempts : 2,
   };
   return {
-    planPath: input.planPath, workdir: input.workdir, pluginDir: input.pluginDir,
+    planPath, workdir: input.workdir, pluginDir: input.pluginDir,
     globalConstraints: typeof input.globalConstraints === "string" ? input.globalConstraints : "",
+    successCriteria: typeof input.successCriteria === "string" ? input.successCriteria : "",
     mergeBase: input.mergeBase, tasks, limits,
   };
 }
