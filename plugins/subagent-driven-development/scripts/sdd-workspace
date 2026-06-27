@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Resolve/ensure the working-tree dir for SDD short-lived artifacts: task
+# briefs, implementer reports, review packages, progress ledger. Lives in the
+# working tree (not .git/, which Claude Code protects from agent writes). A
+# self-ignoring .gitignore keeps it out of git status and commits.
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+dir="$root/.sdd"
+mkdir -p "$dir"
+printf '*\n' > "$dir/.gitignore"
+cd "$dir" && pwd
