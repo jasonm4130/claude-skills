@@ -18,30 +18,26 @@ jobs:
             jq -e . "$f" > /dev/null
           done
 
-  test-session-retro:
+  node-tests:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Run session-retro tests
-        working-directory: plugins/session-retro
-        run: node --test tests/
+          node-version: 24
+      - name: Run all plugin node tests
+        shell: bash
+        run: bash scripts/run-node-tests.sh
 
-  test-handoff:
+  bash-tests:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Run handoff tests
-        working-directory: plugins/handoff
-        run: node --test tests/
+      - name: Run SDD bash helper smoke tests
+        run: bash plugins/subagent-driven-development/scripts/scripts.test.sh

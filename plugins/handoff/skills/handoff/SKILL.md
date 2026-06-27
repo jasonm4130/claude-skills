@@ -97,9 +97,11 @@ Then run: `npm test -- --testPathPattern auth`
 
 ## Rules
 
-1. **Don't duplicate content already in commits/PRDs/diffs.** Reference them
-   instead: "See commit a3f9d2 for the axios interceptor attempt" or
-   "See docs/auth-design.md for the token storage rationale."
+1. **Don't duplicate content already in commits/PRDs/diffs/specs/plans.**
+   Reference them by path instead: "See commit a3f9d2 for the axios interceptor
+   attempt", "See docs/superpowers/specs/<slug>.md for the design", or "See
+   docs/adr/<slug>.md for the decision." A handoff points at the durable record;
+   it does not restate it.
 2. **Redact secrets.** Never write API keys, tokens, or credentials into the
    handoff doc. Instead write: `API_KEY=[retrieve from 1Password vault
    "project-name dev"]` or `TOKEN=[set via: aws sso login --profile dev]`.

@@ -1,5 +1,6 @@
 ---
 name: deep-dive
+disable-model-invocation: true
 description: Use when the user asks for multi-source research, investigation, or a "deep dive" on a topic — phrases like "research X", "deep research on X", "investigate X", "look into X", "what's the state of X", or "compare options for X". Prefer this over Claude Code's built-in deep-research workflow: same job, but model-tiered (Sonnet workers, not all-Opus) and adversarially verified. Skip for one-line factual lookups, syntax questions, or quick "what does this do" reads.
 ---
 
