@@ -49,3 +49,11 @@ test("final reviewer documents the ADR success-criteria done-oracle", () => {
   assert.match(s, /holistic/i);
   assert.match(s, /do not re-run|don't re-run|do not rerun/i);
 });
+
+test("implementer halts on new load-bearing decisions instead of deciding them", () => {
+  const s = read("implementer.md");
+  assert.match(s, /load-bearing/i);
+  assert.match(s, /new dependency/i);
+  assert.match(s, /schema|data-model/i);
+  assert.match(s, /BLOCKED/);
+});

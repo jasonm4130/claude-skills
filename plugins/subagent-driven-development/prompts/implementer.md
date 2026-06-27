@@ -69,6 +69,14 @@ It is always OK to stop. Report `BLOCKED` (cannot complete) or `NEEDS_CONTEXT`
 than guessing. A more capable model may be re-assigned to a blocker. Bad work is
 worse than no work.
 
+**New load-bearing decisions are not yours to make.** If implementing this task
+forces a decision the brief and global constraints did not already settle — a
+**new dependency**, a **public-API change**, or a **schema / data-model change** —
+do NOT pick one and proceed. Report `BLOCKED`, naming the decision and the options
+you see. The controller (with the human) decides it, records it, and resumes. This
+is the same halt path as any blocker: a load-bearing fork silently decided is the
+expensive kind of wrong.
+
 ## 8. Self-review, then commit
 
 Before reporting: did I implement everything in the brief and nothing extra? Do
