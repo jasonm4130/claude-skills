@@ -21,7 +21,14 @@ function validateArgs(input) {
     try { input = JSON.parse(input); } catch { throw new Error("args string is not valid JSON"); }
   }
   if (!input || typeof input !== "object") throw new Error("args must be an object");
-  for (const k of ["planPath", "workdir", "pluginDir", "mergeBase"]) {
+  // ADR adapter: adrPath is an alias for planPath — the file task-brief reads.
+  // The `# Task N` planPath flow is unchanged; an ADR supplies its tasks via its
+  // `### Task N` Decomposition section, read by the same task-brief script.
+  const planPath = input.planPath || input.adrPath;
+  if (typeof planPath !== "string" || !planPath) {
+    throw new Error("args.planPath is required (or pass adrPath)");
+  }
+  for (const k of ["workdir", "pluginDir", "mergeBase"]) {
     if (typeof input[k] !== "string" || !input[k]) throw new Error(`args.${k} is required`);
   }
   if (!Array.isArray(input.tasks) || input.tasks.length === 0)
@@ -42,8 +49,9 @@ function validateArgs(input) {
     escalateAttempts: Number.isInteger(li.escalateAttempts) ? li.escalateAttempts : 2,
   };
   return {
-    planPath: input.planPath, workdir: input.workdir, pluginDir: input.pluginDir,
+    planPath, workdir: input.workdir, pluginDir: input.pluginDir,
     globalConstraints: typeof input.globalConstraints === "string" ? input.globalConstraints : "",
+    successCriteria: typeof input.successCriteria === "string" ? input.successCriteria : "",
     mergeBase: input.mergeBase, tasks, limits,
   };
 }
@@ -153,6 +161,20 @@ const FINAL_SCHEMA = {
       },
     },
     ponytailDebt: { type: "array", items: { type: "string" } },
+    criteria: {
+      type: "array",
+      items: {
+        type: "object", additionalProperties: false,
+        required: ["criterion", "kind", "verdict"],
+        properties: {
+          criterion: { type: "string" },
+          kind: { type: "string", enum: ["oracle", "checker"] },
+          verdict: { type: "string", enum: ["met", "unmet", "cannot-verify"] },
+          evidence: { type: "string" },
+        },
+      },
+    },
+    holistic: { type: "string" },
   },
 };
 
@@ -194,8 +216,12 @@ Return per schema: headSha (after committing), testSummary, fixed[].`;
 Read your full operating instructions first: ${P}/prompts/final-reviewer.md — follow them exactly.
 Build the branch diff: ${P}/scripts/review-package ${mergeBase} ${head}
 Read the package. Also list any new \`ponytail:\` markers (grep the diff for 'ponytail:').
-Global constraints:\n${gc}
-Return per schema: verdict ("approve"/"changes"), findings[{severity,file,line,what}], ponytailDebt[].`;
+Global constraints:\n${gc}${
+      cfg.successCriteria
+        ? `\n\nADR SUCCESS CRITERIA — judge the branch against these (the done-oracle the human ratifies):\n${cfg.successCriteria}\nFor each: set kind ("oracle" if it names a test/CI/assertion, else "checker"); set verdict ("met"/"unmet"/"cannot-verify"). Judge "checker" criteria against the diff; for "oracle" criteria confirm the test/assertion is present and satisfied but do NOT re-run suites. Add any UNMET criterion to findings[] so it gets fixed. Then one holistic judgment in "holistic": do these changes add up to the stated intent? Return criteria[] and holistic.`
+        : ""
+    }
+Return per schema: verdict ("approve"/"changes"), findings[{severity,file,line,what}], ponytailDebt[]${cfg.successCriteria ? ", criteria[], holistic" : ""}.`;
 
   const finalFixPrompt = (findings) =>
     `Fix ALL of these whole-branch review findings in one commit, in ${cfg.workdir}. Read ${P}/prompts/fixer.md and follow it.

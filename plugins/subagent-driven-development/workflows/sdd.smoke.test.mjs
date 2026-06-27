@@ -17,6 +17,11 @@ test("every agent() call sets an explicit model", () => {
   for (const c of calls) assert.match(c, /model:/, `agent() without model: ${c.slice(0, 60)}`);
 });
 
+test("finalPrompt threads ADR success criteria into the whole-branch review", () => {
+  assert.match(src, /successCriteria/);
+  assert.match(src, /holistic/);
+});
+
 // A Workflow script has a top-level `return` (the runtime wraps the body in a
 // function), so it cannot be import()ed as a normal ES module — validate meta
 // by source inspection instead.

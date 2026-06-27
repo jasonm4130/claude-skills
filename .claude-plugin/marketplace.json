@@ -89,6 +89,16 @@
       "license": "MIT",
       "keywords": ["subagent-driven-development", "sdd", "workflow", "code-review", "ponytail"],
       "category": "productivity"
+    },
+    {
+      "name": "adr",
+      "source": "./plugins/adr",
+      "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to the subagent-driven-development loop. Front-end for adr → sdd.",
+      "version": "0.1.0",
+      "author": { "name": "Jason Matthew" },
+      "license": "MIT",
+      "keywords": ["adr", "architecture-decision-record", "grounding", "subagent-driven-development", "sdd"],
+      "category": "productivity"
     }
   ]
 }

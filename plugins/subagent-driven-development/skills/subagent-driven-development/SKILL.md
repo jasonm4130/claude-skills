@@ -98,6 +98,14 @@ Workflow({ scriptPath: "<resolved sdd.mjs>", args: {
 Every agent the workflow dispatches gets an explicit `model:` (satisfies
 `workflow-model-guard`); none inherit your Opus session.
 
+### 6a. ADR-driven dispatch (optional)
+
+The `adr` skill drives this same Workflow from an ADR instead of a `# Task N`
+plan. It passes `adrPath` (an alias for `planPath` — the file `task-brief` reads,
+whose `### Task N` Decomposition supplies the tasks) and `successCriteria` (the
+ADR's Success-criteria block, judged at the whole-branch step as the done-oracle).
+Everything else — tiering, escalation, the per-task gate, finishing — is identical.
+
 ### 7. On return: present, adjudicate, finish
 The workflow returns `{ tasks, planConflicts, halted, finalReview, mergeBase,
 head, ledgerPath, meta }`.
