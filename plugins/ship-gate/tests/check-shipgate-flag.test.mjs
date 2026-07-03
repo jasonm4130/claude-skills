@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,8 +10,9 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const script = path.join(here, "..", "scripts", "check-shipgate-flag.mjs");
 
-test("consumes flag and emits agent-directed additionalContext", () => {
+test("consumes flag and emits agent-directed additionalContext", (t) => {
   const dataDir = mkdtempSync(path.join(tmpdir(), "shipgate-"));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
   const flag = path.join(dataDir, "shipgate-nudge-dev.flag");
   writeFileSync(flag, "2 commit(s) on 'feature-x' not pushed to upstream");
   const out = execSync(`echo '{"session_id":"dev"}' | node "${script}"`, {
@@ -25,8 +26,9 @@ test("consumes flag and emits agent-directed additionalContext", () => {
   assert.ok(!existsSync(flag), "flag consumed");
 });
 
-test("no flag → no output", () => {
+test("no flag → no output", (t) => {
   const dataDir = mkdtempSync(path.join(tmpdir(), "shipgate-"));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
   const out = execSync(`echo '{"session_id":"dev"}' | node "${script}"`, {
     env: { ...process.env, CLAUDE_PLUGIN_DATA: dataDir },
     encoding: "utf8",
