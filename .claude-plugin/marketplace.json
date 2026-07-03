@@ -57,6 +57,16 @@
       "category": "productivity"
     },
     {
+      "name": "ship-gate",
+      "source": "./plugins/ship-gate",
+      "description": "Stop-hook gate against trail-off: detects unpushed commits at turn end and injects an agent-directed nudge to review and finish the branch.",
+      "version": "0.1.0",
+      "author": { "name": "Jason Matthew" },
+      "license": "MIT",
+      "keywords": ["ship", "stop-hook", "code-review", "finishing"],
+      "category": "productivity"
+    },
+    {
       "name": "workflow-model-guard",
       "source": "./plugins/workflow-model-guard",
       "description": "PreToolUse hook that nudges Claude to tier models in high-fan-out Workflow scripts — denies a Workflow call that spawns many agents with no per-agent model: override.",
