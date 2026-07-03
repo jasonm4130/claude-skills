@@ -143,6 +143,11 @@ e.g. with the default 70% threshold: 70, 80, 90. Moving within a band (72% →
 previous band's nudge was already consumed. Below the threshold, no nudge
 fires regardless of band movement.
 
+Bands are computed relative to the configured threshold, not absolute
+deciles — so a non-decile `HANDOFF_THRESHOLD_PCT` (e.g. 75) still fires its
+first nudge as soon as context crosses 75%, then again at 85%, 95%, etc.,
+rather than waiting for the next absolute 10%-boundary.
+
 ## Troubleshooting
 
 **No nudge firing even though context is high:**

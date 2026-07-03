@@ -108,10 +108,14 @@ if (existsSync(lastPctFile)) {
   }
 }
 
-// Escalating nudges: fire on every 10%-band entry at/above the threshold
-// (70 → 80 → 90), not just the first threshold crossing.
-const band = Math.floor(currentPct / 10);
-const lastBand = Math.floor(lastPct / 10);
+// Escalating nudges: fire on every 10%-point band entered at/above the
+// threshold (threshold → threshold+10 → threshold+20 → ...), not just the
+// first threshold crossing. Bands are computed relative to the configured
+// threshold (not absolute deciles), so a non-decile threshold (e.g. 75) still
+// fires its first nudge as soon as pct crosses it, rather than waiting for
+// the next absolute decile boundary.
+const band = currentPct >= threshold ? Math.floor((currentPct - threshold) / 10) : -1;
+const lastBand = lastPct >= threshold ? Math.floor((lastPct - threshold) / 10) : -1;
 if (currentPct >= threshold && band > lastBand) {
   const flagFile = path.join(dataDir, `handoff-nudge-${sid}.flag`);
   writeFileSync(flagFile, `context at ${Math.trunc(currentPct)}% (threshold ${threshold}%)`);

@@ -202,6 +202,41 @@ test("band crossing: 81 -> 92 fires flag (enters 90-band)", async (t) => {
   assert.ok(existsSync(flagFile), "flag should fire entering the 90-band");
 });
 
+test("band crossing: non-decile threshold (75) fires at first crossing, not next decile", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const sid = "test-band-nondecile-75";
+  const flagFile = path.join(dir, `handoff-nudge-${sid}.flag`);
+
+  await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 72 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+    HANDOFF_THRESHOLD_PCT: "75",
+  });
+  assert.ok(!existsSync(flagFile), "setup: no flag below the 75 threshold");
+
+  const result = await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 76 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+    HANDOFF_THRESHOLD_PCT: "75",
+  });
+  assert.equal(result.code, 0);
+  assert.ok(existsSync(flagFile), "flag should fire at 76% crossing a 75% threshold, not wait for the 80-band");
+  rmSync(flagFile); // simulate consumption
+
+  const noRefire = await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 79 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+    HANDOFF_THRESHOLD_PCT: "75",
+  });
+  assert.equal(noRefire.code, 0);
+  assert.ok(!existsSync(flagFile), "flag should not re-fire within the same threshold-relative band (75-84)");
+
+  const nextBand = await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 86 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+    HANDOFF_THRESHOLD_PCT: "75",
+  });
+  assert.equal(nextBand.code, 0);
+  assert.ok(existsSync(flagFile), "flag should fire entering the next threshold-relative band (85+)");
+});
+
 test("band crossing: 40 -> 55 does not fire (below threshold)", async (t) => {
   const dir = mkTmp();
   t.after(() => rmSync(dir, { recursive: true, force: true }));

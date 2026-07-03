@@ -30,6 +30,29 @@ function mkRepo(branch) {
   return dir;
 }
 
+/**
+ * Repo on `branch` with a real upstream (a local bare "remote") tracked via
+ * `push -u`, then `aheadCommits` additional local commits left unpushed —
+ * exercises the headline `git rev-list --count @{upstream}..HEAD` path.
+ */
+function mkRepoWithUpstream(branch, aheadCommits) {
+  const bare = mkdtempSync(path.join(tmpdir(), "bare-"));
+  execFileSync("git", ["init", "-q", "--bare", bare]);
+
+  const dir = mkdtempSync(path.join(tmpdir(), "repo-"));
+  const g = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+  g(["init", "-q", "-b", branch]);
+  g(["config", "user.email", "t@t"]);
+  g(["config", "user.name", "t"]);
+  g(["commit", "--allow-empty", "-q", "-m", "init"]);
+  g(["remote", "add", "origin", bare]);
+  g(["push", "-q", "-u", "origin", branch]);
+  for (let i = 0; i < aheadCommits; i++) {
+    g(["commit", "--allow-empty", "-q", "-m", `ahead-${i}`]);
+  }
+  return { dir, bare };
+}
+
 test("non-main branch with no upstream → nudge flag written", () => {
   const repo = mkRepo("feature-x");
   const dataDir = runHook(repo, "s1");
@@ -63,6 +86,25 @@ test("same HEAD nudges once; new commit re-arms", () => {
   run(); // new HEAD → re-armed
   assert.ok(existsSync(flag));
   rmSync(repo, { recursive: true, force: true });
+});
+
+test("commits ahead of upstream → nudge flag with ahead-count message", () => {
+  const { dir, bare } = mkRepoWithUpstream("main", 2);
+  const dataDir = runHook(dir, "s5");
+  const flag = path.join(dataDir, "shipgate-nudge-s5.flag");
+  assert.ok(existsSync(flag), "flag should be written for unpushed commits ahead of upstream");
+  const content = readFileSync(flag, "utf8");
+  assert.match(content, /2 commit\(s\) on 'main' not pushed to upstream/);
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(bare, { recursive: true, force: true });
+});
+
+test("in sync with upstream (0 ahead) → silent", () => {
+  const { dir, bare } = mkRepoWithUpstream("main", 0);
+  const dataDir = runHook(dir, "s6");
+  assert.ok(!existsSync(path.join(dataDir, "shipgate-nudge-s6.flag")));
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(bare, { recursive: true, force: true });
 });
 
 test("non-git cwd → silent exit 0", () => {

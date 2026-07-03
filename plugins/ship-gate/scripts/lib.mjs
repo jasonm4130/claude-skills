@@ -1,5 +1,5 @@
 // @ts-check
-// Shared helpers for session-retro plugin scripts. Stdlib only.
+// Shared helpers for ship-gate plugin scripts. Stdlib only.
 // Duplicated surface mirrors plugins/handoff/scripts/lib.mjs — CC plugins can't
 // share files across plugin boundaries, so the duplication is intentional.
 

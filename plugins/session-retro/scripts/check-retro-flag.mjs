@@ -105,14 +105,27 @@ const daysSince = (Date.now() - lastRetroMs) / 86400000;
 let worthyCount = 0;
 if (existsSync(worthyLog)) {
   try {
-    for (const line of readFileSync(worthyLog, "utf8").split("\n")) {
-      if (line.length === 0) continue;
+    const lines = readFileSync(worthyLog, "utf8").split("\n").filter((l) => l.length > 0);
+    // Entries at/before the last retro no longer contribute to the batch
+    // count; drop them so the log doesn't grow unboundedly across retros.
+    const survivors = [];
+    for (const line of lines) {
       try {
         const e = JSON.parse(line);
         const t = Date.parse(typeof e.ts === "string" ? e.ts : "");
-        if (Number.isFinite(t) && t > lastRetroMs) worthyCount += 1;
+        if (Number.isFinite(t) && t > lastRetroMs) {
+          worthyCount += 1;
+          survivors.push(line);
+        }
       } catch {
         continue;
+      }
+    }
+    if (survivors.length !== lines.length) {
+      try {
+        writeFileSync(worthyLog, survivors.length > 0 ? survivors.join("\n") + "\n" : "");
+      } catch {
+        // best-effort; failing to prune is not fatal
       }
     }
   } catch {

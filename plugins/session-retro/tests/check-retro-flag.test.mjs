@@ -252,6 +252,31 @@ test("batch silent: worthy entries predate last retro", async (t) => {
   assert.equal(stdout, "", "all worthy entries predate the last retro");
 });
 
+// Entries predating the last retro are pruned from disk, not just excluded
+// from the count, so retro-worthy.jsonl doesn't grow unboundedly forever.
+test("worthy log is pruned: stale entries (predating last retro) are removed from disk", async (t) => {
+  const tmp = mkTmp();
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeWorthy(tmp, [
+    { ts: isoDaysAgo(20), sid: "old1", reasons: "a" },
+    { ts: isoDaysAgo(19), sid: "old2", reasons: "b" },
+    { ts: nowIso(), sid: "fresh1", reasons: "c" },
+  ]);
+  writeFileSync(path.join(tmp, "last-retro.txt"), isoDaysAgo(10));
+
+  const { code } = await run(
+    JSON.stringify({ session_id: "test-prune-stale" }),
+    { CLAUDE_PLUGIN_DATA: tmp },
+  );
+  assert.equal(code, 0);
+
+  const worthy = path.join(tmp, "retro-worthy.jsonl");
+  const lines = readFileSync(worthy, "utf8").split("\n").filter((l) => l);
+  assert.equal(lines.length, 1, "stale entries should be pruned from disk");
+  assert.equal(JSON.parse(lines[0]).sid, "fresh1");
+});
+
 // Env override lowers the session threshold.
 test("env override: RETRO_BATCH_MIN_SESSIONS=2 fires with 2 worthy", async (t) => {
   const tmp = mkTmp();
