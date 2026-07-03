@@ -36,7 +36,7 @@
       "name": "handoff",
       "source": "./plugins/handoff",
       "description": "Context-fill-triggered handoff skill — writes a structured resume doc when context fills, auto-loads it on next session.",
-      "version": "0.2.1",
+      "version": "0.4.0",
       "author": {
         "name": "Jason Matthew"
       },
@@ -48,7 +48,7 @@
       "name": "session-retro",
       "source": "./plugins/session-retro",
       "description": "Interactive session retrospectives — deterministic Stop/PreCompact triggers, diff-driven interview, native memory entries. No external services.",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "author": {
         "name": "Jason Matthew"
       },
@@ -57,10 +57,20 @@
       "category": "productivity"
     },
     {
+      "name": "ship-gate",
+      "source": "./plugins/ship-gate",
+      "description": "Stop-hook gate against trail-off: detects unpushed commits at turn end and injects an agent-directed nudge to review and finish the branch.",
+      "version": "0.1.0",
+      "author": { "name": "Jason Matthew" },
+      "license": "MIT",
+      "keywords": ["ship", "stop-hook", "code-review", "finishing"],
+      "category": "productivity"
+    },
+    {
       "name": "workflow-model-guard",
       "source": "./plugins/workflow-model-guard",
       "description": "PreToolUse hook that nudges Claude to tier models in high-fan-out Workflow scripts — denies a Workflow call that spawns many agents with no per-agent model: override.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": {
         "name": "Jason Matthew"
       },

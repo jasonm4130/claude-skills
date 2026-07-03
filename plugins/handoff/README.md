@@ -7,8 +7,12 @@ when your context window fills up, and auto-loads it in the next session.
 
 1. **Monitors context fill** via a statusLine command that renders a color-coded
    progress bar and detects when context crosses a configurable threshold (default 70%).
-2. **Nudges at threshold** — on first crossing, the next user prompt receives an
-   `additionalContext` injection telling the agent to suggest `/handoff`.
+2. **Nudges escalate with context** — a nudge fires on every 10%-point band
+   entered at or above the threshold (e.g. 70%, then again at 80%, then again
+   at 90%), not just once. Marathon sessions that sail past the first nudge
+   still get re-nudged as they climb. Each nudge is delivered as an
+   agent-directed `additionalContext` injection on the next user prompt, with
+   wording that gets more urgent near the top of the window (see below).
 3. **`/handoff` skill** — the agent writes a structured `.claude/handoffs/<ts>-<slug>.md`
    document covering current state, failed approaches, key decisions, modified files,
    blockers, and the next concrete runnable step.
@@ -109,16 +113,40 @@ This is a workaround for upstream
 ## Example flow
 
 1. You work through a session. Context climbs.
-2. At 70%, the status bar turns red: `[███████░░░] 71%`
-3. On your next prompt, the agent says:
-   > "Context is at 71% — we're approaching the limit. Want me to write a
-   > handoff doc with `/handoff` before you run `/compact` or `/clear`?"
+2. At 70%, the status bar turns red: `[███████░░░] 71%`. On your next prompt,
+   the agent gets an instruction to wrap the current step and run `/handoff`,
+   and suggest `/clear` to you.
+3. You keep going — a long session sails past 70%. At 80% and again at 90%
+   the nudge re-fires (once per 10%-point band), so it isn't a one-shot that
+   gets missed in a marathon session. Past 85%, the wording escalates: the
+   agent is told to run the handoff skill **now**, stop starting new work, and
+   tell you to `/clear`.
 4. You run `/handoff auth-token-bug`.
 5. The agent writes `.claude/handoffs/2026-05-25T14-32-00-auth-token-bug.md`.
 6. You run `/clear`.
 7. Next session starts — the SessionStart hook auto-loads the handoff:
    > "[handoff] Loading pending handoff from previous session: ..."
 8. The agent resumes in context.
+
+### Nudge wording tiers
+
+| Context % | Wording |
+|---|---|
+| threshold – 84% | `[handoff] Context at <pct>% (past threshold). Wrap the current step, then run the handoff skill before starting anything new; suggest /clear to the user.` |
+| ≥ 85% | `[handoff] Context at <pct>% — run the handoff skill NOW, then tell the user to /clear and resume from the handoff. Do not start new work.` |
+
+### Band-crossing semantics
+
+The flag fires on every 10%-point band entered at or above the threshold —
+e.g. with the default 70% threshold: 70, 80, 90. Moving within a band (72% →
+75%) does not re-fire; entering a new band (75% → 81%) does, even if a
+previous band's nudge was already consumed. Below the threshold, no nudge
+fires regardless of band movement.
+
+Bands are computed relative to the configured threshold, not absolute
+deciles — so a non-decile `HANDOFF_THRESHOLD_PCT` (e.g. 75) still fires its
+first nudge as soon as context crosses 75%, then again at 85%, 95%, etc.,
+rather than waiting for the next absolute 10%-boundary.
 
 ## Troubleshooting
 
@@ -141,6 +169,8 @@ This is a workaround for upstream
 - Check for errors in the hook: run `check-handoff-flag.mjs` manually with test input.
 - If `CLAUDE_PLUGIN_DATA` is unset and the tmpdir fallback is not writable, the flag may
   not be created or deleted correctly.
+- Note: since 0.4.0, re-firing at each new 10%-point band (70/80/90) is
+  expected behavior, not a bug — see "Band-crossing semantics" above.
 
 **Handoff not auto-loading in new session:**
 - Confirm `.claude/handoffs/.pending` was written (check after running `/handoff`).
@@ -157,7 +187,7 @@ gives you context, but the retro waits until you've actually done work in the ne
 | File | Location | Description |
 |---|---|---|
 | `handoff-statusline.mjs` | `~/.claude/` | Stable wrapper script that auto-resolves the latest installed plugin version (written by setup.mjs) |
-| `last-context-pct-<sid>.txt` | `$CLAUDE_PLUGIN_DATA` | Tracks last seen context % for crossing detection |
-| `handoff-nudge-<sid>.flag` | `$CLAUDE_PLUGIN_DATA` | One-shot nudge flag, consumed by UserPromptSubmit |
+| `last-context-pct-<sid>.txt` | `$CLAUDE_PLUGIN_DATA` | Tracks last seen context % for band-crossing detection |
+| `handoff-nudge-<sid>.flag` | `$CLAUDE_PLUGIN_DATA` | Nudge flag, consumed by UserPromptSubmit; re-written on each new 10%-point band |
 | `<ts>-<slug>.md` | `$PROJECT_ROOT/.claude/handoffs/` | The handoff document (agent-authored) |
 | `.pending` | `$PROJECT_ROOT/.claude/handoffs/` | Auto-load marker for next session (24h TTL) |

@@ -71,6 +71,46 @@ test("test_check_handoff_flag_consumes", async (t) => {
   assert.ok(!existsSync(flagFile), "flag not deleted after consumption");
 });
 
+// --- Severity-tiered wording (Task 7) ---
+
+test("check-handoff-flag: below-85 tier uses 'wrap the current step' wording", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-tier-low";
+  const flagFile = path.join(dir, `handoff-nudge-${sid}.flag`);
+  writeFileSync(flagFile, "context at 72% (threshold 70%)");
+
+  const result = await run(JSON.stringify({ session_id: sid }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+
+  assert.equal(result.code, 0);
+  const out = JSON.parse(result.stdout);
+  const ctx = out.hookSpecificOutput.additionalContext;
+  assert.match(ctx, /\[handoff\].*run the handoff skill/i, `unexpected wording: ${ctx}`);
+  assert.match(ctx, /wrap the current step/i, `unexpected wording: ${ctx}`);
+});
+
+test("check-handoff-flag: >=85 tier uses urgent NOW/clear wording", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-tier-high";
+  const flagFile = path.join(dir, `handoff-nudge-${sid}.flag`);
+  writeFileSync(flagFile, "context at 91% (threshold 70%)");
+
+  const result = await run(JSON.stringify({ session_id: sid }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+
+  assert.equal(result.code, 0);
+  const out = JSON.parse(result.stdout);
+  const ctx = out.hookSpecificOutput.additionalContext;
+  assert.match(ctx, /NOW/, `unexpected wording: ${ctx}`);
+  assert.match(ctx, /\/clear/, `unexpected wording: ${ctx}`);
+});
+
 test("test_check_handoff_flag_no_flag", async (t) => {
   const dir = mkTmp();
   t.after(() => rmSync(dir, { recursive: true, force: true }));

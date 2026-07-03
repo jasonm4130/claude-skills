@@ -166,11 +166,14 @@ hook`). Show the user each entry for confirmation before writing.
 ## Step 6: Cleanup
 
 ```bash
-touch "${CLAUDE_PLUGIN_DATA}/retro-fired-${CLAUDE_SESSION_ID}.flag"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/mark-retro-done.mjs" "${CLAUDE_SESSION_ID}"
 ```
 
-This suppresses further Stop-hook suggestions for the rest of the session
-(PreCompact still suggests regardless, since context loss is a hard event).
+This records the per-session fired flag (suppressing further Stop-hook
+suggestions for the rest of the session) **and** resets the cross-session batch
+clock — it writes `last-retro.txt`, so the accumulated worthy-session count
+starts fresh and no batched nudge fires until enough new worthy sessions accrue.
+PreCompact still suggests regardless, since context loss is a hard event.
 
 ## Guidelines
 

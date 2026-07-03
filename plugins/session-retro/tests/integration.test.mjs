@@ -37,7 +37,7 @@ function run(script, stdin, env) {
   });
 }
 
-test("end-to-end: edits → flag → consumed → additionalContext", async (t) => {
+test("end-to-end: edits → flag → consumed silently into worthy log", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-int-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -83,21 +83,24 @@ test("end-to-end: edits → flag → consumed → additionalContext", async (t) 
   assert.ok(existsSync(flagPath));
   assert.match(readFileSync(flagPath, "utf8"), /3 edits across 2 files/);
 
-  // 4. UserPromptSubmit → consumes flag, emits additionalContext
+  // 4. UserPromptSubmit → Stop-origin flag is absorbed silently into the
+  //    worthy log (no immediate nudge; one worthy session is below threshold).
   const chk = await run(
     path.join(SCRIPTS, "check-retro-flag.mjs"),
     JSON.stringify({ session_id: sid }),
     env,
   );
   assert.equal(chk.code, 0);
-  const parsed = JSON.parse(chk.stdout);
-  assert.equal(parsed.hookSpecificOutput.hookEventName, "UserPromptSubmit");
-  assert.match(
-    parsed.hookSpecificOutput.additionalContext,
-    /3 edits across 2 files/,
-  );
-  assert.match(parsed.hookSpecificOutput.additionalContext, /\/retro/);
+  assert.equal(chk.stdout, "", "Stop-origin flag surfaces no nudge");
   assert.ok(!existsSync(flagPath), "flag should be deleted after consume");
+
+  const worthy = path.join(tmp, "retro-worthy.jsonl");
+  assert.ok(existsSync(worthy), "worthy log written");
+  const worthyLines = readFileSync(worthy, "utf8")
+    .split("\n")
+    .filter((l) => l);
+  assert.equal(worthyLines.length, 1);
+  assert.match(worthyLines[0], /3 edits across 2 files/);
 });
 
 test("end-to-end: PreCompact path bypasses thresholds", async (t) => {

@@ -42,5 +42,13 @@ try {
   // best-effort consume
 }
 
-const context = `[handoff] ${flagContent}. Consider running /handoff to write a resume doc before /compact or /clear, or /compact if you want to keep the session going.`;
+// Severity-tiered, agent-directed wording. Parse the percentage back out of
+// the flag content rather than trusting a specific format beyond the number.
+const match = flagContent.match(/context at (\d+)%/);
+const pct = match ? match[1] : "?";
+
+const context =
+  Number(pct) >= 85
+    ? `[handoff] Context at ${pct}% — run the handoff skill NOW, then tell the user to /clear and resume from the handoff. Do not start new work.`
+    : `[handoff] Context at ${pct}% (past threshold). Wrap the current step, then run the handoff skill before starting anything new; suggest /clear to the user.`;
 emitAdditionalContext("UserPromptSubmit", context);

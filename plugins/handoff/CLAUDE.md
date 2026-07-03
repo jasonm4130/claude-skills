@@ -3,8 +3,10 @@
 ## What this is
 
 A Claude Code plugin that watches context fill via a `statusLine` command and
-triggers a handoff suggestion at a configurable threshold. When triggered, the
-`/handoff` skill (agent-authored) writes a structured resume document to
+triggers a handoff suggestion at a configurable threshold, re-firing on every
+10%-point band crossed at or above it (70 → 80 → 90; since 0.4.0) with
+severity-tiered, agent-directed wording. When triggered, the `/handoff` skill
+(agent-authored) writes a structured resume document to
 `$PROJECT_ROOT/.claude/handoffs/`. The next session's `SessionStart` hook
 auto-loads the document via `additionalContext` injection.
 

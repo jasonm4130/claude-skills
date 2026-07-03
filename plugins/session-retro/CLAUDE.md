@@ -6,10 +6,14 @@ A Claude Code plugin that captures decisions, learnings, and gotchas at the
 end of a substantial session by walking the user through a diff-driven
 interview and writing structured native memory entries.
 
-Five hooks log activity into a per-session JSONL event log, evaluate
-retro-worthy thresholds at `Stop`, force a nudge at `PreCompact`, and inject
-`additionalContext` on the next `UserPromptSubmit` so the agent surfaces the
-nudge in its own voice. The `/retro` skill itself is unchanged from v0.4.
+Five hooks log activity into a per-session JSONL event log and evaluate
+retro-worthy thresholds at `Stop`. As of v0.6.0 the per-session Stop nudge is
+**ambient and batched**: a retro-worthy `Stop` is absorbed silently into a
+cross-session worthy log, and `UserPromptSubmit` injects `additionalContext`
+only when enough worthy sessions have accrued since the last retro. `PreCompact`
+keeps its immediate per-session nudge, since context loss is a hard event. The
+`/retro` skill's interview is unchanged from v0.4; on completion it now calls
+`mark-retro-done.mjs`, which records the fired flag and resets the batch clock.
 
 ## Plugin structure
 
@@ -25,7 +29,8 @@ session-retro/
 │   ├── posttooluse-append-event.mjs     — PostToolUse: appends one JSONL event per Edit/Write/Bash
 │   ├── stop-write-retro-flag.mjs        — Stop: aggregates events; writes retro-nudge-{sid}.flag if thresholds met
 │   ├── precompact-write-retro-flag.mjs  — PreCompact: always writes retro-nudge-{sid}.flag
-│   └── check-retro-flag.mjs             — UserPromptSubmit: consumes flag → additionalContext
+│   ├── check-retro-flag.mjs             — UserPromptSubmit: consumes flag → worthy log (silent) or batched nudge
+│   └── mark-retro-done.mjs              — /retro cleanup: writes retro-fired-{sid}.flag + last-retro.txt
 ├── skills/
 │   └── retro/
 │       └── SKILL.md          — /retro skill definition (unchanged)
@@ -36,6 +41,7 @@ session-retro/
 │   ├── stop-write-retro-flag.test.mjs
 │   ├── precompact-write-retro-flag.test.mjs
 │   ├── check-retro-flag.test.mjs
+│   ├── mark-retro-done.test.mjs
 │   └── integration.test.mjs
 ├── README.md
 └── CLAUDE.md                 — this file
@@ -71,9 +77,31 @@ the Stop hook exits silently.
 `PreCompact` skips threshold evaluation entirely — context loss is a hard event,
 so the flag is always written with the reason `"compact imminent"`.
 
-`UserPromptSubmit` (`check-retro-flag.mjs`) reads the flag content, deletes the
-flag (fire-once), and emits a `hookSpecificOutput` envelope with
-`additionalContext` so the next agent response surfaces the nudge.
+`UserPromptSubmit` (`check-retro-flag.mjs`) reads the flag content and deletes
+the flag (fire-once), then branches:
+
+- **PreCompact flag** (`"compact imminent"`) → emits a `hookSpecificOutput`
+  envelope immediately, instructing the agent to run the retro skill now.
+- **Stop-origin flag** (any other content) → appended silently to the
+  cross-session worthy log `retro-worthy.jsonl` (one line per session:
+  `{"ts","sid","reasons"}`, deduped by `sid`). No immediate nudge.
+
+After consuming the flag, the hook evaluates the **batch condition**. It counts
+worthy entries newer than `last-retro.txt` and emits a single agent-directed
+nudge when all of these hold:
+
+- `worthy_count ≥ RETRO_BATCH_MIN_SESSIONS` (default 3)
+- `days_since_last_retro ≥ RETRO_BATCH_MIN_DAYS` (default 7)
+- no batch nudge already fired in the last 24h (tracked by `last-batch-nudge.txt`)
+
+Both thresholds are env-overridable. The `/retro` skill's cleanup step
+(`mark-retro-done.mjs`) writes `retro-fired-{sid}.flag` and `last-retro.txt`,
+which resets the batch clock so the worthy count effectively starts over.
+
+**Design rationale:** the old per-session `"Consider running /retro"` fired ~60
+times over 21 days and produced 3 actual retros — dead UX, while auto-memory
+already captures ambient facts. Batching replaces 60 low-signal nudges with an
+occasional high-signal one the agent acts on directly.
 
 ## Dependencies
 
