@@ -84,3 +84,18 @@ test("argv[2] overrides stdin session_id", async (t) => {
   assert.ok(existsSync(path.join(tmp, "retro-fired-argv-sid.flag")));
   assert.ok(!existsSync(path.join(tmp, "retro-fired-stdin-sid.flag")));
 });
+
+test("SKILL.md Step 6 sets CLAUDE_PLUGIN_DATA on the invocation", () => {
+  const skill = readFileSync(
+    path.join(here, "..", "skills", "retro", "SKILL.md"),
+    "utf8",
+  );
+  // Session shells do NOT inherit CLAUDE_PLUGIN_DATA (hooks do), so a bare
+  // invocation writes to the os.tmpdir() fallback and the batch clock never
+  // resets. The skill must pass the data dir explicitly.
+  assert.match(
+    skill,
+    /CLAUDE_PLUGIN_DATA="\$\{CLAUDE_PLUGIN_DATA\}" node "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/mark-retro-done\.mjs"/,
+    "Step 6 must prefix CLAUDE_PLUGIN_DATA so the flag lands in the hook data dir",
+  );
+});
