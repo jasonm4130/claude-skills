@@ -6,13 +6,13 @@ Claude Code plugin for interactive session retrospectives. Captures decisions, l
 
 At the end of a productive Claude Code session, you've made decisions, hit errors, changed approach, discovered patterns. None of it gets captured by default. session-retro fixes that with two complementary mechanisms:
 
-1. **Deterministic suggestions.** A `Stop` hook scores your session (edits, files touched, duration, commits, tests) and writes a nudge flag when work crosses sensible thresholds. A `PreCompact` hook always sets the flag before context is compacted away. A `UserPromptSubmit` hook consumes the flag and injects `additionalContext` so the agent surfaces the nudge in its own voice on your next prompt.
+1. **Ambient, batched suggestions.** A `Stop` hook scores your session (edits, files touched, duration, commits, tests) and writes a nudge flag when work crosses sensible thresholds. On your next prompt a `UserPromptSubmit` hook absorbs that flag *silently* into a cross-session worthy log — it only surfaces a nudge once enough worthy sessions have accrued since your last retro (default: 3 sessions and 7 days), at most once a day, and the nudge tells the agent to run the retro for you. A `PreCompact` hook is the exception: it still nudges immediately, because context loss is a hard event.
 2. **Diff-driven interview.** When you run `/retro`, the skill reads the per-session event log plus `git status`, `git diff --stat`, and `git log` since session start, then asks specific questions about the actual changes ("you edited `auth.ts` 4 times — what was the iteration about?"). No generic "what did you learn" prompts.
 
 ## What it does
 
 - **Logs your work** — a tiny `PostToolUse` hook appends one JSONL line per Edit/Write/Bash event to `events-{session_id}.jsonl` (POSIX `O_APPEND`, atomic per PIPE_BUF, race-free under parallel tool calls)
-- **Suggests retros** — `Stop` hook aggregates the event log and writes a nudge flag when thresholds are met; `PreCompact` always writes the flag; `UserPromptSubmit` consumes the flag and injects `additionalContext` so the agent delivers the nudge naturally
+- **Suggests retros, batched** — `Stop` aggregates the event log and writes a nudge flag when thresholds are met; `UserPromptSubmit` folds Stop-origin flags into a cross-session worthy log and only surfaces an agent-directed nudge once enough worthy sessions have piled up since the last retro; `PreCompact` still nudges immediately
 - **Walks you through** — `/retro` uses the event log + git diff to ask specific, non-generic questions, one at a time
 - **Writes native memory** — entries land in your project memory dir using `feedback` / `project` / `reference` types with `**Why:**` and `**How to apply:**` slots
 
@@ -26,8 +26,10 @@ Five hooks + one skill. The hooks are Node `.mjs` scripts (stdlib only, no third
 | `PostToolUse` (Edit\|Write\|Bash) | `posttooluse-append-event.mjs` appends one JSONL event |
 | `Stop` | `stop-write-retro-flag.mjs` aggregates events and writes a nudge flag if retro-worthy |
 | `PreCompact` | `precompact-write-retro-flag.mjs` always writes a nudge flag before compaction |
-| `UserPromptSubmit` | `check-retro-flag.mjs` reads the flag and injects `additionalContext` (fire-once) |
-| `/session-retro:retro` | The skill — reads events + git, walks you through, writes memory |
+| `UserPromptSubmit` | `check-retro-flag.mjs` consumes the flag (fire-once): PreCompact nudges immediately, Stop-origin folds into `retro-worthy.jsonl`, and a batched nudge fires once thresholds are met |
+| `/session-retro:retro` | The skill — reads events + git, walks you through, writes memory, then `mark-retro-done.mjs` resets the batch clock |
+
+The batch nudge fires when `retro-worthy.jsonl` holds `≥ RETRO_BATCH_MIN_SESSIONS` sessions (default 3) newer than the last retro, `≥ RETRO_BATCH_MIN_DAYS` (default 7) have passed, and no batch nudge fired in the last 24h. Both thresholds are env-overridable.
 
 No external services. No SQLite. No MCP server. No Python. Just Node 18+ and git.
 
@@ -51,11 +53,13 @@ On first load, Claude Code will prompt you to approve the hooks. This is normal 
 
 ### When the hook nudges you
 
-After substantial work, you'll see a Claude-authored line like:
+Individual retro-worthy sessions no longer nudge you — they accumulate silently. Once enough have piled up, you'll see a Claude-authored line like:
 
-> "[session-retro] This session: 7 edits across 3 files + 25 minutes of work. Suggest running /retro to capture decisions/learnings before /clear."
+> "[session-retro] 3 retro-worthy sessions since the last retro (8+ days). Run the retro skill now to batch-capture learnings, unless the user objects."
 
-Run `/retro` when you see it.
+The agent will offer to run the retro directly. The exception is a compaction nudge, which still fires immediately:
+
+> "[session-retro] This session: compact imminent. Run the retro skill now to capture decisions/learnings before compaction, unless the user objects."
 
 ### Manual invocation
 
@@ -103,13 +107,23 @@ v0.3 → v0.4 changes only the nudge mechanism — `/retro` behaviour itself is 
 
 Claude Code will prompt to approve the new `UserPromptSubmit` hook.
 
+## Migration from v0.5 to v0.6
+
+v0.5 → v0.6 changes only *when* the nudge surfaces — hooks, flags, and the `/retro` interview are otherwise unchanged.
+
+**What changed:** Per-session Stop nudges no longer interrupt you. `UserPromptSubmit` now folds each retro-worthy Stop into a cross-session worthy log (`retro-worthy.jsonl`) and only emits an agent-directed nudge once `≥ RETRO_BATCH_MIN_SESSIONS` (default 3) worthy sessions have accrued since your last retro and `≥ RETRO_BATCH_MIN_DAYS` (default 7) have passed — at most once per 24h. `PreCompact` still nudges immediately. The `/retro` skill now ends by running `mark-retro-done.mjs`, which records the fired flag and resets the batch clock.
+
+**Why:** In practice the old per-session nudge fired ~60 times over three weeks and yielded 3 retros — noise that trained users to ignore it, while auto-memory already captured ambient facts. Batching trades 60 low-signal nudges for the occasional high-signal one the agent acts on directly.
+
+Just `/plugin update` and `/reload-plugins`; no new hooks to approve, no on-disk format break.
+
 ## Tests
 
 ```
 node --test plugins/session-retro/tests/
 ```
 
-The Node `node:test` suite covers event-log init/parallel-writes (race regression), Stop hook threshold scoring (no-trigger, edits, duration, commit, tests-trigger, tool-calls, retro-fired suppression, compound reasons, malformed-line resilience, session_id from stdin), PreCompact flag-write, check-retro-flag handler (consumes flag + emits additionalContext; silent when no flag), and an end-to-end integration test that runs the full SessionStart → PostToolUse → Stop → UserPromptSubmit pipeline.
+The Node `node:test` suite covers event-log init/parallel-writes (race regression), Stop hook threshold scoring (no-trigger, edits, duration, commit, tests-trigger, tool-calls, retro-fired suppression, compound reasons, malformed-line resilience, session_id from stdin), PreCompact flag-write, check-retro-flag handler (silent worthy-log absorption + dedup for Stop-origin flags, immediate emission for PreCompact, batch-nudge fire/silence across the session/day/24h gates, env overrides), mark-retro-done (fired flag + last-retro timestamp from stdin or argv), and an end-to-end integration test that runs the full SessionStart → PostToolUse → Stop → UserPromptSubmit pipeline.
 
 ## License
 
