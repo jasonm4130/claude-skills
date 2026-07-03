@@ -108,10 +108,13 @@ if (existsSync(lastPctFile)) {
   }
 }
 
-// First-crossing detection
-if (currentPct >= threshold && lastPct < threshold) {
+// Escalating nudges: fire on every 10%-band entry at/above the threshold
+// (70 → 80 → 90), not just the first threshold crossing.
+const band = Math.floor(currentPct / 10);
+const lastBand = Math.floor(lastPct / 10);
+if (currentPct >= threshold && band > lastBand) {
   const flagFile = path.join(dataDir, `handoff-nudge-${sid}.flag`);
-  writeFileSync(flagFile, `context at ${currentPct}% (threshold ${threshold}%)`);
+  writeFileSync(flagFile, `context at ${Math.trunc(currentPct)}% (threshold ${threshold}%)`);
 }
 
 // Always update last percentage

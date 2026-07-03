@@ -123,6 +123,103 @@ test("test_statusline_no_crossing", async (t) => {
   assert.equal(lastPct, "65", `last-pct not updated, got: ${lastPct}`);
 });
 
+// --- Escalating nudges: band-crossing tests (Task 7) ---
+// Fire on every 10%-band entry at/above threshold (70 -> 80 -> 90), not just
+// the first crossing. Driven via sequential invocations against the same
+// session id/data dir, mirroring how the statusLine is actually called
+// repeatedly across a session.
+
+test("band crossing: 68 -> 72 fires flag (enters 70-band)", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const sid = "test-band-68-72";
+  const flagFile = path.join(dir, `handoff-nudge-${sid}.flag`);
+
+  await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 68 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+  assert.ok(!existsSync(flagFile), "setup: no flag below threshold");
+
+  const result = await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 72 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+  assert.equal(result.code, 0);
+  assert.ok(existsSync(flagFile), "flag should fire entering the 70-band");
+});
+
+test("band crossing: 72 -> 75 does not re-fire (same band)", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const sid = "test-band-72-75";
+  const flagFile = path.join(dir, `handoff-nudge-${sid}.flag`);
+
+  await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 72 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+  assert.ok(existsSync(flagFile), "setup: flag should fire entering the 70-band");
+  rmSync(flagFile); // simulate consumption by check-handoff-flag.mjs
+
+  const result = await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 75 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+  assert.equal(result.code, 0);
+  assert.ok(!existsSync(flagFile), "flag should not re-fire within the same band");
+});
+
+test("band crossing: 75 -> 81 fires flag (enters 80-band)", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const sid = "test-band-75-81";
+  const flagFile = path.join(dir, `handoff-nudge-${sid}.flag`);
+
+  await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 75 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+  rmSync(flagFile); // simulate consumption of the 70-band flag
+
+  const result = await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 81 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+  assert.equal(result.code, 0);
+  assert.ok(existsSync(flagFile), "flag should fire entering the 80-band");
+});
+
+test("band crossing: 81 -> 92 fires flag (enters 90-band)", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const sid = "test-band-81-92";
+  const flagFile = path.join(dir, `handoff-nudge-${sid}.flag`);
+
+  await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 81 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+  rmSync(flagFile); // simulate consumption of the 80-band flag
+
+  const result = await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 92 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+  assert.equal(result.code, 0);
+  assert.ok(existsSync(flagFile), "flag should fire entering the 90-band");
+});
+
+test("band crossing: 40 -> 55 does not fire (below threshold)", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const sid = "test-band-40-55";
+  const flagFile = path.join(dir, `handoff-nudge-${sid}.flag`);
+
+  await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 40 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+  assert.ok(!existsSync(flagFile), "setup: no flag below threshold");
+
+  const result = await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 55 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+  assert.equal(result.code, 0);
+  assert.ok(!existsSync(flagFile), "flag should not fire below threshold even when the band increases");
+});
+
 test("statusline outputs '?' on invalid JSON", async (t) => {
   const dir = mkTmp();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
