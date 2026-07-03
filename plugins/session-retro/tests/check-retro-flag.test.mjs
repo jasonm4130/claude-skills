@@ -169,6 +169,16 @@ test("batch nudge fires: 3 worthy, no last-retro, no recent batch nudge", async 
     parsed.hookSpecificOutput.additionalContext,
     /\[session-retro\] 3 retro-worthy sessions .* Run the retro skill now/,
   );
+  assert.match(
+    parsed.hookSpecificOutput.additionalContext,
+    /no retro recorded yet/,
+    "first-ever nudge explains there is no prior retro",
+  );
+  assert.doesNotMatch(
+    parsed.hookSpecificOutput.additionalContext,
+    /\d{3,}\+ days/,
+    "no epoch-derived day count on first-ever nudge",
+  );
   assert.ok(
     existsSync(path.join(tmp, "last-batch-nudge.txt")),
     "batch-nudge timestamp recorded",

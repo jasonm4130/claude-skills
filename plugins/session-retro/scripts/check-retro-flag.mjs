@@ -149,9 +149,15 @@ if (worthyCount >= minSessions && daysSince >= minDays && !batchNudgedRecently) 
   } catch {
     // best-effort
   }
+  // With no last-retro.txt, daysSince is days-since-epoch — a garbage figure;
+  // say "no retro recorded yet" instead of interpolating it.
+  const cadence =
+    lastRetroMs === 0
+      ? "no retro recorded yet"
+      : `${Math.floor(daysSince)}+ days since the last retro`;
   emitAdditionalContext(
     "UserPromptSubmit",
-    `[session-retro] ${worthyCount} retro-worthy sessions since the last retro (${Math.floor(daysSince)}+ days). Run the retro skill now to batch-capture learnings, unless the user objects.`,
+    `[session-retro] ${worthyCount} retro-worthy sessions accrued (${cadence}). Run the retro skill now to batch-capture learnings, unless the user objects.`,
   );
 }
 process.exit(0);
