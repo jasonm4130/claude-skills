@@ -166,8 +166,12 @@ hook`). Show the user each entry for confirmation before writing.
 ## Step 6: Cleanup
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/mark-retro-done.mjs" "${CLAUDE_SESSION_ID}"
+CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/mark-retro-done.mjs" "${CLAUDE_SESSION_ID}"
 ```
+
+(The env prefix matters: session shells don't inherit `CLAUDE_PLUGIN_DATA` the
+way hooks do, and without it the script writes to an `os.tmpdir()` fallback the
+hooks never read.)
 
 This records the per-session fired flag (suppressing further Stop-hook
 suggestions for the rest of the session) **and** resets the cross-session batch
