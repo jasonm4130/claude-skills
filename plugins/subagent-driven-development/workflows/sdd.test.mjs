@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "sdd.mjs"), "utf8");
 const pure = src.split("// >>> PURE")[1].split("// <<< PURE")[0];
 const H = new Function(
-  `${pure}; return { TIERS, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, detectOscillation, ledgerLine };`,
+  `${pure}; return { TIERS, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, detectOscillation, ledgerLine, computeWaves, taskWorkdir, runPool, partitionWaveResults };`,
 )();
 
 const okArgs = () => ({
@@ -21,7 +21,7 @@ test("validateArgs accepts a valid object and defaults tiers/limits", () => {
   const c = H.validateArgs(okArgs());
   assert.equal(c.tasks[0].tier, "sonnet");
   assert.equal(c.tasks[1].tier, "opus");
-  assert.deepEqual(c.limits, { fixRounds: 2, escalateAttempts: 2 });
+  assert.deepEqual(c.limits, { fixRounds: 2, escalateAttempts: 2, maxParallel: 4 });
 });
 
 test("validateArgs parses a JSON string", () => {
@@ -92,4 +92,85 @@ test("detectOscillation flags a class surviving two consecutive rounds", () => {
 
 test("ledgerLine formats a stable record", () => {
   assert.equal(H.ledgerLine(3, "aaaaaaa", "bbbbbbb", "clean"), "Task 3: clean (commits aaaaaaa..bbbbbbb)");
+});
+
+test("validateArgs defaults maxParallel/setupCmd/testCmd and accepts overrides", () => {
+  const c = H.validateArgs(okArgs());
+  assert.equal(c.limits.maxParallel, 4);
+  assert.equal(c.setupCmd, "");
+  assert.equal(c.testCmd, "");
+  const c2 = H.validateArgs({
+    ...okArgs(), setupCmd: "npm ci", testCmd: "npx vitest run", limits: { maxParallel: 2 },
+  });
+  assert.equal(c2.limits.maxParallel, 2);
+  assert.equal(c2.setupCmd, "npm ci");
+  assert.equal(c2.testCmd, "npx vitest run");
+});
+
+test("validateArgs falls back to maxParallel 4 on invalid values", () => {
+  assert.equal(H.validateArgs({ ...okArgs(), limits: { maxParallel: 0 } }).limits.maxParallel, 4);
+  assert.equal(H.validateArgs({ ...okArgs(), limits: { maxParallel: 2.5 } }).limits.maxParallel, 4);
+});
+
+test("computeWaves groups independent tasks and respects deps (diamond)", () => {
+  const waves = H.computeWaves([
+    { n: 1, title: "a", deps: [] },
+    { n: 2, title: "b", deps: [] },
+    { n: 3, title: "c", deps: [1, 2] },
+    { n: 4, title: "d", deps: [1] },
+    { n: 5, title: "e", deps: [3, 4] },
+  ]);
+  assert.deepEqual(waves.map((w) => w.map((t) => t.n)), [[1, 2], [3, 4], [5]]);
+});
+
+test("computeWaves on a linear plan yields singleton waves", () => {
+  const waves = H.computeWaves([
+    { n: 1, title: "a", deps: [] },
+    { n: 2, title: "b", deps: [1] },
+    { n: 3, title: "c", deps: [2] },
+  ]);
+  assert.deepEqual(waves.map((w) => w.map((t) => t.n)), [[1], [2], [3]]);
+});
+
+test("taskWorkdir builds the sibling path and strips trailing slashes", () => {
+  assert.equal(H.taskWorkdir("/w/repo", 3), "/w/repo-t3");
+  assert.equal(H.taskWorkdir("/w/repo/", 3), "/w/repo-t3");
+});
+
+test("runPool caps concurrency and preserves order", async () => {
+  let inFlight = 0, peak = 0;
+  const out = await H.runPool([1, 2, 3, 4, 5], 2, async (x) => {
+    inFlight++; peak = Math.max(peak, inFlight);
+    await new Promise((r) => setImmediate(r));
+    inFlight--;
+    return x * 10;
+  });
+  assert.deepEqual(out, [10, 20, 30, 40, 50]);
+  assert.ok(peak <= 2, `peak was ${peak}`);
+});
+
+test("runPool converts a thrown error into poolError and keeps siblings running", async () => {
+  const out = await H.runPool([1, 2, 3], 2, async (x) => {
+    if (x === 2) throw new Error("boom");
+    return x;
+  });
+  assert.equal(out[0], 1);
+  assert.equal(out[1].poolError, "boom");
+  assert.equal(out[2], 3);
+});
+
+test("partitionWaveResults splits successes, halts, and pool errors", () => {
+  const wave = [{ n: 1 }, { n: 2 }, { n: 3 }, { n: 4 }];
+  const { succeeded, failures } = H.partitionWaveResults(wave, [
+    { task: { n: 1, status: "DONE", headSha: "aaa" } },
+    { halt: { taskN: 2, reason: "blocked after escalation: x", reportPath: "/w-t2/.sdd/task-2-report.md" } },
+    { poolError: "boom" },
+    null,
+  ]);
+  assert.deepEqual(succeeded.map((t) => t.n), [1]);
+  assert.deepEqual(failures.map((f) => [f.taskN, f.reason]), [
+    [2, "blocked after escalation: x"],
+    [3, "boom"],
+    [4, "task agent returned no result"],
+  ]);
 });

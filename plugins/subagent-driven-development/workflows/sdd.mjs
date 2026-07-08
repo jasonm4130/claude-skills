@@ -47,12 +47,15 @@ function validateArgs(input) {
   const limits = {
     fixRounds: Number.isInteger(li.fixRounds) ? li.fixRounds : 2,
     escalateAttempts: Number.isInteger(li.escalateAttempts) ? li.escalateAttempts : 2,
+    maxParallel: Number.isInteger(li.maxParallel) && li.maxParallel >= 1 ? li.maxParallel : 4,
   };
   return {
     planPath, workdir: input.workdir, pluginDir: input.pluginDir,
     globalConstraints: typeof input.globalConstraints === "string" ? input.globalConstraints : "",
     successCriteria: typeof input.successCriteria === "string" ? input.successCriteria : "",
     mergeBase: input.mergeBase, tasks, limits,
+    setupCmd: typeof input.setupCmd === "string" ? input.setupCmd : "",
+    testCmd: typeof input.testCmd === "string" ? input.testCmd : "",
   };
 }
 
@@ -95,6 +98,62 @@ function detectOscillation(roundClasses, cap = 2) {
 
 function ledgerLine(n, base7, head7, verdict) {
   return `Task ${n}: ${verdict} (commits ${base7}..${head7})`;
+}
+
+// Topological levels from deps: wave 0 = no deps, else 1 + max(dep waves).
+// sequenceTasks validates deps precede numerically, which guarantees a DAG.
+function computeWaves(tasks) {
+  const sorted = sequenceTasks(tasks);
+  const waveOf = new Map();
+  const waves = [];
+  for (const t of sorted) {
+    const w = t.deps.length ? 1 + Math.max(...t.deps.map((d) => waveOf.get(d))) : 0;
+    waveOf.set(t.n, w);
+    if (!waves[w]) waves[w] = [];
+    waves[w].push(t);
+  }
+  return waves;
+}
+
+// Deterministic sibling-worktree path for task n (matches scripts/sdd-worktree).
+function taskWorkdir(workdir, n) {
+  return `${workdir.replace(/\/+$/, "")}-t${n}`;
+}
+
+// Run fn over items with at most `limit` in flight. Order-preserving; a
+// thrown error becomes { poolError } in that slot so siblings always finish.
+async function runPool(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      try {
+        results[i] = await fn(items[i], i);
+      } catch (e) {
+        results[i] = { poolError: String((e && e.message) || e) };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+  return results;
+}
+
+// Split a wave's runTask results into merge candidates and failure entries.
+function partitionWaveResults(wave, results) {
+  const succeeded = [];
+  const failures = [];
+  wave.forEach((task, i) => {
+    const r = results[i];
+    if (r && r.task) succeeded.push(r.task);
+    else if (r && r.halt) failures.push(r.halt);
+    else failures.push({
+      taskN: task.n,
+      reason: (r && r.poolError) || "task agent returned no result",
+      reportPath: "",
+    });
+  });
+  return { succeeded, failures };
 }
 // <<< PURE
 
