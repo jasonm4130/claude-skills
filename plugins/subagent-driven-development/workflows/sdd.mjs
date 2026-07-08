@@ -5,10 +5,11 @@
 export const meta = {
   name: "subagent-driven-development",
   description:
-    "Args-driven SDD loop: sequential per-task implement -> review (spec + quality + ponytail) -> bounded fix loop, with deterministic BLOCKED escalation and oscillation halt, then an Opus whole-branch final review. Returns task results + plan-conflicts + final review.",
+    "Args-driven SDD loop: deps-driven waves — per-task implement -> review (spec + quality + ponytail) -> bounded fix loop run concurrently per wave in sibling worktrees (sequential = singleton waves), a per-wave merge gate with bounded repair, deterministic BLOCKED escalation and oscillation halt, then an Opus whole-branch final review. Returns task results + merges + plan-conflicts + final review.",
   phases: [
     { title: "Implement", detail: "per-task implementer (tiered), TDD + ponytail ladder" },
     { title: "Review", detail: "spec + quality + over-engineering lens, bounded fix loop" },
+    { title: "Merge", detail: "per-wave integration: ordered merges, full suite, bounded repair" },
     { title: "Final", detail: "whole-branch review on Opus", model: "opus" },
   ],
 };
@@ -203,6 +204,18 @@ const FIX_SCHEMA = {
   },
 };
 
+const MERGE_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["headSha", "merged", "conflictsResolved", "testSummary", "suite"],
+  properties: {
+    headSha: { type: "string" },
+    merged: { type: "array", items: { type: "number" } },
+    conflictsResolved: { type: "array", items: { type: "string" } },
+    testSummary: { type: "string" },
+    suite: { type: "string", enum: ["green", "red"] },
+  },
+};
+
 const FINAL_SCHEMA = {
   type: "object", additionalProperties: false,
   required: ["verdict", "findings", "ponytailDebt"],
@@ -240,35 +253,56 @@ const FINAL_SCHEMA = {
 if (typeof phase === "function") {
   const cfg = validateArgs(args);
   const order = sequenceTasks(cfg.tasks);
+  const waves = computeWaves(order);
   const P = cfg.pluginDir;
   const gc = cfg.globalConstraints || "(none stated)";
 
-  const implPrompt = (task, tier, blocker) =>
-    `You are implementing Task ${task.n} ("${task.title}") of an approved plan. Work in ${cfg.workdir}.
-Read your full operating instructions first: ${P}/prompts/implementer.md — follow them exactly.
+  // Parallel-wave dispatches prepend worktree entry; sequential waves don't.
+  const worktreePreamble = (task, base, wd) =>
+    wd === cfg.workdir ? "" : `FIRST create/enter your task worktree: run ${P}/scripts/sdd-worktree ${cfg.workdir} ${base} ${task.n}
+It prints your worktree path (${wd}); ALL work happens there, not in ${cfg.workdir}.${
+      cfg.setupCmd ? `\nThen run the setup command (safe to re-run): ${cfg.setupCmd}` : ""
+    }
+`;
+
+  const implPrompt = (task, tier, blocker, base, wd) =>
+    `You are implementing Task ${task.n} ("${task.title}") of an approved plan. Work in ${wd}.
+${worktreePreamble(task, base, wd)}Read your full operating instructions first: ${P}/prompts/implementer.md — follow them exactly.
 Get your task brief by running: ${P}/scripts/task-brief ${cfg.planPath} ${task.n}
 Read the brief file it prints; implement THAT task only.
 Global constraints that bind this task:\n${gc}
-Write your full report to ${cfg.workdir}/.sdd/task-${task.n}-report.md.${
+Write your full report to ${wd}/.sdd/task-${task.n}-report.md.${
       blocker ? `\nPRIOR ATTEMPT WAS BLOCKED: ${blocker}\nA ${tier} model is now assigned — resolve the blocker or report BLOCKED again with specifics.` : ""
     }
 Return per schema: status, headSha (run \`git rev-parse HEAD\` after committing), testSummary, concerns, reportPath.`;
 
-  const reviewPrompt = (task, base, head) =>
-    `You are reviewing Task ${task.n} ("${task.title}"). Work in ${cfg.workdir}; READ-ONLY on the tree.
+  const reviewPrompt = (task, base, head, wd) =>
+    `You are reviewing Task ${task.n} ("${task.title}"). Work in ${wd}; READ-ONLY on the tree.
 Read your full operating instructions first: ${P}/prompts/reviewer.md — follow them exactly.
 Build the diff: ${P}/scripts/review-package ${base} ${head}
-Read the package file it prints. The implementer's report is at ${cfg.workdir}/.sdd/task-${task.n}-report.md (treat as unverified claims).
+Read the package file it prints. The implementer's report is at ${wd}/.sdd/task-${task.n}-report.md (treat as unverified claims).
 Global constraints that bind this task:\n${gc}
 Return per schema: spec ("pass"/"fail"), findings[{severity,class,file,line,what,planMandated}], cannotVerify[], quality, ponytail{net,items}.
 Set planMandated=true for any finding the plan/brief explicitly mandates. "class" is a short stable label for the finding kind (used to detect oscillation).`;
 
-  const fixPrompt = (task, findings) =>
-    `You are fixing review findings on Task ${task.n} ("${task.title}"). Work in ${cfg.workdir}.
+  const fixPrompt = (task, findings, wd) =>
+    `You are fixing review findings on Task ${task.n} ("${task.title}"). Work in ${wd}.
 Read your full operating instructions first: ${P}/prompts/fixer.md — follow them exactly.
 Fix ALL of these findings in one commit:\n${JSON.stringify(findings, null, 2)}
-Re-run the tests covering each change; append the results to ${cfg.workdir}/.sdd/task-${task.n}-report.md.
+Re-run the tests covering each change; append the results to ${wd}/.sdd/task-${task.n}-report.md.
 Return per schema: headSha (after committing), testSummary, fixed[].`;
+
+  const mergePrompt = (w, waveBase, merged) =>
+    `You are the wave-${w} MERGER. Work in ${cfg.workdir} (the integration worktree).
+Read your full operating instructions first: ${P}/prompts/merger.md — follow them exactly.
+Merge these task branches into the current branch in ascending task order:
+${merged
+      .map((t) => `- Task ${t.n}: branch sdd/t${t.n} at ${t.headSha}, worktree ${taskWorkdir(cfg.workdir, t.n)}, report ${taskWorkdir(cfg.workdir, t.n)}/.sdd/task-${t.n}-report.md`)
+      .join("\n")}
+Wave base was ${waveBase}.
+${cfg.testCmd ? `Suite command: ${cfg.testCmd}` : "No suite command given — use the test commands named in the implementers' reports."}
+Global constraints:\n${gc}
+Return per schema: headSha, merged, conflictsResolved, testSummary, suite ("green"/"red").`;
 
   const finalPrompt = (mergeBase, head) =>
     `You are the whole-branch FINAL reviewer (most capable model). Work in ${cfg.workdir}; READ-ONLY.
@@ -289,13 +323,14 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
 
   const results = [];
   const planConflicts = [];
+  const merges = [];
   let halted = null;
 
-  async function runTask(task, base) {
+  async function runTask(task, base, wd) {
     // Implement with the BLOCKED escalation ladder.
     let tier = task.tier, opusAttempts = 0, blocker = null, impl = null;
     while (true) {
-      impl = await agent(implPrompt(task, tier, blocker), {
+      impl = await agent(implPrompt(task, tier, blocker, base, wd), {
         label: `impl:t${task.n}`, phase: "Implement", model: tier, schema: IMPL_SCHEMA,
       });
       if (!impl) return { halt: { taskN: task.n, reason: "implementer returned no result", reportPath: "" } };
@@ -311,7 +346,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     let head = impl.headSha, rounds = 0, review = null;
     const roundClasses = [];
     while (true) {
-      review = await agent(reviewPrompt(task, base, head), {
+      review = await agent(reviewPrompt(task, base, head, wd), {
         label: `review:t${task.n}`, phase: "Review", model: reviewerModel(task.tier), schema: REVIEW_SCHEMA,
       });
       if (!review) return { halt: { taskN: task.n, reason: "reviewer returned no result", reportPath: impl.reportPath } };
@@ -323,7 +358,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
         return { halt: { taskN: task.n, reason: "review did not converge (cap or oscillation)", reportPath: impl.reportPath } };
       }
       rounds++;
-      const fix = await agent(fixPrompt(task, actionable), {
+      const fix = await agent(fixPrompt(task, actionable, wd), {
         label: `fix:t${task.n}.${rounds}`, phase: "Review", model: "sonnet", schema: FIX_SCHEMA,
       });
       if (!fix) return { halt: { taskN: task.n, reason: "fixer returned no result", reportPath: impl.reportPath } };
@@ -334,11 +369,43 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
 
   phase("Implement");
   let base = cfg.mergeBase;
-  for (const task of order) {
-    const r = await runTask(task, base);
-    if (r.halt) { halted = r.halt; break; }
-    results.push(r.task);
-    base = r.task.headSha;
+
+  for (let w = 0; w < waves.length && !halted; w++) {
+    const wave = waves[w];
+
+    if (wave.length === 1) {
+      // Degenerate case: exactly the pre-wave behavior — shared workdir, no merge.
+      const r = await runTask(wave[0], base, cfg.workdir);
+      if (r.halt) { halted = { wave: w, reason: "task failure(s) in wave", failures: [r.halt] }; break; }
+      results.push(r.task);
+      base = r.task.headSha;
+      continue;
+    }
+
+    const waveBase = base;
+    const poolOut = await runPool(wave, cfg.limits.maxParallel, (task) =>
+      runTask(task, waveBase, taskWorkdir(cfg.workdir, task.n)));
+    const { succeeded, failures } = partitionWaveResults(wave, poolOut);
+
+    if (succeeded.length) {
+      const merge = await agent(mergePrompt(w, waveBase, succeeded), {
+        label: `merge:w${w}`, phase: "Merge", model: "sonnet", schema: MERGE_SCHEMA,
+      });
+      if (!merge) {
+        halted = { wave: w, reason: "merge agent returned no result", failures };
+      } else {
+        merges.push({ wave: w, merged: merge.merged, headSha: merge.headSha, testSummary: merge.testSummary });
+        if (merge.suite === "red") {
+          halted = { wave: w, reason: "merge gate red after repair", failures };
+        } else {
+          base = merge.headSha;
+          succeeded.forEach((t) => results.push(t));
+        }
+      }
+    }
+    if (!halted && failures.length) {
+      halted = { wave: w, reason: "task failure(s) in wave", failures };
+    }
   }
 
   let finalReview = null;
@@ -354,11 +421,14 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     }
   }
 
-  log(halted ? `Halted at task ${halted.taskN}: ${halted.reason}` : `Completed ${results.length}/${order.length} tasks`);
+  log(halted
+    ? `Halted in wave ${halted.wave}: ${halted.reason} (${halted.failures.length} failure(s))`
+    : `Completed ${results.length}/${order.length} tasks across ${waves.length} wave(s)`);
   return {
     tasks: results, planConflicts, halted, finalReview,
-    mergeBase: cfg.mergeBase, head: base, ledgerPath: `${cfg.workdir}/.sdd/progress.md`,
-    meta: { tasksCompleted: results.length, tasksTotal: order.length, planConflicts: planConflicts.length },
+    mergeBase: cfg.mergeBase, head: base, merges,
+    ledgerPath: `${cfg.workdir}/.sdd/progress.md`,
+    meta: { tasksCompleted: results.length, tasksTotal: order.length, waves: waves.length, planConflicts: planConflicts.length },
   };
 }
 
