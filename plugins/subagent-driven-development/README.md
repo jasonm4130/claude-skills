@@ -25,14 +25,18 @@ does only what needs human judgment or Opus reasoning:
 7. On return: present results, adjudicate plan-conflicts, drive merge/PR/cleanup
    (irreversible — human-gated, never automated).
 
-The background **Workflow** runs the per-task loop sequentially in the shared
-worktree (each task builds on the previous commit):
+The background **Workflow** runs tasks in dependency-ordered waves: tasks whose
+`deps` are all satisfied run concurrently, each in its own sibling worktree, and
+a merge gate integrates each wave before the next one starts (linear plans
+degenerate to one task per wave — sequential in effect):
 
 ```
-for each task:
-  implementer (model = task.tier)  → task-brief, TDD red→green, ponytail ladder, commit
-  reviewer    (opus if task=opus, else sonnet) → spec + quality + over-engineering lens
-  fix loop    (sonnet, capped)     → fix all Critical/Important, re-review
+for each wave (tasks with satisfied deps, run concurrently in sibling worktrees):
+  for each task in the wave:
+    implementer (model = task.tier)  → task-brief, TDD red→green, ponytail ladder, commit
+    reviewer    (opus if task=opus, else sonnet) → spec + quality + over-engineering lens
+    fix loop    (sonnet, capped)     → fix all Critical/Important, re-review
+  merge gate (sonnet) → integrate wave's successful tasks in order, run full suite, one repair attempt
 final whole-branch reviewer (opus) → merge-readiness + ponytail-debt harvest
 ```
 
