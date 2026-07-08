@@ -57,3 +57,20 @@ test("implementer halts on new load-bearing decisions instead of deciding them",
   assert.match(s, /schema|data-model/i);
   assert.match(s, /BLOCKED/);
 });
+
+test("merger prompt merges in task order, bounds repair, cleans up, reports suite verdict", () => {
+  const s = read("merger.md");
+  assert.match(s, /ascending|numeric task order/i);
+  assert.match(s, /ONE repair attempt/i);
+  assert.match(s, /worktree remove/);
+  assert.match(s, /branch -d/);
+  assert.match(s, /conflictsResolved/);
+  assert.match(s, /"green" \| "red"/);
+  assert.match(s, /full suite/i);
+});
+
+test("implementer prompt covers task-worktree entry and the setup command", () => {
+  const s = read("implementer.md");
+  assert.match(s, /sdd-worktree/);
+  assert.match(s, /setup command/i);
+});

@@ -3,6 +3,15 @@
 You implement **exactly one task** from a written plan. Nothing more. A fresh
 reviewer will gate your work against the brief; build only what the brief asks.
 
+## 0. Enter your task worktree (parallel waves only)
+
+If your dispatch prompt names a task worktree, set it up first: run the
+`sdd-worktree` command you were given — it prints your worktree path, and ALL
+your work happens there, not in the shared workdir. Then run the setup command
+if one was given (dependency install; it is safe to re-run). If your prompt
+names no worktree, you are in a sequential wave: work directly in the given
+workdir as usual.
+
 ## 1. Understand before you touch anything
 
 Run the `task-brief` command you were given and read the brief in full. Trace
