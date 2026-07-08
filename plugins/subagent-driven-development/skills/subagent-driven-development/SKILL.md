@@ -54,7 +54,8 @@ git rev-parse --abbrev-ref HEAD            # confirm not on main/master
 The worktree root is `workdir`; all agents run there. `mergeBase` is where the
 branch started: `git merge-base main HEAD`.
 
-### 4. Enumerate tasks with tier hints
+### 4. Enumerate tasks with tier hints and honest deps
+
 Turn the plan into a lightweight list — **no pasted task text**, just
 `{ n, title, tier, deps }`. Assign `tier` per task with the complexity signals:
 
@@ -67,10 +68,18 @@ Turn the plan into a lightweight list — **no pasted task text**, just
 Default to the `sonnet` floor when unsure; the BLOCKED escalation ladder
 self-corrects a mis-tier at runtime.
 
+**`deps` is the parallelism contract.** Tasks whose deps are all satisfied run
+concurrently in sibling worktrees (waves), so mark a dep wherever task B
+touches files task A creates/changes or builds on its behavior. Prefer
+file-disjoint decomposition when the plan allows it. When unsure, mark the
+dep — sequential is the safe default.
+
 ### 5. Show conflicts + task list + tiers; wait for the go-ahead
-Present the batched conflicts (if any) and the task list with tiers. **Wait for
-explicit "go"** before dispatching. "Execute the plan" is permission for the
-topic, not for the dispatch.
+Present the batched conflicts (if any) and the task list with tiers **and the
+computed waves** (group tasks by dependency level), so the human sees exactly
+what will run in parallel before saying "go". **Wait for explicit "go"** before
+dispatching. "Execute the plan" is permission for the topic, not for the
+dispatch.
 
 ### 6. Resolve install paths and invoke the Workflow
 `CLAUDE_PLUGIN_ROOT` is not available at runtime, so glob the install and pick
@@ -91,9 +100,17 @@ Workflow({ scriptPath: "<resolved sdd.mjs>", args: {
   globalConstraints: "<verbatim Global Constraints>",
   mergeBase: "<git merge-base main HEAD>",
   tasks: [ { n: 1, title: "...", tier: "sonnet", deps: [] }, ... ],
-  limits: { fixRounds: 2, escalateAttempts: 2 }
+  setupCmd: "<optional: per-worktree env setup, e.g. 'npm ci'>",
+  testCmd: "<optional: suite command for the merge gate; recommended when the repo has a canonical one>",
+  limits: { fixRounds: 2, escalateAttempts: 2, maxParallel: 4 }
 }})
 ```
+
+Tasks whose deps are all satisfied run concurrently (capped at
+`limits.maxParallel`), each in a sibling worktree `<workdir>-t<N>`; a sonnet
+merge agent integrates each wave in task order and runs the suite (`testCmd`,
+or inferred from implementer reports), with one bounded repair attempt.
+Linear plans (every task depending on the previous) run exactly as before.
 
 Every agent the workflow dispatches gets an explicit `model:` (satisfies
 `workflow-model-guard`); none inherit your Opus session.
@@ -108,11 +125,17 @@ Everything else — tiering, escalation, the per-task gate, finishing — is ide
 
 ### 7. On return: present, adjudicate, finish
 The workflow returns `{ tasks, planConflicts, halted, finalReview, mergeBase,
-head, ledgerPath, meta }`.
+head, merges, ledgerPath, meta }`.
 
-- **`halted`** → a task could not converge or escalation was exhausted. Present
-  the reason and the report path; after you fix the plan/blocker, resume with
+- **`halted`** → `{ wave, reason, failures: [{ taskN, reason, reportPath }] }`.
+  A wave can produce multiple failures (siblings run to completion and
+  successful ones are merged before the halt). Wave-level `reason` covers
+  merge-gate failures ("merge gate red after repair"); `failures[]` covers
+  task-level ones. Failed tasks keep their worktree and branch for
+  inspection. After you fix the plan/blocker, resume with
   `Workflow({ scriptPath, resumeFromRunId })` (completed tasks return cached).
+- **`merges`** → `[{ wave, merged, headSha, testSummary }]` — what each
+  wave's merge gate did.
 - **`planConflicts`** → findings that conflict with what the plan mandates. You
   decide which governs; the workflow never auto-fixes these.
 - **`finalReview`** → whole-branch verdict + any `ponytailDebt` markers.
@@ -137,6 +160,8 @@ head, ledgerPath, meta }`.
   `task-brief` to materialize each brief as a file).
 - Auto-merge, or act on `planConflicts` without asking.
 - Dispatch an agent without an explicit `model:`.
+- Invent independence: don't invent independence to force parallelism — when
+  unsure whether task B depends on task A, mark the dep.
 
 ## Dependencies
 

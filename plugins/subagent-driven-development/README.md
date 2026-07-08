@@ -39,10 +39,10 @@ final whole-branch reviewer (opus) → merge-readiness + ponytail-debt harvest
 ### The contract
 
 **args (controller → workflow):**
-`{ planPath, workdir, pluginDir, globalConstraints, mergeBase, tasks:[{n,title,tier,deps}], limits:{fixRounds,escalateAttempts} }`
+`{ planPath, workdir, pluginDir, globalConstraints, mergeBase, tasks:[{n,title,tier,deps}], setupCmd?, testCmd?, limits:{fixRounds,escalateAttempts,maxParallel} }`
 
 **return:**
-`{ tasks, planConflicts, halted, finalReview, mergeBase, head, ledgerPath, meta }`
+`{ tasks, planConflicts, halted, finalReview, mergeBase, head, merges, ledgerPath, meta }`
 
 ### Model tiering
 
@@ -59,6 +59,13 @@ set on **every** `agent()` call, so none inherit the orchestrator and the
 - **Oscillation breaker:** the same finding-class surviving two consecutive fix
   rounds halts that task instead of looping forever.
 - **Fix cap:** `fixRounds` (default 2).
+- **Wave scheduling:** tasks whose `deps` are all satisfied run concurrently
+  (capped at `limits.maxParallel`, default 4), each in a sibling worktree
+  `<workdir>-t<N>` on branch `sdd/t<N>`. A sonnet merge gate integrates each
+  wave in task order, runs the full suite, and gets one bounded repair
+  attempt; red after repair halts the run. Task failures don't cancel
+  siblings — successful siblings are merged before the halt. Linear plans
+  degenerate to singleton waves: identical to sequential execution.
 
 ### Ponytail, codified and bounded
 
