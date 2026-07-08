@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Ensure the sibling worktree for one SDD task: <workdir>-t<N> on branch
+# sdd/t<N> starting at <baseSha>. Reuse iff the existing tip descends from
+# base (same-run escalation re-entry / resume); anything else is stale debris
+# from an older run and is removed and recreated. Prints the worktree path.
+set -euo pipefail
+workdir=$1; base=$2; n=$3
+cd "$workdir"
+workdir=$(pwd -P)  # Resolve to physical canonical path (handles symlinks)
+path="${workdir%/}-t${n}"
+branch="sdd/t${n}"
+
+if git worktree list --porcelain | grep -qxF "worktree $path"; then
+  tip=$(git -C "$path" rev-parse HEAD)
+  if git merge-base --is-ancestor "$base" "$tip"; then
+    echo "$path"; exit 0
+  fi
+  git worktree remove --force "$path"
+fi
+
+if git show-ref --verify --quiet "refs/heads/$branch"; then
+  if git merge-base --is-ancestor "$base" "$branch"; then
+    git worktree add "$path" "$branch" >/dev/null
+  else
+    git branch -D "$branch" >/dev/null
+    git worktree add -b "$branch" "$path" "$base" >/dev/null
+  fi
+else
+  git worktree add -b "$branch" "$path" "$base" >/dev/null
+fi
+echo "$path"
