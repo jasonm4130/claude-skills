@@ -77,6 +77,13 @@ test("deny reason names the estimated agent count", () => {
   assert.match(parseDecision(stdout).permissionDecisionReason, /~2 agent\(\) calls/);
 });
 
+test("deny reason recommends a tier alias, not a full model id", () => {
+  const { stdout } = run(
+    wf('await agent("a"); await agent("b"); await agent("c"); await agent("d")'),
+  );
+  assert.match(parseDecision(stdout).permissionDecisionReason, /model:'sonnet'/);
+});
+
 test("deny reason omits the count when no agent() calls are statically visible", () => {
   // parallel( fan-out with zero static agent() matches — must not read "~0 agent() calls".
   const reason = parseDecision(run(wf("await parallel([])")).stdout).permissionDecisionReason;
@@ -184,7 +191,7 @@ test("asks the user before the all-Opus built-in name:deep-research", () => {
   const d = parseDecision(stdout);
   assert.equal(d.permissionDecision, "ask");
   assert.match(d.permissionDecisionReason, /workflow-model-guard/);
-  assert.match(d.permissionDecisionReason, /Opus|session model/i);
+  assert.match(d.permissionDecisionReason, /frontier-tier/i);
 });
 
 test("ignores named workflows not on the denylist", () => {
