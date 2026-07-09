@@ -268,7 +268,7 @@ It prints your worktree path (${wd}); ALL work happens there, not in ${cfg.workd
   const implPrompt = (task, tier, blocker, base, wd) =>
     `You are implementing Task ${task.n} ("${task.title}") of an approved plan. Work in ${wd}.
 ${worktreePreamble(task, base, wd)}Read your full operating instructions first: ${P}/prompts/implementer.md — follow them exactly.
-Get your task brief by running: ${P}/scripts/task-brief ${cfg.planPath} ${task.n}
+Get your task brief by running: ${P}/scripts/task-brief -C ${wd} ${cfg.planPath} ${task.n}
 Read the brief file it prints; implement THAT task only.
 Global constraints that bind this task:\n${gc}
 Write your full report to ${wd}/.sdd/task-${task.n}-report.md.${
@@ -279,7 +279,7 @@ Return per schema: status, headSha (run \`git rev-parse HEAD\` after committing)
   const reviewPrompt = (task, base, head, wd) =>
     `You are reviewing Task ${task.n} ("${task.title}"). Work in ${wd}; READ-ONLY on the tree.
 Read your full operating instructions first: ${P}/prompts/reviewer.md — follow them exactly.
-Build the diff: ${P}/scripts/review-package ${base} ${head}
+Build the diff: ${P}/scripts/review-package -C ${wd} ${base} ${head}
 Read the package file it prints. The implementer's report is at ${wd}/.sdd/task-${task.n}-report.md (treat as unverified claims).
 Global constraints that bind this task:\n${gc}
 Return per schema: spec ("pass"/"fail"), findings[{severity,class,file,line,what,planMandated}], cannotVerify[], quality, ponytail{net,items}.
@@ -307,7 +307,7 @@ Return per schema: headSha, merged, conflictsResolved, testSummary, suite ("gree
   const finalPrompt = (mergeBase, head) =>
     `You are the whole-branch FINAL reviewer (most capable model). Work in ${cfg.workdir}; READ-ONLY.
 Read your full operating instructions first: ${P}/prompts/final-reviewer.md — follow them exactly.
-Build the branch diff: ${P}/scripts/review-package ${mergeBase} ${head}
+Build the branch diff: ${P}/scripts/review-package -C ${cfg.workdir} ${mergeBase} ${head}
 Read the package. Also list any new \`ponytail:\` markers (grep the diff for 'ponytail:').
 Global constraints:\n${gc}${
       cfg.successCriteria

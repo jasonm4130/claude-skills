@@ -51,4 +51,28 @@ wt3=$("$dir/sdd-worktree" "$repo" "$nb" 7)
 git worktree remove --force "$wt3"
 wt4=$("$dir/sdd-worktree" "$repo" "$nb" 7)
 [ "$(git -C "$wt4" rev-parse HEAD)" = "$nb" ] || { echo "FAIL: branch-only re-add failed"; exit 1; }
+
+# -C WORKDIR: artifacts land in the target repo even when invoked from another
+# repo's cwd (regression: briefs used to land in whatever repo the agent's shell
+# happened to be in — the wave-parallel cross-repo leak).
+mkdir "$tmp/elsewhere" && git -C "$tmp/elsewhere" init -q
+cd "$tmp/elsewhere" # deliberately the WRONG cwd for everything below
+ws2=$("$dir/sdd-workspace" "$repo")
+[ "$ws2" = "$repo/.sdd" ] || { echo "FAIL: sdd-workspace ignored WORKDIR arg: $ws2"; exit 1; }
+out2=$("$dir/task-brief" -C "$repo" "$repo/plan.md" 2 | sed 's/^wrote //; s/:.*//')
+case "$out2" in
+  "$repo/.sdd/"*) ;;
+  *) echo "FAIL: task-brief -C wrote outside workdir: $out2"; exit 1 ;;
+esac
+grep -q beta "$out2" || { echo "FAIL: task-brief -C brief missing task 2 body"; exit 1; }
+pkg2=$("$dir/review-package" -C "$repo" "$base" "$nb" | sed 's/^wrote //; s/:.*//')
+case "$pkg2" in
+  "$repo/.sdd/"*) ;;
+  *) echo "FAIL: review-package -C wrote outside workdir: $pkg2"; exit 1 ;;
+esac
+# refs $base/$nb exist only in $repo — success proves git honored -C too
+grep -q "## Diff" "$pkg2" || { echo "FAIL: review-package -C package missing diff"; exit 1; }
+# legacy no-arg behavior still resolves from cwd
+ws3=$("$dir/sdd-workspace")
+[ "$ws3" = "$(pwd -P)/.sdd" ] || { echo "FAIL: no-arg sdd-workspace changed behavior: $ws3"; exit 1; }
 echo "OK"
