@@ -11,13 +11,18 @@
     {
       "name": "adversarial-agents",
       "source": "./plugins/adversarial-agents",
-      "description": "Configurable adversarial panel review for any artefact — plans, code, design docs, prose, model outputs.",
+      "description": "Configurable adversarial panel review for any artefact \u2014 plans, code, design docs, prose, model outputs.",
       "version": "0.1.0",
       "author": {
         "name": "Jason Matthew"
       },
       "license": "MIT",
-      "keywords": ["adversarial-review", "red-team", "panel-review", "code-review"],
+      "keywords": [
+        "adversarial-review",
+        "red-team",
+        "panel-review",
+        "code-review"
+      ],
       "category": "productivity"
     },
     {
@@ -29,31 +34,47 @@
         "name": "Jason Matthew"
       },
       "license": "MIT",
-      "keywords": ["deep-dive", "deep-research", "research", "multi-agent", "synthesis"],
+      "keywords": [
+        "deep-dive",
+        "deep-research",
+        "research",
+        "multi-agent",
+        "synthesis"
+      ],
       "category": "productivity"
     },
     {
       "name": "handoff",
       "source": "./plugins/handoff",
-      "description": "Context-fill-triggered handoff skill — writes a structured resume doc when context fills, auto-loads it on next session.",
+      "description": "Context-fill-triggered handoff skill \u2014 writes a structured resume doc when context fills, auto-loads it on next session.",
       "version": "0.4.0",
       "author": {
         "name": "Jason Matthew"
       },
       "license": "MIT",
-      "keywords": ["handoff", "context", "resume", "session-continuity"],
+      "keywords": [
+        "handoff",
+        "context",
+        "resume",
+        "session-continuity"
+      ],
       "category": "productivity"
     },
     {
       "name": "session-retro",
       "source": "./plugins/session-retro",
-      "description": "Interactive session retrospectives — deterministic Stop/PreCompact triggers, diff-driven interview, native memory entries. No external services.",
+      "description": "Interactive session retrospectives \u2014 deterministic Stop/PreCompact triggers, diff-driven interview, native memory entries. No external services.",
       "version": "0.6.1",
       "author": {
         "name": "Jason Matthew"
       },
       "license": "MIT",
-      "keywords": ["session", "retrospective", "memory", "hooks"],
+      "keywords": [
+        "session",
+        "retrospective",
+        "memory",
+        "hooks"
+      ],
       "category": "productivity"
     },
     {
@@ -61,53 +82,87 @@
       "source": "./plugins/ship-gate",
       "description": "Stop-hook gate against trail-off: detects unpushed commits at turn end and injects an agent-directed nudge to review and finish the branch.",
       "version": "0.1.0",
-      "author": { "name": "Jason Matthew" },
+      "author": {
+        "name": "Jason Matthew"
+      },
       "license": "MIT",
-      "keywords": ["ship", "stop-hook", "code-review", "finishing"],
+      "keywords": [
+        "ship",
+        "stop-hook",
+        "code-review",
+        "finishing"
+      ],
       "category": "productivity"
     },
     {
       "name": "workflow-model-guard",
       "source": "./plugins/workflow-model-guard",
-      "description": "PreToolUse hook that nudges Claude to tier models in high-fan-out Workflow scripts — denies a Workflow call that spawns many agents with no per-agent model: override.",
+      "description": "PreToolUse hook that nudges Claude to tier models in high-fan-out Workflow scripts \u2014 denies a Workflow call that spawns many agents with no per-agent model: override.",
       "version": "0.2.1",
       "author": {
         "name": "Jason Matthew"
       },
       "license": "MIT",
-      "keywords": ["workflow", "model-selection", "cost", "hooks"],
+      "keywords": [
+        "workflow",
+        "model-selection",
+        "cost",
+        "hooks"
+      ],
       "category": "productivity"
     },
     {
       "name": "visual-plan",
       "source": "./plugins/visual-plan",
-      "description": "Writes a durable, committed Markdown ADR/plan as the source-of-truth record, and — only when the content needs visuals markdown can't express (wireframes, annotated split-diffs, before/after columns) — also emits a self-contained rich plan.html to /tmp. Markdown canonical, HTML disposable; no backend.",
+      "description": "Writes a durable, committed Markdown ADR/plan as the source-of-truth record, and \u2014 only when the content needs visuals markdown can't express (wireframes, annotated split-diffs, before/after columns) \u2014 also emits a self-contained rich plan.html to /tmp. Markdown canonical, HTML disposable; no backend.",
       "version": "0.1.0",
       "author": {
         "name": "Jason Matthew"
       },
       "license": "MIT",
-      "keywords": ["visual-plan", "adr", "visual-recap", "diagram", "local"],
+      "keywords": [
+        "visual-plan",
+        "adr",
+        "visual-recap",
+        "diagram",
+        "local"
+      ],
       "category": "productivity"
     },
     {
       "name": "subagent-driven-development",
       "source": "./plugins/subagent-driven-development",
-      "description": "Deterministic workflow-driven subagent development loop — plan/confirm in the controller, then a background Workflow enforces per-task implement/review/fix with tiered models and codified ponytail discipline.",
-      "version": "0.2.0",
-      "author": { "name": "Jason Matthew" },
+      "description": "Deterministic workflow-driven subagent development loop \u2014 plan/confirm in the controller, then a background Workflow enforces per-task implement/review/fix with tiered models and codified ponytail discipline.",
+      "version": "0.2.1",
+      "author": {
+        "name": "Jason Matthew"
+      },
       "license": "MIT",
-      "keywords": ["subagent-driven-development", "sdd", "workflow", "code-review", "ponytail"],
+      "keywords": [
+        "subagent-driven-development",
+        "sdd",
+        "workflow",
+        "code-review",
+        "ponytail"
+      ],
       "category": "productivity"
     },
     {
       "name": "adr",
       "source": "./plugins/adr",
-      "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to the subagent-driven-development loop. Front-end for adr → sdd.",
+      "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to the subagent-driven-development loop. Front-end for adr \u2192 sdd.",
       "version": "0.1.0",
-      "author": { "name": "Jason Matthew" },
+      "author": {
+        "name": "Jason Matthew"
+      },
       "license": "MIT",
-      "keywords": ["adr", "architecture-decision-record", "grounding", "subagent-driven-development", "sdd"],
+      "keywords": [
+        "adr",
+        "architecture-decision-record",
+        "grounding",
+        "subagent-driven-development",
+        "sdd"
+      ],
       "category": "productivity"
     }
   ]

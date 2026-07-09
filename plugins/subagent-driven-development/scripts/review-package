@@ -2,22 +2,30 @@
 # Generate a review package (commit list + stat summary + diff with extended
 # context) to a file the reviewer reads in one call. Use the recorded per-task
 # BASE (not HEAD~1, which silently drops all but the last commit).
-# Usage: review-package BASE HEAD [OUTFILE]
+# Usage: review-package [-C WORKDIR] BASE HEAD [OUTFILE]
+# -C pins both the git commands and the .sdd workspace to WORKDIR's tree,
+# regardless of the caller's cwd.
 set -euo pipefail
-if [ $# -lt 2 ] || [ $# -gt 3 ]; then
-  echo "usage: review-package BASE HEAD [OUTFILE]" >&2; exit 2
+workdir=""
+if [ "${1:-}" = "-C" ]; then
+  [ $# -ge 2 ] || { echo "usage: review-package [-C WORKDIR] BASE HEAD [OUTFILE]" >&2; exit 2; }
+  workdir=$2; shift 2
 fi
+if [ $# -lt 2 ] || [ $# -gt 3 ]; then
+  echo "usage: review-package [-C WORKDIR] BASE HEAD [OUTFILE]" >&2; exit 2
+fi
+g() { if [ -n "$workdir" ]; then git -C "$workdir" "$@"; else git "$@"; fi; }
 base=$1; head=$2
-git rev-parse --verify --quiet "$base" >/dev/null || { echo "bad BASE: $base" >&2; exit 2; }
-git rev-parse --verify --quiet "$head" >/dev/null || { echo "bad HEAD: $head" >&2; exit 2; }
+g rev-parse --verify --quiet "$base" >/dev/null || { echo "bad BASE: $base" >&2; exit 2; }
+g rev-parse --verify --quiet "$head" >/dev/null || { echo "bad HEAD: $head" >&2; exit 2; }
 if [ $# -eq 3 ]; then out=$3
-else dir=$("$(cd "$(dirname "$0")" && pwd)/sdd-workspace")
-  out="$dir/review-$(git rev-parse --short "$base")..$(git rev-parse --short "$head").diff"; fi
+else dir=$("$(cd "$(dirname "$0")" && pwd)/sdd-workspace" ${workdir:+"$workdir"})
+  out="$dir/review-$(g rev-parse --short "$base")..$(g rev-parse --short "$head").diff"; fi
 {
   echo "# Review package: ${base}..${head}"; echo
-  echo "## Commits"; git log --oneline "${base}..${head}"; echo
-  echo "## Files changed"; git diff --stat "${base}..${head}"; echo
-  echo "## Diff"; git diff -U10 "${base}..${head}"
+  echo "## Commits"; g log --oneline "${base}..${head}"; echo
+  echo "## Files changed"; g diff --stat "${base}..${head}"; echo
+  echo "## Diff"; g diff -U10 "${base}..${head}"
 } > "$out"
-commits=$(git rev-list --count "${base}..${head}")
+commits=$(g rev-list --count "${base}..${head}")
 echo "wrote ${out}: ${commits} commit(s), $(wc -c < "$out" | tr -d ' ') bytes"
