@@ -14,7 +14,7 @@ Multi-angle research via parallel sub-agents and synthesis with citations. Follo
 
 ```
 /plugin marketplace add jasonm4130/claude-skills
-/plugin install deep-dive@claude-skills
+/plugin install deep-dive@jasonm4130-claude-skills
 ```
 
 ## Use
