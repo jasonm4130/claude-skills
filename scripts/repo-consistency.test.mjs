@@ -62,3 +62,24 @@ test("plugin READMEs' install commands use the marketplace id", () => {
     }
   }
 });
+
+test("plugin READMEs' marketplace add commands point at the repo, not a plugin name", () => {
+  const marketplaceAddRe = /\/plugin marketplace add ([\w.-]+\/[\w.-]+)/g;
+  const expectedRepo = "jasonm4130/claude-skills";
+  for (const name of dirs) {
+    const readmePath = join(root, "plugins", name, "README.md");
+    let content;
+    try {
+      content = readFileSync(readmePath, "utf8");
+    } catch {
+      continue;
+    }
+    for (const [, repo] of content.matchAll(marketplaceAddRe)) {
+      assert.equal(
+        repo,
+        expectedRepo,
+        `plugins/${name}/README.md: marketplace add command uses ${repo}, expected ${expectedRepo}`,
+      );
+    }
+  }
+});
