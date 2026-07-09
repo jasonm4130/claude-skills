@@ -10,7 +10,7 @@ Generalises the panel-of-personas pattern from Matt Pocock's `grill-me` to arbit
 
 ```
 /plugin marketplace add jasonm4130/claude-skills
-/plugin install adversarial-agents@claude-skills
+/plugin install adversarial-agents@jasonm4130-claude-skills
 ```
 
 ## Use

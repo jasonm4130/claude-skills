@@ -36,8 +36,8 @@ No external services. No SQLite. No MCP server. No Python. Just Node 18+ and git
 ## Install
 
 ```
-/plugin marketplace add jasonm4130/session-retro
-/plugin install session-retro@jasonm4130-session-retro
+/plugin marketplace add jasonm4130/claude-skills
+/plugin install session-retro@jasonm4130-claude-skills
 /reload-plugins
 ```
 

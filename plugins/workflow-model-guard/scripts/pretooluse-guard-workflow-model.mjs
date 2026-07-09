@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // @ts-check
 // PreToolUse hook (matcher: Workflow): nudge Claude to tier models in high-fan-out
-// Workflow scripts. The Workflow tool spawns sub-agents that inherit the main-loop
-// model (Opus 4.8) unless each agent() call sets opts.model. A big fan-out with no
-// model overrides silently runs every worker on Opus and burns usage limits.
+// Workflow scripts. The Workflow tool spawns sub-agents that inherit the session's
+// main-loop model (typically a frontier-tier model) unless each agent() call sets
+// opts.model. A big fan-out with no model overrides silently runs every worker on
+// that model and burns usage limits.
 //
 // Three invocation forms, three responses:
 //   - inline `script`  → inspect it; deny if it fans out untiered (Claude revises + re-runs).
@@ -57,9 +58,9 @@ if (!script) {
     emitPermissionDecision(
       "ask",
       `workflow-model-guard: the "${name}" workflow sets no per-agent model: override, so ` +
-        "every agent it spawns inherits this session's model. If you're on Opus 4.8 that's a " +
-        "large all-Opus fan-out that burns usage limits fast — and it can't be tiered from " +
-        "here (it's not an editable script). Cheaper: switch this session to Sonnet " +
+        "every agent it spawns inherits this session's model — on a frontier-tier session " +
+        "that is an expensive default, and it can't be tiered from here (it's not an " +
+        "editable script). Cheaper: switch this session to Sonnet " +
         "(/model sonnet) before running it, or run a model-tiered workflow instead. Proceed anyway?",
     );
   }
@@ -93,9 +94,9 @@ const what = signals.join(" + ");
 
 const reason =
   `workflow-model-guard: this workflow has ${what} and no per-agent model: override — ` +
-  "every spawned agent defaults to the main-loop model (Opus 4.8), which burns usage " +
-  "limits fast. Add model:'claude-sonnet-4-6' (or 'claude-haiku-4-5') to worker agents " +
-  "that don't need Opus. If Opus is genuinely required for all of them, add a " +
+  "every spawned agent defaults to the main-loop model, which burns usage limits fast " +
+  "on frontier-tier sessions. Add model:'sonnet' (or 'haiku') to worker agents that " +
+  "don't need the top tier. If the top tier is genuinely required for all of them, add a " +
   "`// model-guard:ack` comment to the script and re-run.";
 
 emitPermissionDecision("deny", reason);
