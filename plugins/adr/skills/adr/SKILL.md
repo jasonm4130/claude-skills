@@ -112,10 +112,11 @@ Workflow({ scriptPath: "<resolved sdd.mjs>", args: {
 
 `pluginDir` is the directory **containing** `workflows/`, `prompts/`, and
 `scripts/`. The loop runs per-task implement → review → fix (model-tiered,
-ponytail-lensed), then judges the whole branch against the ADR's Success criteria
-(oracle gates + a checker agent). It converges only when oracles pass and the
-checker is satisfied; **merge stays human-gated in your session** — the loop never
-merges.
+ponytail-lensed) — Decomposition tasks whose `deps` allow it run as parallel
+waves with a per-wave merge gate, so mark deps honestly there — then judges
+the whole branch against the ADR's Success criteria (oracle gates + a checker
+agent). It converges only when oracles pass and the checker is satisfied;
+**merge stays human-gated in your session** — the loop never merges.
 
 ## Scope guard
 

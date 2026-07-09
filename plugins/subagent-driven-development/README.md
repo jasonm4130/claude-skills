@@ -25,24 +25,28 @@ does only what needs human judgment or Opus reasoning:
 7. On return: present results, adjudicate plan-conflicts, drive merge/PR/cleanup
    (irreversible — human-gated, never automated).
 
-The background **Workflow** runs the per-task loop sequentially in the shared
-worktree (each task builds on the previous commit):
+The background **Workflow** runs tasks in dependency-ordered waves: tasks whose
+`deps` are all satisfied run concurrently, each in its own sibling worktree, and
+a merge gate integrates each wave before the next one starts (linear plans
+degenerate to one task per wave — sequential in effect):
 
 ```
-for each task:
-  implementer (model = task.tier)  → task-brief, TDD red→green, ponytail ladder, commit
-  reviewer    (opus if task=opus, else sonnet) → spec + quality + over-engineering lens
-  fix loop    (sonnet, capped)     → fix all Critical/Important, re-review
+for each wave (tasks with satisfied deps, run concurrently in sibling worktrees):
+  for each task in the wave:
+    implementer (model = task.tier)  → task-brief, TDD red→green, ponytail ladder, commit
+    reviewer    (opus if task=opus, else sonnet) → spec + quality + over-engineering lens
+    fix loop    (sonnet, capped)     → fix all Critical/Important, re-review
+  merge gate (sonnet) → integrate wave's successful tasks in order, run full suite, one repair attempt
 final whole-branch reviewer (opus) → merge-readiness + ponytail-debt harvest
 ```
 
 ### The contract
 
 **args (controller → workflow):**
-`{ planPath, workdir, pluginDir, globalConstraints, mergeBase, tasks:[{n,title,tier,deps}], limits:{fixRounds,escalateAttempts} }`
+`{ planPath, workdir, pluginDir, globalConstraints, mergeBase, tasks:[{n,title,tier,deps}], setupCmd?, testCmd?, limits:{fixRounds,escalateAttempts,maxParallel} }`
 
 **return:**
-`{ tasks, planConflicts, halted, finalReview, mergeBase, head, ledgerPath, meta }`
+`{ tasks, planConflicts, halted, finalReview, mergeBase, head, merges, ledgerPath, meta }`
 
 ### Model tiering
 
@@ -59,6 +63,13 @@ set on **every** `agent()` call, so none inherit the orchestrator and the
 - **Oscillation breaker:** the same finding-class surviving two consecutive fix
   rounds halts that task instead of looping forever.
 - **Fix cap:** `fixRounds` (default 2).
+- **Wave scheduling:** tasks whose `deps` are all satisfied run concurrently
+  (capped at `limits.maxParallel`, default 4), each in a sibling worktree
+  `<workdir>-t<N>` on branch `sdd/t<N>`. A sonnet merge gate integrates each
+  wave in task order, runs the full suite, and gets one bounded repair
+  attempt; red after repair halts the run. Task failures don't cancel
+  siblings — successful siblings are merged before the halt. Linear plans
+  degenerate to singleton waves: identical to sequential execution.
 
 ### Ponytail, codified and bounded
 

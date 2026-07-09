@@ -25,3 +25,13 @@ test("warns about path resolution and the plan-heading dependency", () => {
   assert.match(s, /sort -V \| tail -1|glob/i);
   assert.match(s, /# Task N|## Task/);
 });
+
+test("documents waves: deps contract, parallel args, and the new halted shape", () => {
+  assert.match(s, /deps.*parallel|parallel.*deps/i);
+  assert.match(s, /maxParallel/);
+  assert.match(s, /setupCmd/);
+  assert.match(s, /testCmd/);
+  assert.match(s, /failures/);
+  assert.match(s, /merges/);
+  assert.match(s, /don't invent independence|do not invent independence/i);
+});
