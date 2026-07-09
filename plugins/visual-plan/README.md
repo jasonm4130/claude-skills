@@ -20,7 +20,7 @@ HTML is a disposable rich view of the same work.
 
 ```
 /plugin marketplace add jasonm4130/claude-skills
-/plugin install visual-plan@claude-skills
+/plugin install visual-plan@jasonm4130-claude-skills
 ```
 
 ## Use
