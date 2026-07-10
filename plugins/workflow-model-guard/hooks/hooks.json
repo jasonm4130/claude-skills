@@ -10,6 +10,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs\"",
+            "timeout": 5
+          }
+        ]
       }
     ]
   }
