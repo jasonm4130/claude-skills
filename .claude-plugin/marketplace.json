@@ -97,8 +97,8 @@
     {
       "name": "workflow-model-guard",
       "source": "./plugins/workflow-model-guard",
-      "description": "PreToolUse hook that nudges Claude to tier models in high-fan-out Workflow scripts \u2014 denies a Workflow call that spawns many agents with no per-agent model: override.",
-      "version": "0.2.1",
+      "description": "PreToolUse hooks that keep sub-model choices deliberate \u2014 denies high-fan-out Workflow scripts with no per-agent model: override, and denies ad-hoc Agent dispatches that omit model unless the agent type pins one in frontmatter.",
+      "version": "0.3.0",
       "author": {
         "name": "Jason Matthew"
       },

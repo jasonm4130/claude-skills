@@ -1,7 +1,8 @@
 # workflow-model-guard
 
-A Claude Code plugin that stops high-fan-out **Workflow** runs from silently spending
-Opus 4.8 on every worker agent.
+A Claude Code plugin that stops high-fan-out **Workflow** runs — and, since 0.3.0,
+ad-hoc **Agent** dispatches — from silently spending the frontier-tier session model
+on every worker agent.
 
 ## Why
 
@@ -35,6 +36,28 @@ so a `deny` (which exists to make Claude *edit the script*) would dead-end. For 
 its denylist (currently just `deep-research`, the all-Opus built-in harness) it emits an
 **`ask`** so *you* decide; every other named workflow passes silently.
 
+**Ad-hoc `Agent` dispatches** (second hook, matcher `Agent`) — an Agent call with no
+`model` param inherits the session model, and measured usage showed 73% of 477 dispatches
+doing exactly that (the built-in Explore agent inherited in 71/75). The hook **denies**
+a dispatch that omits `model`, unless:
+
+- `model` is set — **any** tier, including `opus`/`fable`. Setting it *is* the ack; the
+  goal is a deliberate per-dispatch choice, not a cheap-only policy.
+- `subagent_type` is `fork` — forks always inherit; the `model` param is ignored for
+  them, so a deny could never be resolved.
+- the `subagent_type` resolves to a custom agent definition (project `.claude/agents/`
+  over `~/.claude/agents/`, matched by frontmatter `name:` then filename) whose
+  frontmatter pins `model:` (≠ `inherit`) — Claude Code applies that tier on its own.
+
+There is no scale gate here: a single frontier dispatch is the unit of waste, and the
+fix costs one round trip (Claude re-dispatches with an explicit tier). Known
+limitation: the session model isn't visible to hooks, so a Sonnet-driven session pays
+the same one-round-trip nudge — the explicit tier is correct hygiene there anyway.
+Verified on Claude Code 2.1.206 (2026-07-11 probes): the hook fires on `Agent` calls,
+sees `subagent_type`/`model`, and `deny` is enforced; older reports of Agent-matcher
+hooks not firing (#56151) or deny being ignored (#44534) don't reproduce. Note the
+legacy `Task` matcher *also* fires for Agent calls — register one matcher, never both.
+
 ## Escape hatches
 
 For an inline/`scriptPath` workflow (a `deny`), two ways to proceed:
@@ -46,6 +69,10 @@ For an inline/`scriptPath` workflow (a `deny`), two ways to proceed:
 For a denylisted `name:` workflow (an `ask`), you can't edit the script, so the prompt
 routes to you: approve to run it as-is, or switch the session to Sonnet first
 (`/model sonnet`) so every inherited-model agent is cheap.
+
+For an `Agent` dispatch (a `deny`), set `model` explicitly — that's both the fix and
+the escape hatch (`model: 'fable'` passes if frontier reasoning is genuinely needed).
+To exempt an agent type permanently, pin `model:` in its definition's frontmatter.
 
 ## Alternatives & limitations
 
@@ -94,17 +121,19 @@ add `workflow-model-guard`.
 
 ## How it works
 
-One stateless hook — no flag files, no event log, no external services.
+Two stateless hooks — no flag files, no event log, no external services.
 
 ```
 workflow-model-guard/
 ├── .claude-plugin/plugin.json
-├── hooks/hooks.json                                  — PreToolUse, matcher "Workflow"
+├── hooks/hooks.json                                  — PreToolUse, matchers "Workflow" + "Agent"
 ├── scripts/
 │   ├── lib.mjs                                       — readStdin + safeJsonParse + emitPermissionDecision
-│   └── pretooluse-guard-workflow-model.mjs           — the guard
+│   ├── pretooluse-guard-workflow-model.mjs           — the Workflow guard
+│   └── pretooluse-guard-agent-model.mjs              — the Agent guard
 └── tests/
-    └── pretooluse-guard-workflow-model.test.mjs
+    ├── pretooluse-guard-workflow-model.test.mjs
+    └── pretooluse-guard-agent-model.test.mjs
 ```
 
 On each `Workflow` call the hook resolves a script to inspect — `tool_input.script`
@@ -123,6 +152,10 @@ node --test plugins/workflow-model-guard/tests/
 # Manual smoke test — expensive workflow, no model → deny envelope on stdout
 echo '{"tool_name":"Workflow","tool_input":{"script":"await parallel(items.map(i => () => agent(\"do\")))"}}' \
   | node plugins/workflow-model-guard/scripts/pretooluse-guard-workflow-model.mjs
+
+# Manual smoke test — untiered Agent dispatch → deny envelope on stdout
+echo '{"tool_name":"Agent","tool_input":{"description":"d","prompt":"p","subagent_type":"Explore"}}' \
+  | node plugins/workflow-model-guard/scripts/pretooluse-guard-agent-model.mjs
 ```
 
 ## Dependencies

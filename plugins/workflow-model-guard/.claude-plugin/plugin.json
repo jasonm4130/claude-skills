@@ -1,7 +1,7 @@
 {
   "name": "workflow-model-guard",
-  "description": "PreToolUse hook that tiers models in high-fan-out Workflow runs — denies inline/scriptPath scripts that spawn many agents with no per-agent model: override, and asks before all-Opus built-in named workflows (e.g. deep-research) that can't be tiered from the session.",
-  "version": "0.2.1",
+  "description": "PreToolUse hooks that keep sub-model choices deliberate — denies high-fan-out Workflow scripts with no per-agent model: override, asks before all-Opus built-in named workflows (e.g. deep-research), and denies ad-hoc Agent dispatches that omit model unless the agent type pins one in frontmatter.",
+  "version": "0.3.0",
   "author": {
     "name": "Jason Matthew"
   },

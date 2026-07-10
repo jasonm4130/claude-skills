@@ -2,12 +2,20 @@
 
 ## What this is
 
-A single `PreToolUse` hook (matcher `Workflow`) that stops a high-fan-out Workflow run
-from silently defaulting every worker agent to the main-loop model (Opus 4.8). For a
-script it can read — inline `script` or one read from `scriptPath` — it **denies** when
-there's no per-agent `model:` override; the reason is fed back to Claude, which tiers the
-workers and re-runs. For a `name:`-invoked built-in it can't edit (e.g. the `deep-research`
-harness), it **asks the user** instead, since a deny would dead-end.
+Two `PreToolUse` hooks that keep sub-model choices deliberate:
+
+- **Workflow guard** (matcher `Workflow`): stops a high-fan-out Workflow run from
+  silently defaulting every worker agent to the main-loop model. For a script it can
+  read — inline `script` or one read from `scriptPath` — it **denies** when there's no
+  per-agent `model:` override; the reason is fed back to Claude, which tiers the workers
+  and re-runs. For a `name:`-invoked built-in it can't edit (e.g. the `deep-research`
+  harness), it **asks the user** instead, since a deny would dead-end.
+- **Agent guard** (matcher `Agent`, since 0.3.0): **denies** an ad-hoc Agent dispatch
+  that omits the `model` param, unless the type is `fork` (model param ignored by
+  design) or the `subagent_type` resolves to a custom agent definition with pinned
+  frontmatter `model:` (≠ `inherit`). Any explicit `model` — including `fable` — passes:
+  setting it IS the ack. Design rationale + probe evidence:
+  `RESEARCH_delegation_model_tiering.md` at the repo root.
 
 ## Plugin structure
 
@@ -16,12 +24,14 @@ workflow-model-guard/
 ├── .claude-plugin/
 │   └── plugin.json                          — name, version, author, engines
 ├── hooks/
-│   └── hooks.json                           — PreToolUse, matcher "Workflow"
+│   └── hooks.json                           — PreToolUse, matchers "Workflow" + "Agent"
 ├── scripts/
 │   ├── lib.mjs                              — readStdin + safeJsonParse + emitPermissionDecision
-│   └── pretooluse-guard-workflow-model.mjs  — the guard
+│   ├── pretooluse-guard-workflow-model.mjs  — the Workflow guard
+│   └── pretooluse-guard-agent-model.mjs     — the Agent guard
 ├── tests/
-│   └── pretooluse-guard-workflow-model.test.mjs
+│   ├── pretooluse-guard-workflow-model.test.mjs
+│   └── pretooluse-guard-agent-model.test.mjs
 ├── README.md
 └── CLAUDE.md                                — this file
 ```
@@ -68,6 +78,31 @@ mean the real spawn count is higher, so fan-out/loop presence is the stronger si
 The detection is heuristic on purpose: it errs toward silence on small workflows and
 only speaks up on clearly-expensive ones, so it doesn't fight the Workflow tool's own
 "omit `model` by default" guidance.
+
+### The Agent guard
+
+Stateless like the Workflow guard. On each `Agent` call:
+
+1. `tool_input.model` set (any non-empty string) → `exit 0`. Explicit = deliberate;
+   there is no separate ack marker because the model param itself is the ack.
+2. `subagent_type === "fork"` → `exit 0` (forks always inherit; a deny would loop).
+3. Scan `<cwd>/.claude/agents/*.md` then `~/.claude/agents/*.md` (that precedence,
+   mirroring Claude Code's own project-over-user resolution); match frontmatter `name:`
+   first, filename second. First resolving definition decides: pinned `model:`
+   (≠ `inherit`) → `exit 0`, otherwise fall through.
+4. Deny with the tier calculus (sonnet for search/mechanical/verify, haiku for
+   enumeration, opus/fable deliberately).
+
+No scale gate — one frontier dispatch is the unit of waste, and the deny costs one
+round trip. The session model still isn't visible to hooks, so Sonnet-driven sessions
+pay the same nudge; accepted (explicit tiers are correct hygiene there too).
+
+**Empirical grounding (2026-07-11, Claude Code 2.1.206, sandboxed `claude -p` probes):**
+PreToolUse fires on `Agent` dispatches (stale issue #56151 doesn't reproduce), `deny` is
+enforced — subagent never spawns, reason reaches the model (#44534 doesn't reproduce),
+and `updatedInput` can silently rewrite the dispatch model (rejected as design: hides
+the decision). The legacy `Task` matcher also fires for `Agent` calls — never register
+both, or the guard double-fires. Re-verify after major Claude Code upgrades.
 
 ## Dependencies
 
