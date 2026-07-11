@@ -12,6 +12,24 @@
   },
   "plugins": [
     {
+      "name": "adr",
+      "source": "./plugins/adr",
+      "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to the subagent-driven-development loop. Front-end for adr → sdd.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": [
+        "adr",
+        "architecture-decision-record",
+        "grounding",
+        "subagent-driven-development",
+        "sdd"
+      ],
+      "category": "productivity"
+    },
+    {
       "name": "adversarial-agents",
       "source": "./plugins/adversarial-agents",
       "description": "Configurable adversarial panel review for any artefact — plans, code, design docs, prose, model outputs.",
@@ -44,6 +62,25 @@
         "research",
         "multi-agent",
         "synthesis",
+        "claude-code"
+      ],
+      "category": "productivity"
+    },
+    {
+      "name": "docs-sync-guard",
+      "source": "./plugins/docs-sync-guard",
+      "description": "PreToolUse git-commit gate against docs drift in plugins/ monorepos — denies a commit that changes a plugin's executable code (scripts/hooks/agents/workflows) without staging that plugin's README.md or CLAUDE.md. Tests, version bumps, and skills/commands markdown never trigger it; add docs-sync:ack to the commit message for deliberate no-doc-impact changes.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": [
+        "docs-drift",
+        "documentation",
+        "git-commit",
+        "hooks",
+        "guard",
         "claude-code"
       ],
       "category": "productivity"
@@ -100,19 +137,20 @@
       "category": "productivity"
     },
     {
-      "name": "workflow-model-guard",
-      "source": "./plugins/workflow-model-guard",
-      "description": "PreToolUse hooks that keep sub-model choices deliberate — denies high-fan-out Workflow scripts with no per-agent model: override, asks before all-Opus built-in named workflows (e.g. deep-research), and denies ad-hoc Agent dispatches that omit model unless the agent type pins one in frontmatter.",
-      "version": "0.3.0",
+      "name": "subagent-driven-development",
+      "source": "./plugins/subagent-driven-development",
+      "description": "Deterministic workflow-driven subagent development loop — plan/confirm in the controller, then a background Workflow enforces per-task implement/review/fix with tiered models and codified ponytail discipline.",
+      "version": "0.2.1",
       "author": {
         "name": "Jason Matthew"
       },
       "license": "MIT",
       "keywords": [
+        "subagent-driven-development",
+        "sdd",
         "workflow",
-        "model-selection",
-        "cost",
-        "hooks"
+        "code-review",
+        "ponytail"
       ],
       "category": "productivity"
     },
@@ -136,38 +174,19 @@
       "category": "productivity"
     },
     {
-      "name": "subagent-driven-development",
-      "source": "./plugins/subagent-driven-development",
-      "description": "Deterministic workflow-driven subagent development loop — plan/confirm in the controller, then a background Workflow enforces per-task implement/review/fix with tiered models and codified ponytail discipline.",
-      "version": "0.2.1",
+      "name": "workflow-model-guard",
+      "source": "./plugins/workflow-model-guard",
+      "description": "PreToolUse hooks that keep sub-model choices deliberate — denies high-fan-out Workflow scripts with no per-agent model: override, asks before all-Opus built-in named workflows (e.g. deep-research), and denies ad-hoc Agent dispatches that omit model unless the agent type pins one in frontmatter.",
+      "version": "0.3.0",
       "author": {
         "name": "Jason Matthew"
       },
       "license": "MIT",
       "keywords": [
-        "subagent-driven-development",
-        "sdd",
         "workflow",
-        "code-review",
-        "ponytail"
-      ],
-      "category": "productivity"
-    },
-    {
-      "name": "adr",
-      "source": "./plugins/adr",
-      "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to the subagent-driven-development loop. Front-end for adr → sdd.",
-      "version": "0.1.0",
-      "author": {
-        "name": "Jason Matthew"
-      },
-      "license": "MIT",
-      "keywords": [
-        "adr",
-        "architecture-decision-record",
-        "grounding",
-        "subagent-driven-development",
-        "sdd"
+        "model-selection",
+        "cost",
+        "hooks"
       ],
       "category": "productivity"
     }
