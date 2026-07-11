@@ -2,11 +2,14 @@
 
 ## What this is
 
-A single `PreToolUse` hook (matcher `Bash`) that gates `git commit` commands in
-`plugins/` monorepos: executable plugin code staged without that plugin's
-README.md/CLAUDE.md → **deny** with the offending plugin names. The
-`docs-sync:ack` marker in the commit command bypasses (and self-documents in
-history). See README.md for the user-facing contract.
+A single `PreToolUse` hook (matcher `Bash`) that gates `git commit` commands with
+two rules: (1) plugins-monorepo pairs — executable plugin code staged without that
+plugin's README.md/CLAUDE.md → **deny** with the offending plugin names; (2)
+generic nearest-covering-doc (0.2.0) — any other code file whose nearest ancestor
+README.md/CLAUDE.md/AGENTS.md exists but isn't staged → **deny**, because a future
+agent session reads those docs as the source of truth. The `docs-sync:ack` marker
+in the commit command bypasses (and self-documents in history). See README.md for
+the user-facing contract.
 
 ## Design decisions (research-grounded, 2026-07-11)
 

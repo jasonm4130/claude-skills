@@ -256,3 +256,88 @@ test("fails open when cwd is not a git repo", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---- generic mode: any repo with agent-facing docs (v0.2.0) ----
+
+test("generic: denies code change when covering root README+CLAUDE.md untouched", () => {
+  const r = repo(
+    { "src/main.js": "x", "README.md": "d", "CLAUDE.md": "d" },
+    ["src/main.js"],
+  );
+  try {
+    const d = parseDecision(run(bash(COMMIT, r.root)).stdout);
+    assert.equal(d.permissionDecision, "deny");
+    assert.match(d.permissionDecisionReason, /source of truth|stale/i);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("generic: allows when a covering doc is staged with the code", () => {
+  const r = repo(
+    { "src/main.js": "x", "README.md": "d" },
+    ["src/main.js", "README.md"],
+  );
+  try {
+    assert.equal(run(bash(COMMIT, r.root)).stdout.trim(), "");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("generic: nearest covering doc satisfies — subdir README staged", () => {
+  const r = repo(
+    { "svc/api/server.js": "x", "svc/README.md": "d", "README.md": "root" },
+    ["svc/api/server.js", "svc/README.md"],
+  );
+  try {
+    assert.equal(run(bash(COMMIT, r.root)).stdout.trim(), "");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("generic: AGENTS.md counts as a covering doc", () => {
+  const r = repo(
+    { "src/main.js": "x", "AGENTS.md": "d" },
+    ["src/main.js", "AGENTS.md"],
+  );
+  try {
+    assert.equal(run(bash(COMMIT, r.root)).stdout.trim(), "");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("generic: silent when the repo has no agent-facing docs at all", () => {
+  const r = repo({ "src/main.js": "x" }, ["src/main.js"]);
+  try {
+    assert.equal(run(bash(COMMIT, r.root)).stdout.trim(), "");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("generic: docs-only commits never trigger", () => {
+  const r = repo(
+    { "README.md": "d", "notes/design.md": "n" },
+    ["README.md", "notes/design.md"],
+  );
+  try {
+    assert.equal(run(bash(COMMIT, r.root)).stdout.trim(), "");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("generic: tests-only and lockfile-only commits never trigger", () => {
+  const r = repo(
+    { "tests/a.test.js": "t", "package-lock.json": "{}", "README.md": "d" },
+    ["tests/a.test.js", "package-lock.json"],
+  );
+  try {
+    assert.equal(run(bash(COMMIT, r.root)).stdout.trim(), "");
+  } finally {
+    r.cleanup();
+  }
+});
