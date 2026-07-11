@@ -7,6 +7,8 @@ when your context window fills up, and auto-loads it in the next session.
 
 1. **Monitors context fill** via a statusLine command that renders a color-coded
    progress bar and detects when context crosses a configurable threshold (default 70%).
+   Since 0.5.0 the bar is prefixed with the working-dir basename (and `⎇branch` when in
+   a git worktree) so parallel sessions in different tabs are tellable apart at a glance.
 2. **Nudges escalate with context** — a nudge fires on every 10%-point band
    entered at or above the threshold (e.g. 70%, then again at 80%, then again
    at 90%), not just once. Marathon sessions that sail past the first nudge

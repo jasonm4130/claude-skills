@@ -692,6 +692,91 @@ test("effective_max + JSONL fallback: last assistant turn with all-zero usage re
   assert.doesNotMatch(result.stdout, /50%/);
 });
 
+// --- Location prefix: dir basename + worktree branch for multi-tab disambiguation ---
+
+test("location prefix: workspace.current_dir basename precedes the bar", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const input = JSON.stringify({
+    session_id: "test-loc-dir",
+    workspace: { current_dir: "/Users/u/Work/Git/dotfiles", project_dir: "/Users/u/Work/Git/dotfiles" },
+    context_window: { used_percentage: 24 },
+  });
+  const result = await run(input, { CLAUDE_PLUGIN_DATA: dir });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /dotfiles/);
+  assert.match(result.stdout, /24%/);
+  assert.ok(
+    result.stdout.indexOf("dotfiles") < result.stdout.indexOf("[█"),
+    `prefix should precede the bar, got: ${JSON.stringify(result.stdout)}`,
+  );
+});
+
+test("location prefix: worktree branch shown after dir name", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const input = JSON.stringify({
+    session_id: "test-loc-worktree",
+    workspace: { current_dir: "/Users/u/Work/Git/dotfiles/.claude/worktrees/fix-titles" },
+    worktree: { name: "fix-titles", path: "/Users/u/Work/Git/dotfiles/.claude/worktrees/fix-titles", branch: "worktree-fix-titles" },
+    context_window: { used_percentage: 24 },
+  });
+  const result = await run(input, { CLAUDE_PLUGIN_DATA: dir });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /fix-titles ⎇worktree-fix-titles/);
+});
+
+test("location prefix: falls back to top-level cwd when workspace missing", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const input = JSON.stringify({
+    session_id: "test-loc-cwd",
+    cwd: "/Users/u/Work/Git/claude-skills",
+    context_window: { used_percentage: 24 },
+  });
+  const result = await run(input, { CLAUDE_PLUGIN_DATA: dir });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /claude-skills/);
+});
+
+test("location prefix: bail ('?') keeps the prefix when dir is known", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const input = JSON.stringify({
+    session_id: "test-loc-bail",
+    workspace: { current_dir: "/Users/u/Work/Git/dotfiles" },
+    context_window: { used_percentage: 42, current_usage: null },
+  });
+  const result = await run(input, {
+    CLAUDE_PLUGIN_DATA: dir,
+    HANDOFF_EFFECTIVE_MAX_TOKENS: "400000",
+  });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /dotfiles.*\?/s);
+});
+
+test("location prefix: absent when neither workspace nor cwd provided (existing output unchanged)", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const input = JSON.stringify({
+    session_id: "test-loc-none",
+    context_window: { used_percentage: 24 },
+  });
+  const result = await run(input, { CLAUDE_PLUGIN_DATA: dir });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /^\x1b\[0;32m\[/, `output should start with the colored bar, got: ${JSON.stringify(result.stdout)}`);
+});
+
 test("effective_max NOT set + current_usage missing: preserves existing behavior using raw used_percentage", async (t) => {
   const dir = mkTmp();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
