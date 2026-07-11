@@ -5,7 +5,16 @@
   "author": {
     "name": "Jason Matthew"
   },
+  "homepage": "https://github.com/jasonm4130/claude-skills",
+  "repository": "https://github.com/jasonm4130/claude-skills",
   "license": "MIT",
+  "keywords": [
+    "session",
+    "retrospective",
+    "memory",
+    "hooks",
+    "claude-code"
+  ],
   "engines": {
     "claude-code": ">=2.1.110"
   }

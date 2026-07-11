@@ -1,5 +1,7 @@
 # claude-skills
 
+![CI](https://github.com/jasonm4130/claude-skills/actions/workflows/ci.yml/badge.svg)
+
 A Claude Code plugin **marketplace** hosting multiple independent plugins.
 Add the marketplace once, then install the plugins you want.
 
@@ -57,4 +59,4 @@ MIT — see `LICENSE`.
 
 ## Acknowledgements
 
-`adversarial-agents` was prompted by Matt Pocock's [`grill-me`](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me) skill. The panel-of-personas + severity-promotion pattern draws on Alireza Rezvani's [adversarial-reviewer](https://github.com/alirezarezvani/claude-skills) and zscole's [adversarial-spec](https://github.com/zscole/adversarial-spec). The full research synthesis behind the original design decisions lives in the originating dotfiles plan (`docs/plans/2026-05-16-skills-overhaul-research.md`).
+`adversarial-agents` was prompted by Matt Pocock's [`grill-me`](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me) skill. The panel-of-personas + severity-promotion pattern draws on Alireza Rezvani's [adversarial-reviewer](https://github.com/alirezarezvani/claude-skills) and zscole's [adversarial-spec](https://github.com/zscole/adversarial-spec). The full research synthesis behind the original design decisions lives in the originating (private) dotfiles repo's plan doc, `docs/plans/2026-05-16-skills-overhaul-research.md` — not in this repo.

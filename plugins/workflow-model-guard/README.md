@@ -108,8 +108,8 @@ researched and tested, and each has a disqualifying catch:
   editable script.
 
 So for an Opus-default user who wants Opus everywhere *except* the wasteful built-in
-fan-out, the surgical `ask` (decline → `/model sonnet` for that run, or run the tiered
-`deep-research:deep-research` plugin instead) is the least-bad option. A
+fan-out, the surgical `ask` (decline → `/model sonnet` for that run, or run this repo's
+model-tiered `deep-dive` plugin instead) is the least-bad option. A
 `SessionStart`→disk→`PreToolUse` bridge could upgrade the `ask` to an auto-`deny` on Opus
 sessions, but it adds a stateful hook and is stale across mid-session model switches.
 

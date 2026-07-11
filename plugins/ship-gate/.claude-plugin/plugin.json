@@ -2,7 +2,20 @@
   "name": "ship-gate",
   "description": "Stop-hook gate against trail-off: detects unpushed commits at turn end and injects an agent-directed nudge to review and finish the branch.",
   "version": "0.1.0",
-  "author": { "name": "Jason Matthew" },
+  "author": {
+    "name": "Jason Matthew"
+  },
+  "homepage": "https://github.com/jasonm4130/claude-skills",
+  "repository": "https://github.com/jasonm4130/claude-skills",
   "license": "MIT",
-  "engines": { "claude-code": ">=2.1.110" }
+  "keywords": [
+    "ship",
+    "stop-hook",
+    "code-review",
+    "finishing",
+    "claude-code"
+  ],
+  "engines": {
+    "claude-code": ">=2.1.110"
+  }
 }
