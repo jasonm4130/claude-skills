@@ -16,6 +16,7 @@ Add the marketplace once, then install the plugins you want.
 | `adr` | Intent → grounded, cited, build-ready ADR, handed to the SDD loop | `/plugin install adr@jasonm4130-claude-skills` |
 | `adversarial-agents` | Configurable adversarial panel review for any artefact | `/plugin install adversarial-agents@jasonm4130-claude-skills` |
 | `deep-dive` | Model-tiered, adversarially-verified multi-source research | `/plugin install deep-dive@jasonm4130-claude-skills` |
+| `docs-sync-guard` | Git-commit gate against docs drift in plugins/ monorepos | `/plugin install docs-sync-guard@jasonm4130-claude-skills` |
 | `handoff` | Context-fill-triggered handoff doc, auto-loaded next session | `/plugin install handoff@jasonm4130-claude-skills` |
 | `session-retro` | Session retrospectives that capture learnings to memory | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | `/plugin install ship-gate@jasonm4130-claude-skills` |

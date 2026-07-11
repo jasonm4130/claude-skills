@@ -1,0 +1,23 @@
+{
+  "name": "docs-sync-guard",
+  "description": "PreToolUse git-commit gate against docs drift in plugins/ monorepos — denies a commit that changes a plugin's executable code (scripts/hooks/agents/workflows) without staging that plugin's README.md or CLAUDE.md. Tests, version bumps, and skills/commands markdown never trigger it; add docs-sync:ack to the commit message for deliberate no-doc-impact changes.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Jason Matthew",
+    "email": "jasonm4130@gmail.com"
+  },
+  "homepage": "https://github.com/jasonm4130/claude-skills",
+  "repository": "https://github.com/jasonm4130/claude-skills",
+  "license": "MIT",
+  "keywords": [
+    "docs-drift",
+    "documentation",
+    "git-commit",
+    "hooks",
+    "guard",
+    "claude-code"
+  ],
+  "engines": {
+    "claude-code": ">=2.1.110"
+  }
+}
