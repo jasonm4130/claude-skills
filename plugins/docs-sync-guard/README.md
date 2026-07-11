@@ -17,10 +17,19 @@ where the change and its documentation are both still in working memory.
 
 ## When it fires
 
-Only in repos with a `plugins/` monorepo layout (silent everywhere else). It denies
-a `git commit` when the commit would include changes under
+Two rules, checked on every `git commit` in any repo:
+
+**Plugins-monorepo rule** — changes under
 `plugins/<name>/{scripts,hooks,agents,workflows}/` without a staged
 `plugins/<name>/README.md` or `plugins/<name>/CLAUDE.md` **for the same plugin**.
+
+**Generic nearest-covering-doc rule (0.2.0)** — for any other changed code file,
+walk up from its directory to the repo root; the nearest level holding a
+`README.md`, `CLAUDE.md`, or `AGENTS.md` is that file's covering doc set. If none
+of the covering docs are in the commit, the commit is denied — this is the general
+failure path where the system changes, the docs don't, and a future agent session
+reads the stale docs as the source of truth. A repo with no such docs anywhere
+above the changed file has nothing to drift and stays silent.
 
 What the commit "includes" is the union of already-staged files, paths named in
 `git add` segments of the same compound command, and modified tracked files when
@@ -33,6 +42,8 @@ Never flagged (the explicit not-to-flag list — noise kills commit gates):
 - version bumps (`.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`)
 - `skills/` and `commands/` markdown — those files are self-documenting prompt
   content, not code that a README describes
+- all markdown, lockfiles (`package-lock.json`, `Cargo.lock`, `uv.lock`, …),
+  LICENSE, `.gitignore`/`.gitattributes`/`.editorconfig`
 - doc-only commits, non-commit git commands, non-git Bash commands
 
 ## Escape hatch

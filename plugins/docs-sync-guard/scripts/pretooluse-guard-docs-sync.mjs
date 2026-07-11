@@ -24,7 +24,7 @@
 
 import process from "node:process";
 import path from "node:path";
-import { realpathSync } from "node:fs";
+import { realpathSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { readStdin, safeJsonParse, emitPermissionDecision } from "./lib.mjs";
 
@@ -114,7 +114,7 @@ for (const p of pathsFromGitAdd(command)) {
   if (rel && !rel.startsWith("..")) staged.add(rel);
 }
 
-// Which plugins have executable-code changes, and which have doc changes?
+// ---- Rule 1: plugins/ monorepo pairs (per-plugin precision) ----
 const codePlugins = new Set();
 const docPlugins = new Set();
 for (const f of staged) {
@@ -123,16 +123,69 @@ for (const f of staged) {
   const doc = /^plugins\/([^/]+)\/(README\.md|CLAUDE\.md)$/.exec(f);
   if (doc) docPlugins.add(doc[1]);
 }
+const violatingPlugins = [...codePlugins].filter((p) => !docPlugins.has(p)).sort();
 
-const violating = [...codePlugins].filter((p) => !docPlugins.has(p)).sort();
-if (!violating.length) process.exit(0);
+// ---- Rule 2: generic nearest-covering-doc (any repo) ----
+// The failure path this guards: the system changes, agent-facing docs don't, and a
+// future session reads those docs as the source of truth and acts on stale claims.
+// For each changed non-plugins code file, walk up from its directory to the repo
+// root; the nearest level holding a README.md/CLAUDE.md/AGENTS.md is the covering
+// doc set. A repo with no such docs anywhere above the file has nothing to drift.
+const DOC_BASENAMES = ["README.md", "CLAUDE.md", "AGENTS.md"];
+const SKIP_RE =
+  /\.(md|markdown)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|Cargo\.lock|uv\.lock|poetry\.lock|LICENSE[^/]*|\.gitignore|\.gitattributes|\.editorconfig)$|\.lock$|(^|\/)\.claude-plugin\//;
+
+/** @type {Map<string, { docs: string[], files: string[] }>} */
+const genericViolations = new Map();
+for (const f of staged) {
+  if (f.startsWith("plugins/")) continue; // rule 1 territory
+  if (TEST_RE.test(f) || SKIP_RE.test(f)) continue;
+  let dir = path.posix.dirname(f);
+  /** @type {{ docs: string[] } | null} */
+  let covering = null;
+  for (;;) {
+    const prefix = dir === "." ? "" : `${dir}/`;
+    const docs = DOC_BASENAMES.map((b) => prefix + b).filter((d) =>
+      existsSync(path.join(root, d)),
+    );
+    if (docs.length) {
+      covering = { docs };
+      break;
+    }
+    if (dir === ".") break;
+    dir = path.posix.dirname(dir);
+  }
+  if (!covering || covering.docs.some((d) => staged.has(d))) continue;
+  const key = covering.docs.join(", ");
+  const entry = genericViolations.get(key) || { docs: covering.docs, files: [] };
+  entry.files.push(f);
+  genericViolations.set(key, entry);
+}
+
+if (!violatingPlugins.length && !genericViolations.size) process.exit(0);
+
+const parts = [];
+if (violatingPlugins.length) {
+  parts.push(
+    `executable code in plugin${violatingPlugins.length === 1 ? "" : "s"} ` +
+      `${violatingPlugins.map((p) => `"${p}"`).join(", ")} without that plugin's ` +
+      "README.md or CLAUDE.md staged",
+  );
+}
+for (const { docs, files } of genericViolations.values()) {
+  parts.push(
+    `${files.length} code file${files.length === 1 ? "" : "s"} (e.g. ${files[0]}) ` +
+      `whose covering doc${docs.length === 1 ? "" : "s"} (${docs.join(", ")}) ` +
+      "are untouched",
+  );
+}
 
 const reason =
-  `docs-sync-guard: this commit changes executable code in plugin${violating.length === 1 ? "" : "s"} ` +
-  `${violating.map((p) => `"${p}"`).join(", ")} without staging that plugin's README.md or ` +
-  "CLAUDE.md. If behavior, structure, or usage changed, update and stage the docs in the " +
-  "same commit. If this change genuinely has no doc impact (pure refactor, comment fix), " +
-  'add "docs-sync:ack" to the commit message and re-run.';
+  `docs-sync-guard: this commit changes ${parts.join("; and ")}. A future agent ` +
+  "session will read those docs as the source of truth and act on stale claims. " +
+  "If behavior, structure, or usage changed, update and stage the covering docs in " +
+  "the same commit. If this change genuinely has no doc impact (pure refactor, " +
+  'comment fix), add "docs-sync:ack" to the commit message and re-run.';
 
 emitPermissionDecision("deny", reason);
 process.exit(0);

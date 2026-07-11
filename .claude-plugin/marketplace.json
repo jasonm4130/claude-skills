@@ -69,8 +69,8 @@
     {
       "name": "docs-sync-guard",
       "source": "./plugins/docs-sync-guard",
-      "description": "PreToolUse git-commit gate against docs drift in plugins/ monorepos — denies a commit that changes a plugin's executable code (scripts/hooks/agents/workflows) without staging that plugin's README.md or CLAUDE.md. Tests, version bumps, and skills/commands markdown never trigger it; add docs-sync:ack to the commit message for deliberate no-doc-impact changes.",
-      "version": "0.1.0",
+      "description": "PreToolUse git-commit gate against docs drift — denies a commit that changes code without staging its covering docs: per-plugin README/CLAUDE.md pairs in plugins/ monorepos, and a generic nearest-covering-doc rule (README.md/CLAUDE.md/AGENTS.md walking up from each changed file) in any repo. Tests, version bumps, markdown, and lockfiles never trigger it; add docs-sync:ack to the commit message for deliberate no-doc-impact changes.",
+      "version": "0.2.0",
       "author": {
         "name": "Jason Matthew"
       },
