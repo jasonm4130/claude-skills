@@ -7,6 +7,9 @@
     "description": "Jason Matthew's personal Claude Code skills marketplace.",
     "pluginRoot": "./plugins"
   },
+  "renames": {
+    "deep-research": "deep-dive"
+  },
   "plugins": [
     {
       "name": "adversarial-agents",
