@@ -22,20 +22,55 @@ import { readStdin, safeJsonParse, resolveSessionId, resolveDataDir, lastAssista
  */
 
 /**
+ * @typedef {Object} Workspace
+ * @property {string} [current_dir]
+ * @property {string} [project_dir]
+ */
+
+/**
+ * @typedef {Object} Worktree
+ * @property {string} [name]
+ * @property {string} [path]
+ * @property {string} [branch]
+ */
+
+/**
  * @typedef {Object} StatusInput
  * @property {string} [session_id]
  * @property {ContextWindow} [context_window]
  * @property {string} [transcript_path]
+ * @property {string} [cwd]
+ * @property {Workspace} [workspace]
+ * @property {Worktree} [worktree]
  */
 
-function bail() {
-  process.stdout.write("?\n");
+/** @param {string} [prefix] */
+function bail(prefix = "") {
+  process.stdout.write(`${prefix}?\n`);
   process.exit(0);
 }
 
 const raw = await readStdin();
 const parsed = /** @type {StatusInput | null} */ (safeJsonParse(raw));
 if (!parsed) bail();
+
+// --- Location prefix: dir basename (+ worktree branch) so parallel sessions
+// in different tabs/worktrees are tellable apart at a glance ---
+const wsDir =
+  parsed && parsed.workspace && typeof parsed.workspace.current_dir === "string" && parsed.workspace.current_dir.length > 0
+    ? parsed.workspace.current_dir
+    : parsed && typeof parsed.cwd === "string" && parsed.cwd.length > 0
+      ? parsed.cwd
+      : null;
+const wtBranch =
+  parsed && parsed.worktree && typeof parsed.worktree.branch === "string" && parsed.worktree.branch.length > 0
+    ? parsed.worktree.branch
+    : null;
+/** @type {string[]} */
+const locParts = [];
+if (wsDir !== null) locParts.push(path.basename(wsDir));
+if (wtBranch !== null) locParts.push(`⎇${wtBranch}`);
+const locPrefix = locParts.length > 0 ? `\x1b[2m${locParts.join(" ")}\x1b[0m ` : "";
 
 const cw = parsed && parsed.context_window ? parsed.context_window : undefined;
 const pctRaw = cw ? cw.used_percentage : undefined;
@@ -84,12 +119,12 @@ if (hasEffectiveMax) {
   }
 
   // Step 3: bail — do NOT fall through to raw used_percentage
-  if (currentPct === undefined) bail();
+  if (currentPct === undefined) bail(locPrefix);
 } else if (typeof pctRaw === "number" && Number.isFinite(pctRaw)) {
   currentPct = pctRaw;
 }
 
-if (typeof currentPct !== "number" || !Number.isFinite(currentPct)) bail();
+if (typeof currentPct !== "number" || !Number.isFinite(currentPct)) bail(locPrefix);
 
 const sid = resolveSessionId(parsed);
 const dataDir = resolveDataDir("handoff-data");
@@ -138,4 +173,4 @@ else if (pctInt >= 50) color = "\x1b[0;33m"; // yellow
 else color = "\x1b[0;32m"; // green
 const reset = "\x1b[0m";
 
-process.stdout.write(`${color}[${bar}] ${pctInt}%${reset}\n`);
+process.stdout.write(`${locPrefix}${color}[${bar}] ${pctInt}%${reset}\n`);

@@ -25,7 +25,7 @@ handoff/
 │   └── hooks.json            — UserPromptSubmit + SessionStart
 ├── scripts/
 │   ├── lib.mjs               — shared stdin/env/flag helpers
-│   ├── status-and-flag.mjs   — statusLine: renders bar, writes flag at threshold
+│   ├── status-and-flag.mjs   — statusLine: renders dir/worktree prefix + bar, writes flag at threshold
 │   ├── check-handoff-flag.mjs— UserPromptSubmit: consumes flag → additionalContext
 │   ├── load-pending-handoff.mjs — SessionStart: loads .pending handoff → additionalContext
 │   └── setup.mjs             — one-time helper that wires statusLine into ~/.claude/settings.json
