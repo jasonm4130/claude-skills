@@ -9,6 +9,9 @@ when your context window fills up, and auto-loads it in the next session.
    progress bar and detects when context crosses a configurable threshold (default 70%).
    Since 0.5.0 the bar is prefixed with the working-dir basename (and `⎇branch` when in
    a git worktree) so parallel sessions in different tabs are tellable apart at a glance.
+   Since 0.5.1 overlapping statusline invocations (Claude Code can fire the next one
+   before a slow render finishes) are guarded: a concurrent run replays the previous
+   render instead of double-firing nudges or interleaving state writes.
 2. **Nudges escalate with context** — a nudge fires on every 10%-point band
    entered at or above the threshold (e.g. 70%, then again at 80%, then again
    at 90%), not just once. Marathon sessions that sail past the first nudge
@@ -191,5 +194,7 @@ gives you context, but the retro waits until you've actually done work in the ne
 | `handoff-statusline.mjs` | `~/.claude/` | Stable wrapper script that auto-resolves the latest installed plugin version (written by setup.mjs) |
 | `last-context-pct-<sid>.txt` | `$CLAUDE_PLUGIN_DATA` | Tracks last seen context % for band-crossing detection |
 | `handoff-nudge-<sid>.flag` | `$CLAUDE_PLUGIN_DATA` | Nudge flag, consumed by UserPromptSubmit; re-written on each new 10%-point band |
+| `statusline-inflight-<sid>.lock` | `$CLAUDE_PLUGIN_DATA` | In-flight marker for the overlap guard; treated as stale after 2 s |
+| `last-render-<sid>.txt` | `$CLAUDE_PLUGIN_DATA` | Last rendered statusline output, replayed verbatim by overlapping invocations |
 | `<ts>-<slug>.md` | `$PROJECT_ROOT/.claude/handoffs/` | The handoff document (agent-authored) |
 | `.pending` | `$PROJECT_ROOT/.claude/handoffs/` | Auto-load marker for next session (24h TTL) |

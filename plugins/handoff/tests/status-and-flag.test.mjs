@@ -6,7 +6,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, utimesSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
@@ -775,6 +775,108 @@ test("location prefix: absent when neither workspace nor cwd provided (existing 
 
   assert.equal(result.code, 0);
   assert.match(result.stdout, /^\x1b\[0;32m\[/, `output should start with the colored bar, got: ${JSON.stringify(result.stdout)}`);
+});
+
+// --- Overlap guard: in-flight lock + last-render cache replay ---
+// Claude Code can fire the next statusline invocation before the previous one
+// finished (slow JSONL fallback). A concurrent run must not double-fire flags
+// or interleave state writes — it replays the last render instead.
+
+test("overlap guard: fresh in-flight lock replays cached render without mutating state", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-overlap-replay";
+  const cached = "\x1b[0;32m[████░░░░░░] 42%\x1b[0m\n";
+  writeFileSync(path.join(dir, `statusline-inflight-${sid}.lock`), "");
+  writeFileSync(path.join(dir, `last-render-${sid}.txt`), cached);
+  writeFileSync(path.join(dir, `last-context-pct-${sid}.txt`), "60");
+
+  const result = await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 76 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+
+  assert.equal(result.code, 0);
+  assert.equal(result.stdout, cached, "should replay the cached render verbatim");
+  assert.ok(!existsSync(path.join(dir, `handoff-nudge-${sid}.flag`)), "replay must not fire a flag");
+  const lastPct = readFileSync(path.join(dir, `last-context-pct-${sid}.txt`), "utf8");
+  assert.equal(lastPct, "60", "replay must not update last-pct");
+});
+
+test("overlap guard: fresh lock with no cache prints '?' and mutates nothing", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-overlap-nocache";
+  writeFileSync(path.join(dir, `statusline-inflight-${sid}.lock`), "");
+  writeFileSync(path.join(dir, `last-context-pct-${sid}.txt`), "60");
+
+  const result = await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 76 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /^\?/);
+  assert.ok(!existsSync(path.join(dir, `handoff-nudge-${sid}.flag`)), "no flag while another run is in flight");
+  const lastPct = readFileSync(path.join(dir, `last-context-pct-${sid}.txt`), "utf8");
+  assert.equal(lastPct, "60");
+});
+
+test("overlap guard: stale lock (crashed run) renders normally and updates state", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-overlap-stale";
+  const lockFile = path.join(dir, `statusline-inflight-${sid}.lock`);
+  writeFileSync(lockFile, "");
+  const old = (Date.now() - 10_000) / 1000;
+  utimesSync(lockFile, old, old);
+  writeFileSync(path.join(dir, `last-context-pct-${sid}.txt`), "60");
+
+  const result = await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 76 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /76%/);
+  assert.ok(existsSync(path.join(dir, `handoff-nudge-${sid}.flag`)), "stale lock must not suppress the flag");
+  assert.equal(readFileSync(path.join(dir, `last-context-pct-${sid}.txt`), "utf8"), "76");
+  assert.ok(!existsSync(lockFile), "lock should be released after a normal run");
+});
+
+test("overlap guard: normal run writes the render cache and clears the lock", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-overlap-lifecycle";
+  const result = await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 42 } }), {
+    CLAUDE_PLUGIN_DATA: dir,
+  });
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /42%/);
+  const cacheFile = path.join(dir, `last-render-${sid}.txt`);
+  assert.ok(existsSync(cacheFile), "render cache should be written");
+  assert.equal(readFileSync(cacheFile, "utf8"), result.stdout, "cache should hold the exact rendered output");
+  assert.ok(!existsSync(path.join(dir, `statusline-inflight-${sid}.lock`)), "lock should be released");
+});
+
+test("overlap guard: bail path releases the lock", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const sid = "test-overlap-bail";
+  const result = await run(
+    JSON.stringify({ session_id: sid, context_window: { used_percentage: 42, current_usage: null } }),
+    {
+      CLAUDE_PLUGIN_DATA: dir,
+      HANDOFF_EFFECTIVE_MAX_TOKENS: "400000",
+    },
+  );
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /^\?/);
+  assert.ok(!existsSync(path.join(dir, `statusline-inflight-${sid}.lock`)), "bail must release the lock");
 });
 
 test("effective_max NOT set + current_usage missing: preserves existing behavior using raw used_percentage", async (t) => {
