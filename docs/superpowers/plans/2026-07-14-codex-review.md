@@ -417,6 +417,8 @@ test("guard scope is repo+artifact+hash; identical content elsewhere doesn't blo
   chmodSync(logPath, 0o000);
   assert.throws(() => reserveChain({ ...a, contentHash: "eeee000000000000" }), (e) => e.code === "RESERVE_FAILED",
     "an unreadable log must fail closed, not look empty");
+  assert.throws(() => reserveChain({ ...a, contentHash: "eeee000000000000", trigger: "forced" }), (e) => e.code === "RESERVE_FAILED",
+    "force must also refuse an unreadable log — an unvalidatable chain corrupts the gate");
   chmodSync(logPath, 0o600);
 });
 
@@ -425,6 +427,9 @@ test("appendNote validates chain, duplicates, outcome class; appendResult is non
   const { chainId } = reserveChain({ logPath, repo: "r", artifact: "a.md", contentHash: "cccc000000000000", trigger: "auto" });
   assert.throws(() => appendNote(logPath, { chainId: "nope", unique: 0, outcome: "audit-pass" }));
   assert.throws(() => appendNote(logPath, { chainId, unique: 0, outcome: "not-a-class" }));
+  for (const bad of [-1, 1.5, NaN, Infinity, "abc"]) {
+    assert.throws(() => appendNote(logPath, { chainId, unique: bad, outcome: "audit-pass" }), (e) => e.code === "BAD_UNIQUE");
+  }
   appendNote(logPath, { chainId, unique: 2, outcome: "audit-pass", comment: "ok" });
   assert.throws(() => appendNote(logPath, { chainId, unique: 1, outcome: "audit-pass" })); // duplicate
   assert.equal(appendResult(join(tmp(), "no-such-dir-parent", "x", "log.jsonl"), { mode: "review" }), false);
@@ -461,7 +466,7 @@ Expected: FAIL — new imports not exported.
 ```js
 import {
   readFileSync, appendFileSync, mkdirSync, openSync, closeSync, writeSync,
-  unlinkSync, statSync, existsSync,
+  unlinkSync, statSync, existsSync, renameSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { join as joinPath } from "node:path";
@@ -502,7 +507,15 @@ export function acquireLock(lockPath, staleMs = 30_000) {
       if (e.code !== "EEXIST") throw err("RESERVE_FAILED", `lock create failed: ${e.message}`);
       let age = 0;
       try { age = Date.now() - statSync(lockPath).mtimeMs; } catch { continue; } // vanished — retry
-      if (age > staleMs) { try { unlinkSync(lockPath); } catch { } continue; }  // break stale, retry
+      if (age > staleMs) {
+        // Atomic stale-break: rename first — exactly one breaker wins the rename,
+        // so a losing breaker can never delete a replacement holder's fresh lock.
+        try {
+          renameSync(lockPath, `${lockPath}.stale-${token}`);
+          unlinkSync(`${lockPath}.stale-${token}`);
+        } catch { /* another breaker won — fall through and retry acquire */ }
+        continue;
+      }
       throw err("LOCK_HELD", `lock held: ${lockPath}`);
     }
   }
@@ -542,13 +555,15 @@ export function reserveChain({ logPath, repo, artifact, contentHash, trigger }) 
     throw err("RESERVE_FAILED", `could not acquire lock: ${e.message}`);
   }
   try {
+    // Read the log in BOTH modes: an unreadable-but-appendable log under --force
+    // would otherwise open a chain that can never be validated or closed.
+    let lines;
+    try {
+      lines = readLogLines(logPath);
+    } catch (e) {
+      throw err("RESERVE_FAILED", `cannot read log, failing closed: ${e.message}`);
+    }
     if (trigger === "auto") {
-      let lines;
-      try {
-        lines = readLogLines(logPath);
-      } catch (e) {
-        throw err("RESERVE_FAILED", `guard cannot read log, failing closed: ${e.message}`);
-      }
       for (const { open, note } of chainStates(lines).values()) {
         // Scope: repo + artifact + hash — hash alone would let identical content
         // in different repos/paths suppress each other across the shared log.
@@ -558,7 +573,9 @@ export function reserveChain({ logPath, repo, artifact, contentHash, trigger }) 
         }
       }
     }
-    const chainId = mintChainId(artifact, contentHash, ts);
+    // repo is part of chain identity — identical path+content in two repos must
+    // not be able to mint the same id in the same millisecond.
+    const chainId = mintChainId(`${repo}:${artifact}`, contentHash, ts);
     const line = { ts, chainId, repo, artifact, contentHash, mode: "open", trigger };
     try {
       appendFileSync(logPath, JSON.stringify(line) + "\n");
@@ -583,16 +600,29 @@ export function appendResult(logPath, entry) {
 }
 
 export function appendNote(logPath, { chainId, unique, outcome, comment }) {
+  const n = Number(unique);
+  if (!Number.isInteger(n) || n < 0) throw err("BAD_UNIQUE", `--unique must be a non-negative integer, got: ${unique}`);
   if (!OUTCOMES.includes(outcome)) throw err("BAD_OUTCOME", `outcome must be one of ${OUTCOMES.join("|")}`);
-  const chains = chainStates(readLogLines(logPath));
-  const chain = chains.get(chainId);
-  if (!chain) throw err("UNKNOWN_CHAIN", `no open line for chain ${chainId}`);
-  if (chain.note) throw err("DUPLICATE_NOTE", `chain ${chainId} already has a note`);
-  const line = {
-    ts: new Date().toISOString(), chainId, mode: "note",
-    unique: Number(unique), trigger: chain.open.trigger, outcome, comment: comment ?? "",
-  };
-  appendFileSync(logPath, JSON.stringify(line) + "\n"); // throws on failure — fatal by design
+  // Same lock as reservation: duplicate-rejection must not be a racy read-then-append.
+  const lockPath = logPath + ".lock";
+  let token;
+  try {
+    token = acquireLock(lockPath);
+  } catch (e) {
+    throw err("NOTE_FAILED", `could not lock log for note: ${e.message}`);
+  }
+  try {
+    const chain = chainStates(readLogLines(logPath)).get(chainId);
+    if (!chain) throw err("UNKNOWN_CHAIN", `no open line for chain ${chainId}`);
+    if (chain.note) throw err("DUPLICATE_NOTE", `chain ${chainId} already has a note`);
+    const line = {
+      ts: new Date().toISOString(), chainId, mode: "note",
+      unique: n, trigger: chain.open.trigger, outcome, comment: comment ?? "",
+    };
+    appendFileSync(logPath, JSON.stringify(line) + "\n"); // throws on failure — fatal by design
+  } finally {
+    releaseLock(lockPath, token);
+  }
 }
 
 export function computeStats(logPath) {
@@ -750,6 +780,30 @@ test("e2e: bogus or closed --chain refuses before spending quota", () => {
   assert.match(closed.stderr, /already closed/);
 });
 
+test("e2e: spawn failure after reservation still emits result JSON with pendingNoteChainId", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const r = spawnSync("node", [SCRIPT, "review", artifact, "--auto"], {
+    env: { ...process.env, PATH: "/usr/bin:/bin", CODEX_REVIEW_LOG: logPath }, // no codex on PATH
+    encoding: "utf8", timeout: 30_000,
+  });
+  assert.notEqual(r.status, 0);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.verdict, "error");
+  assert.ok(out.pendingNoteChainId, "caller must be able to close the orphaned chain as aborted");
+});
+
+test("e2e: chain bound to another artifact refuses before spawning", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const a1 = join(dir, "plan-a.md"); writeFileSync(a1, "# plan a");
+  const a2 = join(dir, "plan-b.md"); writeFileSync(a2, "# plan b");
+  const shim = makeShim(dir, "ok");
+  const first = JSON.parse(runCli(["review", a1, "--auto"], shim.env, logPath).stdout);
+  const r = runCli(["review", a2, "--resume", first.sessionId, "--chain", first.chainId], shim.env, logPath);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /belongs to/);
+});
+
 test("e2e: malformed (non-JSON) stream → verdict error, non-zero exit", () => {
   const dir = tmp(); const logPath = join(dir, "log.jsonl");
   const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
@@ -865,7 +919,9 @@ function die(msg, code = 1) { process.stderr.write(msg + "\n"); process.exit(cod
 async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, model, effort, timeoutS }) {
   const logPath = logPathDefault();
   const abs = resolvePath(file);
-  if (!existsSync(abs)) die(`artifact not found: ${abs}`);
+  let fileStat;
+  try { fileStat = statSync(abs); } catch { die(`artifact not found: ${abs}`); }
+  if (!fileStat.isFile()) die(`artifact must be a regular file: ${abs}`);
   const repoRoot = resolveRepoRoot(abs);
   const relPath = relativePath(repoRoot, abs) || abs;
   const repo = repoRoot.split("/").at(-1);
@@ -887,6 +943,25 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
     const st = getChainState(logPath, chainId);
     if (!st) die(`unknown chain: ${chainId}`, 6);
     if (st.note) die(`chain ${chainId} is already closed (outcome: ${st.note.outcome})`, 6);
+    if (st.open.repo !== repo || st.open.artifact !== relPath) {
+      die(`chain ${chainId} belongs to ${st.open.repo}:${st.open.artifact}, not ${repo}:${relPath}`, 6);
+    }
+    if (resume) {
+      // Bind the session to this chain+mode when the log has session records;
+      // result appends are best-effort, so an empty record set only warns.
+      let priorSessions = [];
+      try {
+        priorSessions = readLogLines(logPath)
+          .filter((l) => l.chainId === chainId && l.mode === mode && l.sessionId)
+          .map((l) => l.sessionId);
+      } catch { /* log unreadable — validated at reservation; warn below */ }
+      if (priorSessions.length > 0 && !priorSessions.includes(resume)) {
+        die(`session ${resume} is not recorded for chain ${chainId} (${mode})`, 6);
+      }
+      if (priorSessions.length === 0) {
+        process.stderr.write("warn: no recorded sessions for this chain (result logging is best-effort); proceeding\n");
+      }
+    }
   }
 
   let round;
@@ -907,10 +982,13 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
 
   const t0 = Date.now();
   const { stdout, stderr, timedOut, spawnError } = await runCodex(args, { cwd: repoRoot, timeoutMs: timeoutS * 1000 });
-  if (spawnError) die(`codex could not be spawned (installed? logged in?): ${stderr.slice(0, 500)}`);
+  // Never die() after reservation without emitting result JSON: the caller needs
+  // pendingNoteChainId to close the chain, or it stays open and blocks auto-runs.
+  if (spawnError) process.stderr.write(`codex could not be spawned (installed? logged in?): ${stderr.slice(0, 300)}\n`);
   const stream = parseEventStream(stdout);
   // Spec: success requires BOTH a clean terminal event AND a final message.
-  const verdict = timedOut ? "timeout"
+  const verdict = spawnError ? "error"
+    : timedOut ? "timeout"
     : stream.terminal !== "completed" || !stream.finalMessage ? "error"
     : parseVerdict(stream.finalMessage, mode);
   const findings = countFindings(stream.finalMessage ?? "");
@@ -975,7 +1053,7 @@ Note for the implementer: `round` is computed by counting prior `mode:"review"` 
 - [ ] **Step 4: Run the full test file**
 
 Run: `node --test plugins/codex-review/skills/codex-plan-review/scripts/codex-review.test.mjs`
-Expected: PASS (23/23).
+Expected: PASS (25/25).
 
 - [ ] **Step 5: Run the repo-wide suites to check nothing else broke**
 
@@ -1026,7 +1104,7 @@ Send a finalized plan/spec/design/ADR to OpenAI Codex (Terra, high effort, read-
 3. **Round 1:** `node <skill-dir>/scripts/codex-review.mjs review <file> --auto` (use `--force` only when the user explicitly asked for a re-run). If it refuses with "chain already exists", tell the user this artifact version was already reviewed and stop unless they ask to force.
 4. **On `REVISE`:** walk findings one at a time. For accepted findings, amend the plan file. Dismissals require a stated reason in your reply — never silent. Then verify fixes: `… review <file> --resume <sessionId> --chain <chainId>`. Max 3 review rounds total; if still REVISE after round 3, present open findings to the user, log the note (`--outcome cap-revise`), and stop.
 5. **On `APPROVED`:** run the final audit: `… audit <file> --chain <chainId>` (fresh Codex session, holistic scope). `AUDIT: PASS` → done. `AUDIT: CONCERNS` → surface findings verbatim and **block**: the plan is not review-complete until the user dispositions each concern. Never re-run the audit; if the user amends in response, the outcome class is `audit-concerns-user-approved` (user-approved, audit-unverified); if the user dismisses the concerns with reasons instead, it is `audit-concerns-dismissed`.
-6. **UNPARSEABLE:** retry once — `… review <file> --resume <sessionId> --chain <chainId> --retry-verdict` (or the `audit … --resume <sessionId> --retry-verdict` form). Still unparseable → surface to user, note as aborted.
+6. **UNPARSEABLE:** retry once — `… review <file> --resume <sessionId> --chain <chainId> --retry-verdict` (or the `audit … --resume <sessionId> --retry-verdict` form). If the result JSON has no `sessionId` (nothing to resume), skip the retry entirely. Still unparseable, or no session → surface to user, close the chain as aborted.
 7. **Always close the chain** (every path: pass, cap, concerns, timeout, error, abort): `… note --chain <chainId> --unique <n> --outcome <audit-pass|audit-concerns-user-approved|audit-concerns-dismissed|cap-revise|aborted> --comment "…"`. A finding counts toward `--unique` only if you judge it real AND it wasn't already known or caught by the Claude-side review stack. The result JSON's `pendingNoteChainId` reminds you which chain is open.
 8. **Report one line:** rounds used, final verdict, unique findings, and cumulative gate stats (`… stats`). Include token usage from the result JSON so the user can track quota burn.
 
