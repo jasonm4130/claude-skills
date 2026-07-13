@@ -173,11 +173,14 @@ test("parseEventStream extracts session, message, terminal, usage from real fixt
   assert.equal(r.usage.output_tokens, 5);
 });
 
-test("parseEventStream: turn.failed and error events are terminal failures", () => {
+test("parseEventStream: turn.failed and error events are terminal failures, and failure is sticky", () => {
   for (const line of ['{"type":"turn.failed","error":{"message":"boom"}}', '{"type":"error","message":"boom"}']) {
     const r = parseEventStream(FIXTURE.replace(/^\{"type":"turn\.completed".*$/m, line));
     assert.equal(r.terminal, "failed");
   }
+  const sticky = FIXTURE.replace(/^\{"type":"turn\.completed".*$/m, '{"type":"turn.failed","error":{"message":"boom"}}')
+    + '\n{"type":"turn.completed","usage":{}}';
+  assert.equal(parseEventStream(sticky).terminal, "failed", "a later turn.completed must not mask an earlier failure");
 });
 
 test("parseEventStream: missing terminal event, junk lines, last agent_message wins", () => {
@@ -258,8 +261,8 @@ export function parseEventStream(stdoutText) {
     if (!ev || typeof ev !== "object") continue;
     if (ev.type === "thread.started" && ev.thread_id) sessionId = ev.thread_id;
     if (ev.type === "item.completed" && ev.item?.type === "agent_message") finalMessage = ev.item.text ?? finalMessage;
-    if (ev.type === "turn.completed") { terminal = "completed"; usage = ev.usage ?? null; }
-    if (ev.type === "turn.failed" || ev.type === "error") terminal = "failed";
+    if (ev.type === "turn.completed" && terminal !== "failed") { terminal = "completed"; usage = ev.usage ?? null; }
+    if (ev.type === "turn.failed" || ev.type === "error") terminal = "failed"; // sticky — a later turn.completed must not mask it
   }
   return { sessionId, finalMessage, terminal, usage };
 }
@@ -348,13 +351,14 @@ Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
 - Consumes: `mintChainId`, `contentHashOf` from Task 2.
 - Produces (exact exports Task 4 consumes):
   - `logPathDefault() -> string` (env `CODEX_REVIEW_LOG` or `~/.claude/codex-review-log.jsonl`; lock is always `<logPath>.lock`)
-  - `readLogLines(logPath) -> object[]` (parsed JSONL, junk lines skipped; missing file → `[]`)
-  - `acquireLock(lockPath, staleMs=30000) -> void` (throws `Error` with `.code="LOCK_HELD"` if held and fresh; breaks stale locks once) / `releaseLock(lockPath)`
-  - `reserveChain({logPath, repo, artifact, contentHash, trigger}) -> {chainId, ts}` — atomic check+append under lock; `trigger` is `"auto"|"forced"`; throws `.code="CHAIN_EXISTS"` (auto only, non-aborted hash match) or `.code="RESERVE_FAILED"` (any lock/IO failure — fatal both modes)
+  - `readLogLines(logPath) -> object[]` (parsed JSONL, junk lines skipped; missing file → `[]`; **any other read error throws** `.code="LOG_UNREADABLE"` — an unreadable log must never look empty to the guard)
+  - `acquireLock(lockPath, staleMs=30000) -> token: string` (throws `.code="LOCK_HELD"` if held and fresh; breaks stale locks once) / `releaseLock(lockPath, token)` (**ownership-safe**: deletes the lock only if it still contains `token`, so a stale ex-holder can't remove a replacement holder's lock)
+  - `getChainState(logPath, chainId) -> {open, note}|null` (Task 4 uses this to validate `--chain` before spending quota)
+  - `reserveChain({logPath, repo, artifact, contentHash, trigger}) -> {chainId, ts}` — atomic check+append under lock; `trigger` is `"auto"|"forced"`; throws `.code="CHAIN_EXISTS"` (auto only, non-aborted match on **repo+artifact+contentHash** — hash alone would let identical content in different repos/paths suppress each other across the shared log) or `.code="RESERVE_FAILED"` (any lock/IO/log-read failure — fatal both modes)
   - `appendResult(logPath, entry) -> boolean` (non-fatal: false + stderr warning on failure)
   - `appendNote(logPath, {chainId, unique, outcome, comment}) -> void` (throws on unknown chain, duplicate note, invalid outcome, or IO failure)
   - `computeStats(logPath) -> {open: number, byOutcome: object, forced: number, eligible: number, uniqueTotal: number, uniquePer5: number|null, openChainIds: string[]}`
-  - `OUTCOMES` = `["audit-pass","audit-concerns-user-approved","cap-revise","aborted"]`
+  - `OUTCOMES` = `["audit-pass","audit-concerns-user-approved","audit-concerns-dismissed","cap-revise","aborted"]` (`…-dismissed` = user dispositioned concerns by dismissal-with-reason rather than amendment — distinct class so the gate data stays honest)
 
 - [ ] **Step 1: Write the failing tests (append to the test file)**
 
@@ -363,7 +367,7 @@ import { mkdtempSync, writeFileSync, readFileSync, chmodSync, mkdirSync, utimesS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  readLogLines, acquireLock, releaseLock, reserveChain, appendResult, appendNote, computeStats, OUTCOMES,
+  readLogLines, acquireLock, releaseLock, reserveChain, appendResult, appendNote, computeStats, getChainState, OUTCOMES,
 } from "./codex-review.mjs";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "codexrev-"));
@@ -389,16 +393,31 @@ test("reserveChain: force bypasses hash check but not IO failure; auto fails clo
   assert.throws(() => reserveChain({ ...base, logPath: roLog, trigger: "forced" }), (e) => e.code === "RESERVE_FAILED");
 });
 
-test("lock: held fresh lock refuses, stale lock is broken", () => {
+test("lock: held fresh lock refuses; stale lock broken; release is ownership-safe", () => {
   const lockPath = join(tmp(), "log.jsonl.lock");
-  acquireLock(lockPath);
+  const t1 = acquireLock(lockPath);
   assert.throws(() => acquireLock(lockPath), (e) => e.code === "LOCK_HELD");
-  releaseLock(lockPath);
-  acquireLock(lockPath);
+  releaseLock(lockPath, t1);
+  const t2 = acquireLock(lockPath);
   const old = (Date.now() - 60_000) / 1000;
-  utimesSync(lockPath, old, old); // simulate a crashed holder
-  acquireLock(lockPath, 30_000); // breaks the stale lock instead of throwing
-  releaseLock(lockPath);
+  utimesSync(lockPath, old, old); // simulate a crashed/paused holder
+  const t3 = acquireLock(lockPath, 30_000); // breaks the stale lock instead of throwing
+  releaseLock(lockPath, t2); // the paused ex-holder returns: must NOT delete t3's lock
+  assert.ok(existsSync(lockPath), "ownership-safe release must not remove another holder's lock");
+  releaseLock(lockPath, t3);
+  assert.ok(!existsSync(lockPath));
+});
+
+test("guard scope is repo+artifact+hash; identical content elsewhere doesn't block; unreadable log fails closed", () => {
+  const logPath = join(tmp(), "log.jsonl");
+  const a = { logPath, repo: "r", artifact: "a.md", contentHash: "dddd000000000000", trigger: "auto" };
+  reserveChain(a);
+  assert.ok(reserveChain({ ...a, artifact: "b.md" }).chainId, "same content at a different path must not be blocked");
+  assert.ok(reserveChain({ ...a, repo: "other" }).chainId, "same content in a different repo must not be blocked");
+  chmodSync(logPath, 0o000);
+  assert.throws(() => reserveChain({ ...a, contentHash: "eeee000000000000" }), (e) => e.code === "RESERVE_FAILED",
+    "an unreadable log must fail closed, not look empty");
+  chmodSync(logPath, 0o600);
 });
 
 test("appendNote validates chain, duplicates, outcome class; appendResult is non-fatal", () => {
@@ -447,15 +466,22 @@ import {
 import { homedir } from "node:os";
 import { join as joinPath } from "node:path";
 
-export const OUTCOMES = ["audit-pass", "audit-concerns-user-approved", "cap-revise", "aborted"];
+export const OUTCOMES = ["audit-pass", "audit-concerns-user-approved", "audit-concerns-dismissed", "cap-revise", "aborted"];
 
 export function logPathDefault() {
   return process.env.CODEX_REVIEW_LOG || joinPath(homedir(), ".claude", "codex-review-log.jsonl");
 }
 
+function err(code, message) { const e = new Error(message); e.code = code; return e; }
+
 export function readLogLines(logPath) {
   let raw;
-  try { raw = readFileSync(logPath, "utf8"); } catch { return []; }
+  try {
+    raw = readFileSync(logPath, "utf8");
+  } catch (e) {
+    if (e.code === "ENOENT") return [];
+    throw err("LOG_UNREADABLE", `log read failed: ${e.message}`); // unreadable must never look empty
+  }
   const out = [];
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
@@ -464,15 +490,14 @@ export function readLogLines(logPath) {
   return out;
 }
 
-function err(code, message) { const e = new Error(message); e.code = code; return e; }
-
 export function acquireLock(lockPath, staleMs = 30_000) {
+  const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const fd = openSync(lockPath, "wx");
-      writeSync(fd, `${process.pid} ${new Date().toISOString()}`);
+      writeSync(fd, token);
       closeSync(fd);
-      return;
+      return token;
     } catch (e) {
       if (e.code !== "EEXIST") throw err("RESERVE_FAILED", `lock create failed: ${e.message}`);
       let age = 0;
@@ -484,8 +509,12 @@ export function acquireLock(lockPath, staleMs = 30_000) {
   throw err("LOCK_HELD", `lock contention: ${lockPath}`);
 }
 
-export function releaseLock(lockPath) {
-  try { unlinkSync(lockPath); } catch { /* already gone */ }
+export function releaseLock(lockPath, token) {
+  // Ownership-safe: only delete a lock we still own — a stale ex-holder must not
+  // remove the replacement holder's lock.
+  try {
+    if (readFileSync(lockPath, "utf8") === token) unlinkSync(lockPath);
+  } catch { /* already gone or unreadable — leave it */ }
 }
 
 function chainStates(lines) {
@@ -498,20 +527,34 @@ function chainStates(lines) {
   return chains;
 }
 
+export function getChainState(logPath, chainId) {
+  return chainStates(readLogLines(logPath)).get(chainId) ?? null;
+}
+
 export function reserveChain({ logPath, repo, artifact, contentHash, trigger }) {
   const lockPath = logPath + ".lock";
   const ts = new Date().toISOString();
   try { mkdirSync(joinPath(logPath, ".."), { recursive: true }); } catch { }
+  let lockToken;
   try {
-    acquireLock(lockPath);
+    lockToken = acquireLock(lockPath);
   } catch (e) {
     throw err("RESERVE_FAILED", `could not acquire lock: ${e.message}`);
   }
   try {
     if (trigger === "auto") {
-      for (const { open, note } of chainStates(readLogLines(logPath)).values()) {
-        if (open.contentHash === contentHash && note?.outcome !== "aborted") {
-          throw err("CHAIN_EXISTS", `non-aborted chain ${open.chainId} already exists for hash ${contentHash}`);
+      let lines;
+      try {
+        lines = readLogLines(logPath);
+      } catch (e) {
+        throw err("RESERVE_FAILED", `guard cannot read log, failing closed: ${e.message}`);
+      }
+      for (const { open, note } of chainStates(lines).values()) {
+        // Scope: repo + artifact + hash — hash alone would let identical content
+        // in different repos/paths suppress each other across the shared log.
+        if (open.repo === repo && open.artifact === artifact && open.contentHash === contentHash
+            && note?.outcome !== "aborted") {
+          throw err("CHAIN_EXISTS", `non-aborted chain ${open.chainId} already exists for ${repo}:${artifact}@${contentHash}`);
         }
       }
     }
@@ -524,7 +567,7 @@ export function reserveChain({ logPath, repo, artifact, contentHash, trigger }) 
     }
     return { chainId, ts };
   } finally {
-    releaseLock(lockPath);
+    releaseLock(lockPath, lockToken);
   }
 }
 
@@ -572,7 +615,7 @@ export function computeStats(logPath) {
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `node --test plugins/codex-review/skills/codex-plan-review/scripts/codex-review.test.mjs`
-Expected: PASS (13/13).
+Expected: PASS (14/14).
 
 - [ ] **Step 5: Commit**
 
@@ -607,17 +650,18 @@ Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
 The shim is a tiny executable script the tests write into a temp dir prepended to `PATH`, so `spawn("codex", ...)` finds it. It reads a behavior file to decide what stream to emit, and records its argv for assertion.
 
 ```js
-import { spawnSync } from "node:child_process";
+import { spawnSync, spawn as spawnAsync } from "node:child_process";
 
 const SCRIPT = new URL("./codex-review.mjs", import.meta.url).pathname;
 
 function makeShim(dir, mode) {
-  // mode: ok | noverdict | fail | slow — recorded argv goes to <dir>/argv.json
+  // mode: ok | noverdict | fail | slow | garbage — recorded argv goes to <dir>/argv.json
   const shim = `#!/usr/bin/env node
 const fs = require("node:fs");
 fs.writeFileSync(process.env.SHIM_DIR + "/argv.json", JSON.stringify(process.argv.slice(2)));
 const mode = process.env.SHIM_MODE;
 if (mode === "slow") { setTimeout(() => process.exit(0), 10_000); return; }
+if (mode === "garbage") { console.log("<<<definitely not json>>>"); return; }
 console.log(JSON.stringify({ type: "thread.started", thread_id: "sess-123" }));
 if (mode === "fail") {
   console.log(JSON.stringify({ type: "turn.failed", error: { message: "boom" } }));
@@ -684,9 +728,63 @@ test("e2e: resume round uses exact resume argv and honors --retry-verdict", () =
   const argv = shim.argv();
   assert.deepEqual(argv.slice(0, 3), ["exec", "resume", "sess-123"]);
   assert.ok(argv.includes("--json") && argv.includes("-m"));
+  assert.ok(argv.includes("--skip-git-repo-check"), "resume must work for non-repo scratchpad artifacts too");
   assert.match(argv[argv.length - 1], /missing the verdict line/);
   const lines = readLogLines(logPath);
   assert.equal(lines.at(-1).chainId, first.chainId); // chain propagated
+  assert.equal(lines.at(-1).round, 2); // fresh was round 1
+  assert.ok(lines.at(-1).contentHash, "each round records the revision it reviewed");
+});
+
+test("e2e: bogus or closed --chain refuses before spending quota", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "ok");
+  const bogus = runCli(["review", artifact, "--resume", "sess-123", "--chain", "ffffffffffff"], shim.env, logPath);
+  assert.notEqual(bogus.status, 0);
+  assert.match(bogus.stderr, /unknown chain/);
+  const first = JSON.parse(runCli(["review", artifact, "--auto"], shim.env, logPath).stdout);
+  runCli(["note", "--chain", first.chainId, "--unique", "0", "--outcome", "aborted", "--comment", "aborted: test"], shim.env, logPath);
+  const closed = runCli(["review", artifact, "--resume", first.sessionId, "--chain", first.chainId], shim.env, logPath);
+  assert.notEqual(closed.status, 0);
+  assert.match(closed.stderr, /already closed/);
+});
+
+test("e2e: malformed (non-JSON) stream → verdict error, non-zero exit", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "garbage");
+  const r = runCli(["review", artifact, "--auto"], shim.env, logPath);
+  assert.notEqual(r.status, 0);
+  assert.equal(JSON.parse(r.stdout).verdict, "error");
+});
+
+test("e2e: audit --retry-verdict resumes with the AUDIT-specific nudge", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "ok");
+  const first = JSON.parse(runCli(["review", artifact, "--auto"], shim.env, logPath).stdout);
+  const a = runCli(["audit", artifact, "--chain", first.chainId, "--resume", "sess-123", "--retry-verdict"], shim.env, logPath);
+  assert.equal(a.status, 0, a.stderr);
+  const argv = shim.argv();
+  assert.deepEqual(argv.slice(0, 3), ["exec", "resume", "sess-123"]);
+  assert.match(argv[argv.length - 1], /missing the audit line/);
+  assert.doesNotMatch(argv[argv.length - 1], /VERDICT:/);
+});
+
+test("e2e: concurrent auto opens on the same artifact — exactly one wins", async () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "ok");
+  const env = { ...shim.env, CODEX_REVIEW_LOG: logPath };
+  const run = () => new Promise((res) => {
+    const c = spawnAsync("node", [SCRIPT, "review", artifact, "--auto"], { env });
+    c.on("close", (code) => res(code));
+  });
+  const codes = await Promise.all([run(), run()]);
+  assert.equal(codes.filter((c) => c === 0).length, 1, `expected exactly one winner, got exit codes ${codes}`);
+  const opens = readLogLines(logPath).filter((l) => l.mode === "open");
+  assert.equal(opens.length, 1, "exactly one reservation line");
 });
 
 test("e2e: terminal failure event → verdict error + non-zero exit; audit variant parses AUDIT", () => {
@@ -771,18 +869,31 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
   const repoRoot = resolveRepoRoot(abs);
   const relPath = relativePath(repoRoot, abs) || abs;
   const repo = repoRoot.split("/").at(-1);
+  const hash = contentHashOf(readFileSync(abs)); // recorded per round — artifact changes between rounds
   let chainId = chain, trigger;
 
   if (!resume && mode === "review") {
     if (auto === force) die("exactly one of --auto or --force is required to open a chain");
     trigger = auto ? "auto" : "forced";
     try {
-      chainId = reserveChain({ logPath, repo, artifact: relPath, contentHash: contentHashOf(readFileSync(abs)), trigger }).chainId;
+      chainId = reserveChain({ logPath, repo, artifact: relPath, contentHash: hash, trigger }).chainId;
     } catch (e) {
       die(`refused: ${e.message}`, e.code === "CHAIN_EXISTS" ? 3 : 2);
     }
-  } else if (!chainId) {
-    die("--chain <chainId> is required for resumed rounds and audits");
+  } else {
+    if (!chainId) die("--chain <chainId> is required for resumed rounds and audits");
+    // Validate before spending quota: a typo'd/stale chain id would produce
+    // orphan result lines that note can never close.
+    const st = getChainState(logPath, chainId);
+    if (!st) die(`unknown chain: ${chainId}`, 6);
+    if (st.note) die(`chain ${chainId} is already closed (outcome: ${st.note.outcome})`, 6);
+  }
+
+  let round;
+  if (mode === "review") {
+    try {
+      round = 1 + readLogLines(logPath).filter((l) => l.chainId === chainId && l.mode === "review").length;
+    } catch { round = undefined; } // result logging is best-effort; never block the round on this
   }
 
   const prompt = retryVerdict ? buildRetryPrompt(mode)
@@ -791,7 +902,7 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
     : buildReviewPrompt(relPath);
   const modelArgs = ["-m", model, "-c", `model_reasoning_effort=${effort}`];
   const args = resume
-    ? ["exec", "resume", resume, "--json", ...modelArgs, prompt]
+    ? ["exec", "resume", resume, "--json", ...modelArgs, "--skip-git-repo-check", prompt]
     : ["exec", "--json", "--sandbox", "read-only", ...modelArgs, "--skip-git-repo-check", prompt];
 
   const t0 = Date.now();
@@ -810,7 +921,7 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
     durationMs: Date.now() - t0, pendingNoteChainId: chainId,
   };
   appendResult(logPath, {
-    chainId, repo, artifact: relPath, mode, round: resume ? undefined : 1,
+    chainId, repo, artifact: relPath, contentHash: hash, mode, round,
     verdict, findings, sessionId: stream.sessionId, model, effort,
     usage: stream.usage, durationMs: result.durationMs,
   });
@@ -859,12 +970,12 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
 }
 ```
 
-Note for the implementer: `runRound` sets `round: resume ? undefined : 1` — JSON.stringify drops `undefined`, which is fine; the log distinguishes resumed rounds by the presence of a prior line with the same chainId. Audits require an existing chain (`--chain`), and the guard applies only to the fresh-review form — matching the spec exactly.
+Note for the implementer: `round` is computed by counting prior `mode:"review"` lines for the chain (fresh → 1, first resume → 2, …); audits carry no `round`. Every result line records the artifact's `contentHash` at review time, so the log shows which revision each round saw. Resumed rounds and audits validate the chain is open *before* spawning codex. The guard applies only to the fresh-review form — matching the spec exactly.
 
 - [ ] **Step 4: Run the full test file**
 
 Run: `node --test plugins/codex-review/skills/codex-plan-review/scripts/codex-review.test.mjs`
-Expected: PASS (19/19).
+Expected: PASS (23/23).
 
 - [ ] **Step 5: Run the repo-wide suites to check nothing else broke**
 
@@ -914,9 +1025,9 @@ Send a finalized plan/spec/design/ADR to OpenAI Codex (Terra, high effort, read-
 2. **Preflight:** the artifact must be a file. Write conversation-only plans to their canonical path first (`docs/superpowers/specs/…`, `docs/plans/…`, or scratchpad for throwaways).
 3. **Round 1:** `node <skill-dir>/scripts/codex-review.mjs review <file> --auto` (use `--force` only when the user explicitly asked for a re-run). If it refuses with "chain already exists", tell the user this artifact version was already reviewed and stop unless they ask to force.
 4. **On `REVISE`:** walk findings one at a time. For accepted findings, amend the plan file. Dismissals require a stated reason in your reply — never silent. Then verify fixes: `… review <file> --resume <sessionId> --chain <chainId>`. Max 3 review rounds total; if still REVISE after round 3, present open findings to the user, log the note (`--outcome cap-revise`), and stop.
-5. **On `APPROVED`:** run the final audit: `… audit <file> --chain <chainId>` (fresh Codex session, holistic scope). `AUDIT: PASS` → done. `AUDIT: CONCERNS` → surface findings verbatim and **block**: the plan is not review-complete until the user dispositions each concern. Never re-run the audit; if the user amends in response, the outcome class is `audit-concerns-user-approved`.
+5. **On `APPROVED`:** run the final audit: `… audit <file> --chain <chainId>` (fresh Codex session, holistic scope). `AUDIT: PASS` → done. `AUDIT: CONCERNS` → surface findings verbatim and **block**: the plan is not review-complete until the user dispositions each concern. Never re-run the audit; if the user amends in response, the outcome class is `audit-concerns-user-approved` (user-approved, audit-unverified); if the user dismisses the concerns with reasons instead, it is `audit-concerns-dismissed`.
 6. **UNPARSEABLE:** retry once — `… review <file> --resume <sessionId> --chain <chainId> --retry-verdict` (or the `audit … --resume <sessionId> --retry-verdict` form). Still unparseable → surface to user, note as aborted.
-7. **Always close the chain** (every path: pass, cap, concerns, timeout, error, abort): `… note --chain <chainId> --unique <n> --outcome <audit-pass|audit-concerns-user-approved|cap-revise|aborted> --comment "…"`. A finding counts toward `--unique` only if you judge it real AND it wasn't already known or caught by the Claude-side review stack. The result JSON's `pendingNoteChainId` reminds you which chain is open.
+7. **Always close the chain** (every path: pass, cap, concerns, timeout, error, abort): `… note --chain <chainId> --unique <n> --outcome <audit-pass|audit-concerns-user-approved|audit-concerns-dismissed|cap-revise|aborted> --comment "…"`. A finding counts toward `--unique` only if you judge it real AND it wasn't already known or caught by the Claude-side review stack. The result JSON's `pendingNoteChainId` reminds you which chain is open.
 8. **Report one line:** rounds used, final verdict, unique findings, and cumulative gate stats (`… stats`). Include token usage from the result JSON so the user can track quota burn.
 
 ## Decision gate (trial until ~2026-07-28)
@@ -984,7 +1095,10 @@ Headless review behavior churned in codex 0.143→0.144.x; before trusting auto-
 ```
 echo "# throwaway plan: add a --dry-run flag to foo.sh" > /tmp/smoke-plan.md
 node plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs review /tmp/smoke-plan.md --force --timeout 180
-# expect: result JSON with a VERDICT, a sessionId, and usage tokens; then close the chain:
+# expect: result JSON with a VERDICT, a sessionId, and usage tokens
+# then one resume round — this is what validates the sandbox-inheritance assumption:
+node plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs review /tmp/smoke-plan.md --resume <sessionId> --chain <chainId> --timeout 180
+# expect: a second result JSON with a VERDICT; then close the chain:
 node plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs note --chain <chainId> --unique 0 --outcome aborted --comment "aborted: smoke test"
 ```
 
@@ -992,7 +1106,7 @@ The smoke test also validates the one undocumented assumption: resumed sessions 
 
 ## Log schema
 
-One JSONL line per event at `~/.claude/codex-review-log.jsonl` (override: `CODEX_REVIEW_LOG`): chain-open reservations (`mode:"open"`, with `trigger:"auto"|"forced"` and `contentHash`), round/audit results (verdict, findings by severity, session id, token usage, duration), and one mandatory closing `note` per chain (`unique`, `outcome`: `audit-pass|audit-concerns-user-approved|cap-revise|aborted`). Reservation and note writes are fatal on failure; result writes are best-effort.
+One JSONL line per event at `~/.claude/codex-review-log.jsonl` (override: `CODEX_REVIEW_LOG`): chain-open reservations (`mode:"open"`, with `trigger:"auto"|"forced"` and `contentHash`), round/audit results (verdict, findings by severity, session id, token usage, duration), and one mandatory closing `note` per chain (`unique`, `outcome`: `audit-pass|audit-concerns-user-approved|audit-concerns-dismissed|cap-revise|aborted`). Reservation and note writes are fatal on failure; result writes are best-effort.
 ````
 
 - [ ] **Step 3: Verify consistency tests still pass (README install commands are checked)**
@@ -1038,6 +1152,14 @@ node plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs revi
 
 Expected: exit 0; result JSON with `verdict` of `REVISE` or `APPROVED` (a real verdict, not error/timeout/UNPARSEABLE), a `sessionId`, `usage` with token counts, and `pendingNoteChainId`.
 
+Then run one resume round (second quota message — this validates resume + the sandbox-inheritance assumption on the real CLI):
+
+```bash
+node plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs review /tmp/smoke-plan.md --resume <sessionId from above> --chain <chainId from above> --timeout 180
+```
+
+Expected: exit 0; a second real verdict; the log line carries `round: 2` and the same `chainId`.
+
 - [ ] **Step 3: Close the smoke-test chain and check stats**
 
 ```bash
@@ -1057,3 +1179,9 @@ Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
 ```
 
 (Skip the commit if there were no fixes.)
+
+---
+
+## Post-merge follow-up (orchestrator, NOT an SDD task)
+
+The spec's "project memory entry recording escalation paths + gate" component is deliberately **not** a task in this plan: the memory lives in `~/.claude/projects/…/memory/` (user configuration), and SDD subagents must not write outside the repo. The orchestrating session writes this memory entry itself after the branch merges. Workers: skip it; do not create it.
