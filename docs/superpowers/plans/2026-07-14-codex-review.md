@@ -582,6 +582,28 @@ export function reserveChain({ logPath, repo, artifact, contentHash, trigger }) 
     } catch (e) {
       throw err("RESERVE_FAILED", `reservation write failed: ${e.message}`);
     }
+    // Auto-uniqueness does NOT rest on the lock (advisory locks can be stale-broken
+    // concurrently): after appending, re-read and verify OUR line is the FIRST
+    // non-aborted open line for this key. Local-fs append order is total, so
+    // exactly one racer wins; losers self-abort their own line and refuse.
+    if (trigger === "auto") {
+      let after;
+      try { after = readLogLines(logPath); } catch (e) {
+        throw err("RESERVE_FAILED", `post-append verification read failed: ${e.message}`);
+      }
+      const states = chainStates(after);
+      const firstOpen = after.find((l) =>
+        l.mode === "open" && l.repo === repo && l.artifact === artifact && l.contentHash === contentHash
+        && states.get(l.chainId)?.note?.outcome !== "aborted");
+      if (firstOpen && firstOpen.chainId !== chainId) {
+        // Lost the race — close our own line so it never blocks anything.
+        appendFileSync(logPath, JSON.stringify({
+          ts: new Date().toISOString(), chainId, mode: "note",
+          unique: 0, trigger, outcome: "aborted", comment: "aborted: lost reservation race",
+        }) + "\n");
+        throw err("CHAIN_EXISTS", `chain ${firstOpen.chainId} won the reservation race for ${repo}:${artifact}@${contentHash}`);
+      }
+    }
     return { chainId, ts };
   } finally {
     releaseLock(lockPath, lockToken);
@@ -783,7 +805,9 @@ test("e2e: bogus or closed --chain refuses before spending quota", () => {
 test("e2e: spawn failure after reservation still emits result JSON with pendingNoteChainId", () => {
   const dir = tmp(); const logPath = join(dir, "log.jsonl");
   const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
-  const r = spawnSync("node", [SCRIPT, "review", artifact, "--auto"], {
+  // process.execPath, not "node": node lives under mise on this machine, so a
+  // stripped PATH must only remove codex from lookup, not node itself.
+  const r = spawnSync(process.execPath, [SCRIPT, "review", artifact, "--auto"], {
     env: { ...process.env, PATH: "/usr/bin:/bin", CODEX_REVIEW_LOG: logPath }, // no codex on PATH
     encoding: "utf8", timeout: 30_000,
   });
@@ -813,11 +837,22 @@ test("e2e: malformed (non-JSON) stream → verdict error, non-zero exit", () => 
   assert.equal(JSON.parse(r.stdout).verdict, "error");
 });
 
-test("e2e: audit --retry-verdict resumes with the AUDIT-specific nudge", () => {
+test("e2e: audit --retry-verdict resumes only the audit's own recorded session", () => {
   const dir = tmp(); const logPath = join(dir, "log.jsonl");
   const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
   const shim = makeShim(dir, "ok");
   const first = JSON.parse(runCli(["review", artifact, "--auto"], shim.env, logPath).stdout);
+  // audit --resume before ANY audit ran must refuse (no recorded audit session)
+  const early = runCli(["audit", artifact, "--chain", first.chainId, "--resume", "sess-123", "--retry-verdict"], shim.env, logPath);
+  assert.notEqual(early.status, 0);
+  assert.match(early.stderr, /not a recorded audit session/);
+  // fresh audit records its session (shim always reports sess-123)…
+  assert.equal(runCli(["audit", artifact, "--chain", first.chainId], shim.env, logPath).status, 0);
+  // …audit --resume without --retry-verdict refuses…
+  const noRetry = runCli(["audit", artifact, "--chain", first.chainId, "--resume", "sess-123"], shim.env, logPath);
+  assert.notEqual(noRetry.status, 0);
+  assert.match(noRetry.stderr, /only valid with --retry-verdict/);
+  // …and the legitimate retry resumes with the AUDIT-specific nudge.
   const a = runCli(["audit", artifact, "--chain", first.chainId, "--resume", "sess-123", "--retry-verdict"], shim.env, logPath);
   assert.equal(a.status, 0, a.stderr);
   const argv = shim.argv();
@@ -837,8 +872,12 @@ test("e2e: concurrent auto opens on the same artifact — exactly one wins", asy
   });
   const codes = await Promise.all([run(), run()]);
   assert.equal(codes.filter((c) => c === 0).length, 1, `expected exactly one winner, got exit codes ${codes}`);
-  const opens = readLogLines(logPath).filter((l) => l.mode === "open");
-  assert.equal(opens.length, 1, "exactly one reservation line");
+  // Correctness is append-order verification, not the lock: a losing racer may
+  // have appended an open line, but it must have self-aborted it.
+  const lines = readLogLines(logPath);
+  const aborted = new Set(lines.filter((l) => l.mode === "note" && l.outcome === "aborted").map((l) => l.chainId));
+  const liveOpens = lines.filter((l) => l.mode === "open" && !aborted.has(l.chainId));
+  assert.equal(liveOpens.length, 1, "exactly one non-aborted reservation");
 });
 
 test("e2e: terminal failure event → verdict error + non-zero exit; audit variant parses AUDIT", () => {
@@ -947,19 +986,26 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
       die(`chain ${chainId} belongs to ${st.open.repo}:${st.open.artifact}, not ${repo}:${relPath}`, 6);
     }
     if (resume) {
-      // Bind the session to this chain+mode when the log has session records;
-      // result appends are best-effort, so an empty record set only warns.
       let priorSessions = [];
       try {
         priorSessions = readLogLines(logPath)
           .filter((l) => l.chainId === chainId && l.mode === mode && l.sessionId)
           .map((l) => l.sessionId);
-      } catch { /* log unreadable — validated at reservation; warn below */ }
-      if (priorSessions.length > 0 && !priorSessions.includes(resume)) {
-        die(`session ${resume} is not recorded for chain ${chainId} (${mode})`, 6);
-      }
-      if (priorSessions.length === 0) {
-        process.stderr.write("warn: no recorded sessions for this chain (result logging is best-effort); proceeding\n");
+      } catch { /* log unreadable — validated at reservation; handled below */ }
+      if (mode === "audit") {
+        // audit --resume exists ONLY to retry that audit's own UNPARSEABLE session —
+        // strict on both counts, or the fresh-session audit boundary is bypassable.
+        if (!retryVerdict) die("audit --resume is only valid with --retry-verdict", 6);
+        if (!priorSessions.includes(resume)) die(`session ${resume} is not a recorded audit session for chain ${chainId}`, 6);
+      } else {
+        // Review-resume: bind when records exist; result appends are best-effort,
+        // so an empty record set only warns.
+        if (priorSessions.length > 0 && !priorSessions.includes(resume)) {
+          die(`session ${resume} is not recorded for chain ${chainId} (${mode})`, 6);
+        }
+        if (priorSessions.length === 0) {
+          process.stderr.write("warn: no recorded sessions for this chain (result logging is best-effort); proceeding\n");
+        }
       }
     }
   }
@@ -1053,7 +1099,7 @@ Note for the implementer: `round` is computed by counting prior `mode:"review"` 
 - [ ] **Step 4: Run the full test file**
 
 Run: `node --test plugins/codex-review/skills/codex-plan-review/scripts/codex-review.test.mjs`
-Expected: PASS (25/25).
+Expected: PASS (26/26).
 
 - [ ] **Step 5: Run the repo-wide suites to check nothing else broke**
 
