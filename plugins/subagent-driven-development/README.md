@@ -43,7 +43,12 @@ final whole-branch reviewer (opus) → merge-readiness + ponytail-debt harvest
 ### The contract
 
 **args (controller → workflow):**
-`{ planPath, workdir, pluginDir, globalConstraints, mergeBase, tasks:[{n,title,tier,deps}], setupCmd?, testCmd?, limits:{fixRounds,escalateAttempts,maxParallel} }`
+`{ planPath, workdir, pluginDir, globalConstraints, mergeBase, branchTip?, tasks:[{n,title,tier,deps}], setupCmd?, testCmd?, limits:{fixRounds,escalateAttempts,maxParallel} }`
+
+`mergeBase` anchors the final-review diff range; `branchTip` (the branch's
+current tip, `git rev-parse HEAD`) anchors wave-0 dispatch. Omitting
+`branchTip` falls back to `mergeBase`, which dispatches wave 0 against a
+stale tree whenever the branch is ahead of the merge-base — always pass it.
 
 **return:**
 `{ tasks, planConflicts, halted, finalReview, mergeBase, head, merges, ledgerPath, meta }`

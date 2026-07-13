@@ -52,7 +52,10 @@ git rev-parse --abbrev-ref HEAD            # confirm not on main/master
 ```
 
 The worktree root is `workdir`; all agents run there. `mergeBase` is where the
-branch started: `git merge-base main HEAD`.
+branch started (`git merge-base main HEAD`); `branchTip` is the branch's
+current tip (`git rev-parse HEAD` in the workdir, resolved at dispatch time).
+The two are distinct whenever the branch already has commits — spec, plan,
+earlier runs — which is the normal case.
 
 ### 4. Enumerate tasks with tier hints and honest deps
 
@@ -99,12 +102,18 @@ Workflow({ scriptPath: "<resolved sdd.mjs>", args: {
   pluginDir: "<plugin root>",
   globalConstraints: "<verbatim Global Constraints>",
   mergeBase: "<git merge-base main HEAD>",
+  branchTip: "<git rev-parse HEAD in the workdir>",
   tasks: [ { n: 1, title: "...", tier: "sonnet", deps: [] }, ... ],
   setupCmd: "<optional: per-worktree env setup, e.g. 'npm ci'>",
   testCmd: "<optional: suite command for the merge gate; recommended when the repo has a canonical one>",
   limits: { fixRounds: 2, escalateAttempts: 2, maxParallel: 4 }
 }})
 ```
+
+`mergeBase` anchors the final-review diff range; `branchTip` anchors wave-0
+dispatch (task worktrees and the first review diff). Omitting `branchTip`
+falls back to `mergeBase` — which dispatches wave 0 against a stale tree
+whenever the branch has commits, so always pass it.
 
 Tasks whose deps are all satisfied run concurrently (capped at
 `limits.maxParallel`), each in a sibling worktree `<workdir>-t<N>`; a sonnet

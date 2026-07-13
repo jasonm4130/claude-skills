@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "sdd.mjs"), "utf8");
 const pure = src.split("// >>> PURE")[1].split("// <<< PURE")[0];
 const H = new Function(
-  `${pure}; return { TIERS, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, detectOscillation, ledgerLine, computeWaves, taskWorkdir, runPool, partitionWaveResults };`,
+  `${pure}; return { TIERS, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, detectOscillation, ledgerLine, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase };`,
 )();
 
 const okArgs = () => ({
@@ -53,6 +53,17 @@ test("validateArgs threads successCriteria, defaulting to empty string", () => {
   assert.equal(H.validateArgs(okArgs()).successCriteria, "");
   const c = H.validateArgs({ ...okArgs(), successCriteria: "GET /x returns 200 with shape Y" });
   assert.equal(c.successCriteria, "GET /x returns 200 with shape Y");
+});
+
+test("validateArgs threads branchTip, defaulting to empty string", () => {
+  assert.equal(H.validateArgs(okArgs()).branchTip, "");
+  const c = H.validateArgs({ ...okArgs(), branchTip: "def456" });
+  assert.equal(c.branchTip, "def456");
+});
+
+test("dispatchBase seeds wave 0 from branchTip, falling back to mergeBase", () => {
+  assert.equal(H.dispatchBase({ branchTip: "tip", mergeBase: "mb" }), "tip");
+  assert.equal(H.dispatchBase({ branchTip: "", mergeBase: "mb" }), "mb");
 });
 
 test("sequenceTasks sorts by n and rejects forward deps", () => {

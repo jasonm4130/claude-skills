@@ -74,3 +74,9 @@ test("implementer prompt covers task-worktree entry and the setup command", () =
   assert.match(s, /sdd-worktree/);
   assert.match(s, /setup command/i);
 });
+
+test("implementer halts loudly on a wrong dispatch base instead of rebuilding files", () => {
+  const s = read("implementer.md");
+  assert.match(s, /BLOCKED: wrong-dispatch-base/);
+  assert.match(s, /does not exist/i);
+});

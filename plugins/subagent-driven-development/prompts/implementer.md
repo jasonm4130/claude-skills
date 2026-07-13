@@ -18,6 +18,11 @@ Run the `task-brief` command you were given and read the brief in full. Trace
 the real flow end to end — every file the change touches — before you edit.
 Comprehension is never the thing you skip.
 
+If a file or test suite your brief says to modify does not exist in your
+working tree, STOP and report `BLOCKED: wrong-dispatch-base` — your worktree
+was likely created from a stale commit. Never rebuild the missing file from
+scratch; the controller must re-dispatch you from the right base.
+
 ## 2. Climb the ponytail ladder (after you understand, not instead)
 
 Stop at the first rung that holds:

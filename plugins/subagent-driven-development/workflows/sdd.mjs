@@ -55,9 +55,17 @@ function validateArgs(input) {
     globalConstraints: typeof input.globalConstraints === "string" ? input.globalConstraints : "",
     successCriteria: typeof input.successCriteria === "string" ? input.successCriteria : "",
     mergeBase: input.mergeBase, tasks, limits,
+    branchTip: typeof input.branchTip === "string" ? input.branchTip : "",
     setupCmd: typeof input.setupCmd === "string" ? input.setupCmd : "",
     testCmd: typeof input.testCmd === "string" ? input.testCmd : "",
   };
+}
+
+// Wave-0 dispatch base. mergeBase anchors the final-review diff range, not
+// dispatch: the branch tip is usually ahead of it (spec/plan commits, earlier
+// runs), and seeding worktrees from mergeBase checks out a stale tree.
+function dispatchBase(cfg) {
+  return cfg.branchTip || cfg.mergeBase;
 }
 
 function sequenceTasks(tasks) {
@@ -368,7 +376,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
   }
 
   phase("Implement");
-  let base = cfg.mergeBase;
+  let base = dispatchBase(cfg);
 
   for (let w = 0; w < waves.length && !halted; w++) {
     const wave = waves[w];
