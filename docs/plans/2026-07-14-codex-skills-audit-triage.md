@@ -28,20 +28,72 @@ contents as a path with no containment check; `../../.env` resolves outside
 `handoffs/` and gets injected into the next session's context (line 91).
 **Impact:** anything that can write one file in a checked-out repo can exfiltrate
 local files into model context.
-**Fix:** `path.resolve` the marker value against the handoffs dir and reject any
-result whose `path.relative(handoffsDir, resolved)` starts with `..` (or is
-absolute). Add a traversal test (`../../etc/hosts`-style marker → loader refuses,
-logs, clears marker).
+**Fix (as built):** a lexical `path.relative` check is NOT enough — Codex review
+found that a symlink inside `handoffs/` passes it and is then followed, and that a
+resolve-then-read is a TOCTOU regardless. Restrict the marker to a **bare filename**
+and open the file once with `O_NOFOLLOW | O_NONBLOCK` (the non-blocking flag is
+load-bearing: a plain `open()` on a planted FIFO blocks *before* any `fstat` check can
+reject it, hanging SessionStart). Plan:
+`docs/superpowers/plans/2026-07-14-handoff-security-batch-b.md`.
 
-### B2. TOCTOU race in statusline overlap guard — P2
+### B2. TOCTOU race in statusline overlap guard — P2 (DEFERRED to its own design pass)
 `plugins/handoff/scripts/status-and-flag.mjs:100–119`: check ("no fresh lock") and
 `writeFileSync` are not atomic; two concurrent invocations both pass the check and
 both write. **Impact:** double-fired flags, clobbered `last-context-pct` — the
 0.5.1 guard's guarantee fails exactly under the contention it exists for.
-**Fix:** atomic acquisition — `writeFileSync(lock, pid, { flag: "wx" })` with
-EEXIST → treat as held; stale-break via rename (same pattern as
-`codex-review`'s lock helper, reuse it). Test: two simulated acquirers, exactly
-one wins.
+
+**Pulled out of Batch B on 2026-07-14 after four Codex rounds each found a *new* race
+in the lock design:** a partially-written lock parses as pid `NaN` → "dead" → broken
+out from under its live creator; two stale-breakers cascade into deleting each other's
+fresh lock; a losing breaker's rename-then-restore loses to a third acquirer; and the
+pid-reuse hard cap displaces live holders by design. Every fix added a layer and
+exposed the next race. That is a signal to change primitive, not to patch again.
+
+**Design direction (grounded in `status-and-flag.mjs:180-206`, not speculative):** the
+lock is the wrong tool. The invariant is *"fire each 10%-point band at most once per
+session"* — an idempotency key, not a mutex. Replace the guard with an
+exclusive-create marker per band:
+
+```js
+const band = currentPct >= threshold ? Math.floor((currentPct - threshold) / 10) : -1;
+if (band >= 0) {
+  const fired = path.join(dataDir, `handoff-fired-${sid}-b${band}`);
+  try {
+    writeFileSync(fired, "", { flag: "wx" });   // atomic; first invocation to reach the band wins
+    writeFileSync(flagFile, msg);               // only the winner nudges
+  } catch { /* EEXIST — band already fired; no-op */ }
+}
+```
+
+Correct under any interleaving: no lock, no liveness check, no stale-breaking, no
+pid-reuse hazard. The `fired` marker must NOT be consumed by `check-handoff-flag.mjs`
+(only the nudge flag is) — otherwise the band re-fires every turn while context sits
+in it; that is the role `last-context-pct` plays today and the marker replaces. The
+render-cache write is then unprotected, which is harmless (concurrent invocations
+write near-identical renders).
+
+### B3. Handoff injection — a repo can plant its own handoff — P2 (NEW, from the Codex audit)
+B1 closes *exfiltration* (a `.pending` marker reading files outside `.claude/handoffs/`).
+It does **not** close *injection*: a hostile repo can commit an ordinary in-tree
+`.claude/handoffs/evil.md` plus a `.pending` naming it, and the loader emits its
+contents as `additionalContext` — attacker-authored text entering the next session as
+trusted context.
+**Why it is not a patch:** the loader cannot tell whether a handoff was written by
+*this machine's* handoff skill or committed by the repo. Fixing it needs a provenance
+boundary — e.g. handoffs (or an index of them) in the plugin's user-level data dir,
+which a checked-out repo cannot write. That is a design decision about where handoffs
+live, and it interacts with the SKILL's agent-authored write step (there is no trusted
+writer today to stamp provenance). Needs its own spec.
+
+### B4. Same double-breaker bug in `codex-review`'s `acquireLock` — P3 (NEW, found while fixing B2)
+`plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs:127-152`: two
+breakers observing the same stale lock can cascade — the first breaks it and
+re-acquires, the second's unconditional `renameSync(lockPath, …)` then moves the
+winner's *fresh* lock away and deletes it, leaving two holders.
+**Blast radius is bounded** (this is why it is P3, not P2): the chain log's
+post-append order verification is the real guard there, and the lock is documented as a
+contention reducer only — a lost race self-aborts. Fix when convenient: adopt B2's
+rename-verify-restore, or accept and document.
 
 ## Batch D — sdd.mjs correctness (second)
 
