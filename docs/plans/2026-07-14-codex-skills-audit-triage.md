@@ -127,37 +127,30 @@ breakers observing the same stale lock can cascade — the first breaks it and
 re-acquires, the second's unconditional `renameSync(lockPath, …)` then moves the
 winner's *fresh* lock away and deletes it, leaving two holders.
 
-## Batch D — sdd.mjs correctness (second)
+## Batch D — sdd.mjs correctness — ✅ SHIPPED (2026-07-14, already on `main`)
 
-### D1. Final fixer's result discarded — P1
-`plugins/subagent-driven-development/workflows/sdd.mjs:425`: the final-fix agent
-runs but nothing updates `head`, reruns the final review, or reruns the suite.
-**Impact:** a final fix can break the branch while the returned `head` points at
-the pre-fix commit; controller proceeds to finishing on a stale/red branch. This
-is the likely root cause of the known "SDD findings stale vs HEAD" quirk
-(memory: `retro_project_sdd_findings_stale_vs_head`).
-**Confirmed live 2026-07-14:** the codex-review build run (wf_e69a9e74-22e)
-returned `head: 6dfb959` while the final fixer had already committed `3949fdf`
-on top of it; the suite was not rerun after that fix (it happened to be green —
-verified manually, 288 pass).
-**Fix:** capture fixer's reported new head, dispatch one cheap verify agent
-(rev-parse + suite), update `head`/`finalReview` or surface a red result. Bounded:
-one verify, no re-loop.
+**All three shipped before this doc was updated.** Verified against HEAD 2026-07-14, not taken on trust:
 
-### D2. Merger claims trusted without proof — P2
-`sdd.mjs:215`: wave merge agent returns `headSha` / `suite: "green"` as strings;
-workflow advances `base` without resolving the SHA or executing `testCmd`.
-**Impact:** one hallucinated "green" corrupts every subsequent wave.
-**Fix:** post-merge verify step (haiku/sonnet agent: `git rev-parse <headSha>`,
-run `testCmd`, return structured pass/fail) gating base advancement. Note:
-sdd.mjs runs in the sealed Workflow sandbox — no exec; verification must itself
-be an `agent()` call.
+| | Commit | Where it lives now |
+|---|---|---|
+| **D1** | `69d3001` capture and check the final fixer's work | `sdd.mjs` — the fixer's commit goes through `runVerify`, `base = acc.headSha` ("head must point PAST the final fix"), and a bounded **report-only** `final-review-2` so the returned head is never unreviewed. A red fix halts instead of reporting an approved run. |
+| **D2** | `97631c8` check every state advance against an independent verifier | `sdd.mjs` — every advance (singleton wave, merge gate, final fix) goes through one `runVerify` entry point: it fails closed on a malformed SHA *without dispatching*, checks `merge-base --is-ancestor` for continuity, checks each task commit is contained, and re-runs `testCmd`. `!acc.ok` **halts**; `base` never advances on a merger's word. |
+| **D3** | `bfff821` reject duplicate and non-integer task numbers | `validateArgs` — `n` must be a positive integer and unique (`n` names the branch, the worktree and the report path; two tasks sharing it race on all three). |
 
-### D3. Duplicate/non-integer task numbers collide — P2
-`sdd.mjs:37`: two tasks with `n: 1` race on the same `sdd/t1` branch,
-`<workdir>-t1` worktree, and report path.
-**Fix:** `validateArgs` rejects non-positive-integer or duplicate `n`. Trivial +
-unit test.
+Covered by `sdd.orchestration.test.mjs` — **11 tests, all passing**, including "a claimed-green merge the
+verifier finds red halts the run", "the verifier is asked about EVERY succeeded task, not the merger's
+list", and "head must point PAST the final fix".
+
+**D1 also closes the known "SDD findings stale vs HEAD" quirk** (memory:
+`retro_project_sdd_findings_stale_vs_head`) — that was this bug, confirmed live on the codex-review build
+run (wf_e69a9e74-22e), which returned `head: 6dfb959` while the final fixer had already committed
+`3949fdf` on top of it.
+
+> **Lesson, and it has now bitten three times.** This doc listed D as open, and a later session's status
+> table repeated that without checking. A1 was stale. D3 was stale. **An audit finding is a hypothesis
+> about HEAD, and HEAD moves.** Verify every finding against the current code before planning work on it
+> — the check costs one `grep`; the alternative is re-fixing something that is already fixed, or (worse)
+> "fixing" code whose behavior you never actually read.
 
 ## Batch C — deep-dive result integrity — ✅ SHIPPED (deep-dive 0.4.0)
 
@@ -243,25 +236,35 @@ A confident lie is worse than a validation error.
 | **B3** handoff injection | 🔴 **OPEN — needs its own spec, not a plan** |
 | **B4** codex-review lock | ⚠️ mitigated, residual documented (0.2.1) |
 | **C1 / C2 / C3** deep-dive integrity | ✅ shipped (deep-dive 0.4.0) |
-| **D1 / D2 / D3** sdd.mjs correctness | 🔴 **OPEN** |
+| **D1 / D2 / D3** sdd.mjs correctness | ✅ shipped — **and was already shipped when this table first claimed otherwise** |
 | **A1** | ❌ stale — was already fixed |
 | **A2 / A3** | ✅ shipped |
 
-**What is left: Batch D, and a spec for B3.** D1 is a live P1 (the final fixer's result is discarded;
-observed on a real run) and is the highest-value remaining item.
+**What is left: a spec for B3. That is all.** The audit is otherwise closed.
 
-### Notes for whoever picks up Batch D
+**B3** cannot be a patch: a hostile repo can commit its own `.claude/handoffs/evil.md` plus a `.pending`
+naming it, and the loader has no way to tell it from one this machine wrote. Closing it needs a
+*provenance boundary* — probably moving handoffs (or an index of them) into the plugin's user-level data
+dir, which a checked-out repo cannot write. That is a design decision about where handoffs live, and it
+collides with the SKILL's agent-authored write step (there is no trusted writer today to stamp
+provenance). Brainstorm → spec → plan, not a fix.
 
-Per the size-ceremony rule, D is "small plan + plain subagents with tests" scale — write a short
-`# Task N` plan, Codex-review it, execute with tiered subagents. Two things this batch's experience
-says to do differently:
+### What this audit taught, for the next one
 
-- **Have Codex review the plan, not just the code.** Across B2, diff mode and C, the plan reviews caught
-  more than the code reviews did — including designs that were fatally wrong before a line was written.
-  The C plan alone took 16 unique findings across 3 rounds + audit, and the audit (a fresh reviewer
+- **An audit finding is a hypothesis about HEAD, and HEAD moves.** Three of the fourteen findings (A1,
+  D3, and in fact all of Batch D) were already fixed by the time anyone planned work on them — and a
+  status table in this very doc asserted D was open without checking. Re-verify every finding against
+  the current code before planning against it. It costs one `grep`.
+- **Have Codex review the *plan*, not just the code.** Across B2, diff mode and C, the plan reviews
+  caught more than the code reviews did — including designs that were fatally wrong before a line was
+  written. The C plan took 16 unique findings across 3 rounds + an audit, and the audit (a fresh reviewer
   reading the folded plan cold) found 3 P1s that three review rounds had missed.
-- **Check whether your tasks can actually be separate commits.** C1 and C2 were planned as two tasks;
-  the audit caught that committing C1 alone leaves the tree crashing on the exact input C1 was written
-  to catch. Ask of every task boundary: *is the tree green between these two commits?*
-- **The docs-sync guard counts only `plugins/<p>/README.md` and `CLAUDE.md`.** `SKILL.md` does not.
-  Every one of this batch's deep-dive commits would have been denied; the audit caught that too.
+- **Then review the code anyway.** `codex-review diff` on the finished C branch found 3 more real bugs in
+  code the plan review had already blessed — including a host guard that would have let a fabricated
+  finding point the verifier's `WebFetch` at `169.254.169.254`. Plan review and diff review catch
+  different things.
+- **Check whether your tasks can actually be separate commits.** C1 and C2 were planned as two; the audit
+  caught that committing C1 alone leaves the tree crashing on the exact input C1 was written to catch.
+  Ask of every task boundary: *is the tree green between these two commits?*
+- **The docs-sync guard counts only `plugins/<p>/README.md` and `CLAUDE.md`.** `SKILL.md` does not — so
+  every one of Batch C's deep-dive commits would have been denied. The audit caught that too.
