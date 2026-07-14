@@ -13,6 +13,7 @@ import {
   symlinkSync,
   realpathSync,
   utimesSync,
+  statSync,
 } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -31,6 +32,7 @@ import {
   bandMarkerPath,
   resetBands,
   acquireInflightLock,
+  cachedTranscriptUsage,
 } from "../scripts/lib.mjs";
 
 test("safeJsonParse returns object for valid JSON", () => {
@@ -415,4 +417,119 @@ test("acquireInflightLock: an ANCIENT empty lock is broken — a crash must not 
   // so a lock still empty after 10s is a corpse.
   assert.equal(acquireInflightLock(lock, 2000), true, "an ancient empty lock is breakable");
   assert.equal(readFileSync(lock, "utf8"), String(process.pid), "we are the new holder");
+});
+
+// --- cachedTranscriptUsage (Task 3) ---
+
+const assistantLine = (n) => JSON.stringify({
+  type: "assistant",
+  message: { usage: { input_tokens: n, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+});
+
+test("cachedTranscriptUsage: parses, caches to disk, re-parses when the transcript changes", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-tc-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const transcript = path.join(dir, "t.jsonl");
+  writeFileSync(transcript, assistantLine(100) + "\n");
+
+  const first = cachedTranscriptUsage(transcript, dir, "sid");
+  assert.ok(first);
+  assert.equal(first.inputTokens, 100);
+
+  const cached = JSON.parse(readFileSync(path.join(dir, "transcript-usage-sid.json"), "utf8"));
+  assert.equal(typeof cached.mtimeMs, "number");
+  assert.equal(typeof cached.size, "number");
+  assert.equal(cached.usage.inputTokens, 100, "the cache round-trips the camelCase shape");
+
+  writeFileSync(transcript, assistantLine(100) + "\n" + assistantLine(250) + "\n");
+  assert.equal(
+    cachedTranscriptUsage(transcript, dir, "sid").inputTokens, 250,
+    "a changed transcript is re-parsed, not served stale",
+  );
+});
+
+test("cachedTranscriptUsage: an UNCHANGED transcript is served from the cache, not re-parsed", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-tc-hit-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const transcript = path.join(dir, "t.jsonl");
+  writeFileSync(transcript, assistantLine(100) + "\n");
+  const st = statSync(transcript);
+
+  // Prime the cache with a value the transcript does NOT contain. If the implementation re-parses it
+  // returns 100; if it honours the key it returns 999. This is the only portable way to prove a HIT
+  // rather than a silent re-parse.
+  writeFileSync(path.join(dir, "transcript-usage-sid.json"), JSON.stringify({
+    transcriptPath: transcript, mtimeMs: st.mtimeMs, size: st.size,
+    usage: { inputTokens: 999, cacheCreationTokens: 0, cacheReadTokens: 0 },
+  }));
+
+  assert.equal(cachedTranscriptUsage(transcript, dir, "sid").inputTokens, 999, "served from the cache");
+});
+
+test("cachedTranscriptUsage: a DIFFERENT transcript is never served another's cache", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-tc-x-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // Two no-ID sessions both resolve to sid "unknown" and share one cache file. Give them different
+  // transcripts with IDENTICAL size (same byte length) — mtime+size alone could collide.
+  const a = path.join(dir, "a.jsonl");
+  const b = path.join(dir, "b.jsonl");
+  writeFileSync(a, assistantLine(111) + "\n");
+  writeFileSync(b, assistantLine(222) + "\n");
+  assert.equal(statSync(a).size, statSync(b).size, "same byte length — the collision this guards");
+
+  assert.equal(cachedTranscriptUsage(a, dir, "unknown").inputTokens, 111);
+  assert.equal(
+    cachedTranscriptUsage(b, dir, "unknown").inputTokens, 222,
+    "a different transcript must not be served the first one's usage",
+  );
+});
+
+test("cachedTranscriptUsage: a corrupt cache file is ignored, not fatal", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-tc2-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const transcript = path.join(dir, "t.jsonl");
+  writeFileSync(transcript, assistantLine(7) + "\n");
+  writeFileSync(path.join(dir, "transcript-usage-sid.json"), "{not json");
+
+  assert.equal(cachedTranscriptUsage(transcript, dir, "sid").inputTokens, 7, "falls back to a fresh parse");
+});
+
+test("cachedTranscriptUsage: VALID JSON with a malformed usage shape re-parses", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-tc3-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const transcript = path.join(dir, "t.jsonl");
+  writeFileSync(transcript, assistantLine(42) + "\n");
+  const st = statSync(transcript);
+  // Parses fine, key matches — but usage has no fields. Returning it verbatim yields NaN downstream
+  // and bails the bar to "?" while a perfectly good transcript sits on disk.
+  writeFileSync(path.join(dir, "transcript-usage-sid.json"), JSON.stringify({
+    transcriptPath: transcript, mtimeMs: st.mtimeMs, size: st.size, usage: {},
+  }));
+
+  const r = cachedTranscriptUsage(transcript, dir, "sid");
+  assert.equal(r.inputTokens, 42, "a structurally-invalid cached usage falls back to a fresh parse");
+  assert.equal(Number.isFinite(r.cacheReadTokens), true);
+});
+
+test("cachedTranscriptUsage: a missing transcript returns null without throwing", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-tc4-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(cachedTranscriptUsage(path.join(dir, "nope.jsonl"), dir, "sid"), null);
+});
+
+test("cachedTranscriptUsage: 'no assistant turn yet' is CACHED, not re-scanned every tick", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-tc5-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const transcript = path.join(dir, "t.jsonl");
+  writeFileSync(transcript, JSON.stringify({ type: "user", message: {} }) + "\n"); // no assistant turn
+
+  assert.equal(cachedTranscriptUsage(transcript, dir, "sid"), null);
+
+  // null is a valid, cacheable answer. Early in a session this state persists across many ticks, and
+  // re-scanning the whole transcript each time is exactly the expensive path this cache exists to
+  // remove — so the miss must be recorded, not just the hit.
+  const c = JSON.parse(readFileSync(path.join(dir, "transcript-usage-sid.json"), "utf8"));
+  assert.equal(c.usage, null, "the negative result is cached");
+  assert.equal(c.transcriptPath, transcript);
+  assert.equal(cachedTranscriptUsage(transcript, dir, "sid"), null, "and is served from the cache");
 });

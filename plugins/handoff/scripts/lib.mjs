@@ -164,6 +164,78 @@ export function lastAssistantUsageFromTranscript(transcriptPath) {
   return null;
 }
 
+/**
+ * A cached usage record is usable only if it carries all three finite token counts. JSON.parse
+ * succeeding is NOT enough: a valid-JSON-but-malformed cache such as {"usage":{}} with a matching key
+ * would otherwise be returned as-is, producing NaN downstream and bailing the bar to "?" — the exact
+ * failure the "always fall back to a fresh parse" promise exists to prevent.
+ *
+ * @param {any} u
+ * @returns {boolean}
+ */
+function isUsageShape(u) {
+  return (
+    u !== null &&
+    typeof u === "object" &&
+    Number.isFinite(u.inputTokens) &&
+    Number.isFinite(u.cacheCreationTokens) &&
+    Number.isFinite(u.cacheReadTokens)
+  );
+}
+
+/**
+ * lastAssistantUsageFromTranscript, with a disk cache keyed on the transcript's path + mtime + size.
+ *
+ * The parse is a full synchronous read of an unboundedly-growing file, on a ~300ms debounce — that is
+ * the slow path that lets invocations pile up (ccusage#459: 34 concurrent statusline processes, 300%
+ * CPU). Caching the parse is the proven fix; ccusage does the same, keyed on transcript mtime.
+ *
+ * The PATH is part of the key because the cache filename is keyed on sid, and resolveSessionId falls
+ * back to the literal "unknown" — two no-ID sessions share one cache file, and must not be served
+ * each other's token counts.
+ *
+ * Every failure path falls back to a fresh parse: a cache is an optimization, never a correctness
+ * dependency.
+ *
+ * @param {string} transcriptPath
+ * @param {string} dataDir
+ * @param {string} sid
+ * @returns {{inputTokens: number, cacheCreationTokens: number, cacheReadTokens: number} | null}
+ */
+export function cachedTranscriptUsage(transcriptPath, dataDir, sid) {
+  /** @type {{mtimeMs: number, size: number}} */
+  let stat;
+  try {
+    const st = statSync(transcriptPath);
+    stat = { mtimeMs: st.mtimeMs, size: st.size };
+  } catch {
+    return null; // no transcript — nothing to parse or cache
+  }
+
+  const cacheFile = path.join(dataDir, `transcript-usage-${sid}.json`);
+  try {
+    const c = JSON.parse(readFileSync(cacheFile, "utf8"));
+    if (c && c.transcriptPath === transcriptPath && c.mtimeMs === stat.mtimeMs && c.size === stat.size) {
+      // A cached null is a VALID, cacheable answer ("this transcript has no main-chain assistant turn
+      // yet") — early in a session that state persists across many ticks, and re-scanning the whole
+      // file each time is precisely the expensive path this function exists to remove. Distinguish it
+      // from a malformed record by requiring an explicit null, not a falsy one.
+      if (c.usage === null) return null;
+      if (isUsageShape(c.usage)) return c.usage;
+    }
+  } catch {
+    // missing or corrupt cache — fall through to a fresh parse
+  }
+
+  const usage = lastAssistantUsageFromTranscript(transcriptPath);
+  try {
+    writeFileSync(cacheFile, JSON.stringify({ transcriptPath, ...stat, usage }));
+  } catch {
+    // the cache is an optimization; a failed write must not fail the render
+  }
+  return usage;
+}
+
 // POSIX-only flags; undefined on Windows, where we fall back to 0 and rely on the
 // (necessarily non-atomic) lstat pre-check. Windows has no filesystem FIFOs reachable
 // this way, so the blocking hazard O_NONBLOCK guards against does not apply there.

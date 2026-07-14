@@ -11,7 +11,7 @@ import {
   safeJsonParse,
   resolveSessionId,
   resolveDataDir,
-  lastAssistantUsageFromTranscript,
+  cachedTranscriptUsage,
   claimBand,
   resetBands,
   bandMarkerPath,
@@ -170,7 +170,7 @@ if (hasEffectiveMax) {
 
   // Step 2: JSONL fallback when current_usage was absent or zero
   if (currentPct === undefined && transcriptPath !== null) {
-    const usage = lastAssistantUsageFromTranscript(transcriptPath);
+    const usage = cachedTranscriptUsage(transcriptPath, dataDir, sid);
     if (usage !== null) {
       const inputTokens = usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens;
       currentPct = (inputTokens / effectiveMax) * 100;
