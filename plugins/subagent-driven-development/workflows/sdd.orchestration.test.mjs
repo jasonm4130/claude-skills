@@ -90,7 +90,7 @@ function happyResponder(overrides = {}) {
       // Default: the verifier confirms whatever was claimed. Tests override to inject disagreement.
       return { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], suite: "green", evidence: "2 pass, 0 fail" };
     }
-    if (label === "final-review") return { verdict: "approve", findings: [], ponytailDebt: [] };
+    if (label === "final-review" || label === "final-review-2") return { verdict: "approve", findings: [], ponytailDebt: [] };
     throw new Error(`unscripted agent label: ${label}`);
   };
 }
@@ -184,4 +184,46 @@ test("singleton wave: an unverifiable task halts instead of advancing base", asy
   });
   assert.ok(result.halted);
   assert.match(result.halted.reason, /unverified/i);
+});
+
+const FIXED = SHA("e");
+
+test("final fix: head advances past the fixer's commit and finalFix is reported", async () => {
+  // The live D1 bug: wf_e69a9e74-22e returned head 6dfb959 while the fixer had committed 3949fdf.
+  const { result, calls } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({
+      "final-review": { verdict: "approve", findings: [{ severity: "Minor", file: "a.mjs", line: "1", what: "x" }], ponytailDebt: [] },
+      "final-fix": { headSha: FIXED, testSummary: "294 pass", fixed: ["x"] },
+      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], suite: "green", evidence: "294 pass, 0 fail" },
+    }),
+  });
+  assert.equal(result.halted, null);
+  assert.equal(result.head, FIXED, "head must point PAST the final fix");
+  assert.notEqual(result.head, MERGED, "this is the exact bug: head left at the pre-fix commit");
+  assert.equal(result.finalFix.headSha, FIXED);
+  assert.equal(result.meta.finalFixApplied, true);
+  assert.ok(calls.some((c) => c.label === "verify:final-fix"), "the fix is checked, not assumed");
+});
+
+test("final fix: a fix that leaves the suite red halts instead of reporting an approved run", async () => {
+  const { result } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({
+      "final-review": { verdict: "approve", findings: [{ severity: "Minor", file: "a.mjs", line: "1", what: "x" }], ponytailDebt: [] },
+      "final-fix": { headSha: FIXED, testSummary: "claims green", fixed: ["x"] },
+      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], suite: "red", evidence: "2 failing" },
+    }),
+  });
+  assert.ok(result.halted, "a final fix that breaks the branch must not be reported as approved");
+  assert.match(result.halted.reason, /final fix unverified/i);
+});
+
+test("final review: a missing final review halts rather than passing as a clean run", async () => {
+  const { result } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({ "final-review": null }),
+  });
+  assert.ok(result.halted, "'the final review did not run' is not 'the branch is fine'");
+  assert.match(result.halted.reason, /final review/i);
 });

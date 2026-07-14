@@ -571,15 +571,54 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
   }
 
   let finalReview = null;
+  let finalFix = null;
   if (!halted && results.length) {
     phase("Final");
     finalReview = await agent(finalPrompt(cfg.mergeBase, base), {
       label: "final-review", phase: "Final", model: "opus", schema: FINAL_SCHEMA,
     });
-    if (finalReview && (finalReview.findings || []).length) {
-      await agent(finalFixPrompt(finalReview.findings), {
+    const findings = finalReview ? (finalReview.findings || []) : [];
+    if (!finalReview) {
+      // "The final review did not run" is not "the branch is fine".
+      halted = { wave: "final", reason: "final review returned no result", failures: [] };
+    } else if (finalReview.verdict === "changes" && !findings.length) {
+      // The reviewer's contract (prompts/final-reviewer.md) is that "changes" means findings must be
+      // addressed. "changes" with nothing to act on is a broken report, not an approval.
+      halted = { wave: "final", reason: "final review returned verdict 'changes' with no findings to act on", failures: [] };
+    } else if (findings.length) {
+      const fix = await agent(finalFixPrompt(findings), {
         label: "final-fix", phase: "Final", model: "sonnet", schema: FIX_SCHEMA,
       });
+      if (!fix) {
+        halted = { wave: "final", reason: "final fixer returned no result", failures: [] };
+      } else {
+        // Bounded on purpose: check once, do NOT re-run the whole-branch review — that turns a
+        // one-shot fix into an unbounded review -> fix -> review loop.
+        const acc = await runVerify(
+          fix.headSha,
+          `the final fixer addressed ${findings.length} finding(s) and left the suite: ${fix.testSummary}`,
+          [],
+          "verify:final-fix",
+          base, // continuity: the fix must build on the reviewed head, not replace it
+        );
+        if (!acc.ok) {
+          halted = { wave: "final", reason: `final fix unverified: ${acc.reason}`, failures: [] };
+        } else {
+          // head must point PAST the fix — the old code left it at the pre-fix commit.
+          base = acc.headSha;
+          // finalReview described the PRE-fix head. Review the post-fix head once, report-only: the
+          // returned head must not be unreviewed. Report-only keeps it bounded — findings here go to
+          // the controller to adjudicate, they do NOT trigger another fix (that is the unbounded loop).
+          const postFix = await agent(finalPrompt(cfg.mergeBase, base), {
+            label: "final-review-2", phase: "Final", model: "opus", schema: FINAL_SCHEMA,
+          });
+          finalFix = {
+            headSha: acc.headSha, fixed: fix.fixed, testSummary: fix.testSummary, verified: true,
+            postFixReview: postFix || null,
+            postFixFindings: postFix ? (postFix.findings || []) : [],
+          };
+        }
+      }
     }
   }
 
@@ -587,10 +626,14 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     ? `Halted in wave ${halted.wave}: ${halted.reason} (${halted.failures.length} failure(s))`
     : `Completed ${results.length}/${order.length} tasks across ${waves.length} wave(s)`);
   return {
-    tasks: results, planConflicts, halted, finalReview,
+    tasks: results, planConflicts, halted, finalReview, finalFix,
     mergeBase: cfg.mergeBase, head: base, merges,
     ledgerPath: `${cfg.workdir}/.sdd/progress.md`,
-    meta: { tasksCompleted: results.length, tasksTotal: order.length, waves: waves.length, planConflicts: planConflicts.length },
+    meta: {
+      tasksCompleted: results.length, tasksTotal: order.length, waves: waves.length,
+      planConflicts: planConflicts.length,
+      finalFixApplied: Boolean(finalFix),
+    },
   };
 }
 

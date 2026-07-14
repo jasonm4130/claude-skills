@@ -45,3 +45,11 @@ test("halted carries wave and failures; return includes merges", () => {
   assert.match(src, /merges,/);
   assert.match(src, /suite === "red"/);
 });
+
+test("the final fixer's result is captured, not discarded", () => {
+  assert.doesNotMatch(src, /\n\s*await agent\(finalFixPrompt\(/, "the fixer's result must be captured");
+  // The fix's head is checked through the shared runVerify helper (labels are passed positionally,
+  // not as an inline `label: "..."` literal, precisely because every verify call site is meant to
+  // funnel through one place — see the injection-guard rationale in Task 3).
+  assert.match(src, /"verify:final-fix"/);
+});
