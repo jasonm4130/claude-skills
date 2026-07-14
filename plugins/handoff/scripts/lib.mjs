@@ -15,6 +15,7 @@ import {
   realpathSync,
   constants,
 } from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
 import process from "node:process";
@@ -305,6 +306,43 @@ export function dirContainedIn(rootDir, dir) {
     const real = realpathSync(path.resolve(dir));
     const rel = path.relative(root, real);
     return rel === "" ? true : !rel.startsWith("..") && !path.isAbsolute(rel);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Does git TRACK this file? If so, the repo shipped it — this machine did not write it.
+ *
+ * This is the provenance test the pending-handoff loader was missing. Containment (`readContainedFile`)
+ * stops a marker from reading files OUTSIDE handoffs/; it does nothing about a hostile repo that simply
+ * COMMITS its own `.claude/handoffs/evil.md` plus a `.pending` naming it. The loader then announces
+ * attacker-authored text as "from your previous session" — the framing that gets a model to act on it as
+ * its own notes rather than treat it as untrusted repo data.
+ *
+ * The invariant that closes it: handoffs are gitignored BY DESIGN (the skill tells you to add
+ * `/.claude/handoffs/`). So:
+ *   - a handoff this machine wrote is untracked, always;
+ *   - a fresh clone CANNOT produce an untracked-but-present ignored file — git will not create one.
+ * Therefore, for the realistic attack (clone a hostile repo), "tracked" is an exact test for
+ * "attacker-supplied", with no new state, no hash index, and no user friction.
+ *
+ * Fails OPEN — returns false — when git is absent, this is not a repo, or the call errors: no repo means
+ * no repo-supplied hazard, and refusing a legitimate handoff is a worse failure than the bug. Never
+ * throws and always bounded: this runs on SessionStart and must not wedge startup.
+ *
+ * @param {string} cwd       repository working directory
+ * @param {string} filePath  absolute path to test
+ * @returns {boolean}        true only if git positively reports the file as tracked
+ */
+export function gitTracksFile(cwd, filePath) {
+  try {
+    const r = spawnSync("git", ["-C", cwd, "ls-files", "--error-unmatch", "--", filePath], {
+      encoding: "utf8",
+      timeout: 5000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return r.status === 0;
   } catch {
     return false;
   }
