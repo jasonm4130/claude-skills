@@ -105,10 +105,15 @@ Workflow({ scriptPath: "<resolved sdd.mjs>", args: {
   branchTip: "<git rev-parse HEAD in the workdir>",
   tasks: [ { n: 1, title: "...", tier: "sonnet", deps: [] }, ... ],
   setupCmd: "<optional: per-worktree env setup, e.g. 'npm ci'>",
-  testCmd: "<optional: suite command for the merge gate; recommended when the repo has a canonical one>",
+  testCmd: "<strongly recommended; pass it whenever the repo has a canonical suite command>",
   limits: { fixRounds: 2, escalateAttempts: 2, maxParallel: 4 }
 }})
 ```
+
+`testCmd` — **strongly recommended; pass it whenever the repo has a canonical suite command.**
+Without it, every verifier reports `suite: "unknown"` and the workflow can only check that the
+claimed commit resolves and is the branch head — it cannot check that anything still passes. If
+you omit it, say so explicitly when you present results; do not imply the branch is green.
 
 `mergeBase` anchors the final-review diff range; `branchTip` anchors wave-0
 dispatch (task worktrees and the first review diff). Omitting `branchTip`
@@ -133,8 +138,26 @@ ADR's Success-criteria block, judged at the whole-branch step as the done-oracle
 Everything else — tiering, escalation, the per-task gate, finishing — is identical.
 
 ### 7. On return: present, adjudicate, finish
-The workflow returns `{ tasks, planConflicts, halted, finalReview, mergeBase,
-head, merges, ledgerPath, meta }`.
+The workflow returns `{ tasks, planConflicts, halted, finalReview, finalFix,
+mergeBase, head, merges, ledgerPath, meta }`.
+
+**Verify the returned head yourself before presenting or finishing.** The workflow's
+`verified: true` flags come from a verifier *agent* — an independent check, not proof (the
+Workflow sandbox has no `child_process`, so nothing in the run captured a real exit code). You
+have Bash. Run, in the workdir:
+
+```bash
+git -C <workdir> rev-parse --verify <result.head>^{commit}   # the head resolves
+git -C <workdir> rev-parse HEAD                              # …and it IS the branch head
+<testCmd>                                                    # …and the suite is actually green
+```
+
+If no `testCmd` was passed, determine the repo's canonical suite command and run that. If the repo
+has none, say so plainly — "the suite was not run" — rather than presenting the run as green.
+
+Quote the real pass/fail line back to the user. If any check disagrees with the workflow's report,
+say so and stop: a run that reports `halted: null` while the suite is red is exactly what this
+gate exists to catch.
 
 - **`halted`** → `{ wave, reason, failures: [{ taskN, reason, reportPath }] }`.
   A wave can produce multiple failures (siblings run to completion and
@@ -143,11 +166,18 @@ head, merges, ledgerPath, meta }`.
   task-level ones. Failed tasks keep their worktree and branch for
   inspection. After you fix the plan/blocker, resume with
   `Workflow({ scriptPath, resumeFromRunId })` (completed tasks return cached).
+  A halt can now also come from the **Final** phase (`wave: "final"`) — a missing final
+  review, a missing fixer result, or a final fix that could not be confirmed — from a **merge
+  gate** whose claimed green the verifier could not confirm, and from a **singleton task** whose
+  claimed head could not be confirmed.
 - **`merges`** → `[{ wave, merged, headSha, testSummary }]` — what each
   wave's merge gate did.
 - **`planConflicts`** → findings that conflict with what the plan mandates. You
   decide which governs; the workflow never auto-fixes these.
 - **`finalReview`** → whole-branch verdict + any `ponytailDebt` markers.
+- **`finalFix`** → `{ headSha, fixed, testSummary, verified }` — what the final fixer changed,
+  re-checked against git and the suite. `head` points past it. `null` when the final review found
+  nothing to fix.
 - Then drive **finishing** — present merge / PR / cleanup options and let the
   user choose. Merging is irreversible and stays human-gated **in this session**;
   the workflow never merges. Default to `gh pr merge --merge` only when the user
