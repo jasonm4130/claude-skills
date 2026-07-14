@@ -71,16 +71,17 @@ test("verifyPrompt: lists findings and handles empty findings", () => {
 });
 
 test("shouldEscalate: true only when reliability is low", () => {
-  assert.equal(PURE.shouldEscalate({ reliability: "low" }, "low"), true);
-  assert.equal(PURE.shouldEscalate({ reliability: "medium" }, "low"), false);
-  assert.equal(PURE.shouldEscalate({ reliability: "high" }, "low"), false);
+  // Field name is overallReliability — VERIFY_SCHEMA requires and returns it (see C3 test below).
+  assert.equal(PURE.shouldEscalate({ overallReliability: "low" }, "low"), true);
+  assert.equal(PURE.shouldEscalate({ overallReliability: "medium" }, "low"), false);
+  assert.equal(PURE.shouldEscalate({ overallReliability: "high" }, "low"), false);
   assert.equal(PURE.shouldEscalate(null, "low"), false);
 });
 
 test("shouldEscalate: threshold semantics — escalateOn=medium covers low and medium, not high", () => {
-  assert.equal(PURE.shouldEscalate({ reliability: "low" }, "medium"), true);
-  assert.equal(PURE.shouldEscalate({ reliability: "medium" }, "medium"), true);
-  assert.equal(PURE.shouldEscalate({ reliability: "high" }, "medium"), false);
+  assert.equal(PURE.shouldEscalate({ overallReliability: "low" }, "medium"), true);
+  assert.equal(PURE.shouldEscalate({ overallReliability: "medium" }, "medium"), true);
+  assert.equal(PURE.shouldEscalate({ overallReliability: "high" }, "medium"), false);
 });
 
 test("tallyMeta: counts completed, failed, escalated", () => {
@@ -239,4 +240,44 @@ test("tallyMeta counts failures from the flag, not from truthiness", () => {
   assert.equal(m.anglesCompleted, 1);
   assert.equal(m.anglesFailed, 2);
   assert.equal(m.escalations, 1);
+});
+
+const { shouldEscalate, validateArgs } = PURE;
+
+test("shouldEscalate reads the field the verifier ACTUALLY returns", () => {
+  // VERIFY_SCHEMA requires `overallReliability`. Reading `reliability` makes rank[undefined] undefined,
+  // so the typeof guard fails and this returned false for EVERY input — tier-2 escalation has never
+  // fired once, in any deep dive.
+  const v = (overallReliability) => ({ angleId: "a", overallReliability, flags: [] });
+  assert.equal(shouldEscalate(v("low"), "low"), true, "a LOW verifier at threshold low MUST escalate");
+  assert.equal(shouldEscalate(v("medium"), "low"), false);
+  assert.equal(shouldEscalate(v("medium"), "medium"), true);
+  assert.equal(shouldEscalate(v("high"), "medium"), false);
+  assert.equal(shouldEscalate(v("high"), "high"), true);
+  assert.equal(shouldEscalate(null, "low"), false);
+  assert.equal(shouldEscalate(v("garbage"), "low"), false, "an unknown reliability must not escalate");
+});
+
+test("validateArgs rejects a dependency graph the two-wave runner cannot honour", () => {
+  const base = { topic: "t", mode: "deep", verify: { escalateOn: "low" } };
+  const angle = (id, deps) => ({ id, question: "q", kind: "core", model: "sonnet", deps });
+
+  assert.throws(() => validateArgs({ ...base, angles: [angle("a", []), angle("a", [])] }), /duplicate/i,
+    "duplicate ids make okIds ambiguous");
+  assert.throws(() => validateArgs({ ...base, angles: [angle("a", ["nope"])] }), /unknown dep|does not exist/i,
+    "a dep on a nonexistent angle is unsatisfiable — it would be skipped forever, silently");
+  assert.throws(() => validateArgs({ ...base, angles: [angle("a", ["a"])] }), /itself|self/i);
+
+  // a -> b -> c is an ordinary-looking DAG that this scheduler CANNOT run. partitionWaves puts every
+  // angle with deps into wave 2, and okIds only ever holds wave-1 successes — so c is reported
+  // "dep-failed: b" even when b succeeded perfectly. A confident lie. Reject it at validation instead.
+  assert.throws(
+    () => validateArgs({ ...base, angles: [angle("a", []), angle("b", ["a"]), angle("c", ["b"])] }),
+    /root|two waves|non-root/i,
+    "a dep on a non-root angle needs a third wave, which does not exist",
+  );
+
+  // The valid shape — roots plus one dependent wave — still passes.
+  assert.ok(validateArgs({ ...base, angles: [angle("a", []), angle("b", ["a"])] }));
+  assert.ok(validateArgs({ ...base, angles: [angle("a", []), angle("b", []), angle("c", ["a", "b"])] }));
 });

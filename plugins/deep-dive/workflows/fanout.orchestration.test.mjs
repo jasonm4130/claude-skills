@@ -123,3 +123,47 @@ test("runtime: a healthy run still reports normally", async () => {
   assert.equal(r.meta.anglesCompleted, 1);
   assert.equal(r.meta.anglesFailed, 0);
 });
+
+test("runtime: a LOW verifier actually escalates now — this path has never once executed", async () => {
+  const args = {
+    topic: "t", mode: "deep",
+    angles: [{ id: "a", question: "qa", kind: "core", model: "sonnet", deps: [] }],
+    verify: { escalateOn: "low" },
+  };
+  const labels = [];
+  const agent = async (_p, o) => {
+    labels.push(o.label);
+    if (o.label.startsWith("research:")) return okResearch("a");
+    if (o.label.startsWith("escalate:")) return { angleId: "a", overallReliability: "high", flags: [] };
+    return { angleId: "a", overallReliability: "low", flags: [] }; // tier-1 says LOW
+  };
+
+  const r = await runWorkflow(agent, args);
+
+  // Before C3, shouldEscalate returned false for EVERY input, so escalate: was never dispatched and
+  // meta.escalations was permanently 0. This assertion is the proof the feature exists at all.
+  assert.ok(labels.some((l) => l.startsWith("escalate:a")), "a LOW tier-1 verifier MUST trigger tier-2");
+  assert.equal(r.meta.escalations, 1);
+  assert.equal(r.verification[0].reliability, "high", "the tier-2 recheck replaces the tier-1 verdict");
+});
+
+test("runtime: a tier-2 recheck for the WRONG angle fails the angle instead of replacing its verdict", async () => {
+  const args = {
+    topic: "t", mode: "deep",
+    angles: [{ id: "a", question: "qa", kind: "core", model: "sonnet", deps: [] }],
+    verify: { escalateOn: "low" },
+  };
+  const agent = async (_p, o) => {
+    if (o.label.startsWith("research:")) return okResearch("a");
+    // Schema-valid, and about a DIFFERENT angle. Before Task 1, `verify = recheck` swallowed it whole
+    // and emitted it in verification[] as angle a's reliability.
+    if (o.label.startsWith("escalate:")) return { angleId: "zzz", overallReliability: "high", flags: [] };
+    return { angleId: "a", overallReliability: "low", flags: [] };
+  };
+
+  const r = await runWorkflow(agent, args);
+
+  assert.equal(r.reports.length, 0);
+  assert.equal(r.failedAngles.length, 1);
+  assert.match(r.failedAngles[0].reason, /recheck returned angleId/i);
+});

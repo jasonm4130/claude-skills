@@ -49,13 +49,42 @@ function validateArgs(input) {
     input.verify && allowed.includes(input.verify.escalateOn)
       ? input.verify.escalateOn
       : "low";
+
+  const ids = angles.map((a) => a.id);
+  const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+  if (dupes.length > 0) throw new Error(`duplicate angle id(s): ${[...new Set(dupes)].join(", ")}`);
+
+  const byId = new Map(angles.map((a) => [a.id, a]));
+  // Roots are exactly what partitionWaves puts in wave 1. There is no wave 3.
+  const isRoot = (a) => !a.deps || a.deps.length === 0;
+
+  for (const a of angles) {
+    for (const d of a.deps || []) {
+      if (d === a.id) throw new Error(`angle ${a.id} depends on itself`);
+      // Unsatisfiable: the angle would be skipped forever, and (before C2) skipped INVISIBLY.
+      const dep = byId.get(d);
+      if (!dep) throw new Error(`angle ${a.id} has an unknown dep "${d}" (no such angle)`);
+      // The runner has exactly TWO waves, and okIds holds wave-1 successes only. A dep on an angle that
+      // itself has deps can never be satisfied — the runner would report `${a.id}` as "dep-failed: ${d}"
+      // even when ${d} succeeded. Reject it here rather than lie at synthesis.
+      if (!isRoot(dep)) {
+        throw new Error(
+          `angle ${a.id} depends on "${d}", which is not a root angle — this runner has two waves, ` +
+          `so a dep chain (${d} -> ${a.id}) would need a third and can never be satisfied`,
+        );
+      }
+    }
+  }
+
   return { topic: input.topic, mode, angles, verify: { escalateOn } };
 }
 
 function shouldEscalate(verification, escalateOn) {
   if (!verification) return false;
   const rank = { low: 0, medium: 1, high: 2 };
-  const r = rank[verification.reliability];
+  // The verifier returns `overallReliability` (VERIFY_SCHEMA requires it). Reading `reliability` made
+  // this return false for EVERY input, so tier-2 escalation never ran once.
+  const r = rank[verification.overallReliability];
   const threshold = escalateOn in rank ? rank[escalateOn] : rank.low;
   return typeof r === "number" && r <= threshold;
 }

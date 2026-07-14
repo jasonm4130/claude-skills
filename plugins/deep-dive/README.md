@@ -48,6 +48,17 @@ unusable summary, placeholder/non-http source URLs, and placeholder claims all f
 once, then reported in `failedAngles` rather than silently passed through as evidence). This is a
 placeholder/junk filter, not provenance verification — it cannot prove a URL was actually fetched.
 
+## DAG rules (exactly two waves)
+
+The runner has exactly two waves: **root angles (no `deps`) run in wave 1; angles with `deps` run in
+wave 2, and may only depend on root angles.** A dep chain like `a → b → c` needs a third wave that does
+not exist — `c` would be checked against wave-1 successes only and reported `dep-failed: b` even when
+`b` succeeded. `validateArgs` rejects this (and duplicate ids, self-deps, and deps on angles that don't
+exist) before wave 1 runs, rather than let the workflow report a confident lie at synthesis.
+
+`verify.escalateOn` (`"low"` | `"medium"` | `"high"`) now actually works: an angle whose tier-1 verifier
+reports reliability at or below that threshold gets a tier-2 re-check.
+
 ## Tools
 
 Prefers Exa MCP, then Tavily MCP, then WebSearch, then WebFetch. Uses Exa *and* Tavily — different rankings catch different sources.
