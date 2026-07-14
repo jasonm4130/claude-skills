@@ -2,14 +2,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync, spawn as spawnAsync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, chmodSync, mkdirSync, utimesSync, existsSync, appendFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, chmodSync, mkdirSync, utimesSync, existsSync, appendFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as os from "node:os";
+import * as path from "node:path";
 import {
   parseEventStream, parseVerdict, countFindings,
   buildReviewPrompt, buildResumePrompt, buildAuditPrompt, buildRetryPrompt,
   contentHashOf, mintChainId, resolveRepoRoot, parseTimeoutS,
   readLogLines, acquireLock, releaseLock, reserveChain, appendResult, appendNote, computeStats, getChainState, OUTCOMES,
+  repoRootOfDir, isSafeGitRange, parseMaxLines, resolveDiff,
+  isAuditMode, isDiffMode, buildDiffPrompt, buildDiffResumePrompt, buildDiffAuditPrompt,
 } from "./codex-review.mjs";
 
 // Real stream captured from codex-cli 0.144.3 on 2026-07-14.
@@ -243,13 +247,18 @@ if (mode === "fail") {
   chmodSync(join(dir, "codex"), 0o755);
   return {
     env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, SHIM_DIR: dir, SHIM_MODE: mode },
-    argv: () => JSON.parse(readFileSync(join(dir, "argv.json"), "utf8")),
+    // null (not a throw) when codex was never invoked — a refused-before-spawn test asserts exactly
+    // that absence.
+    argv: () => {
+      try { return JSON.parse(readFileSync(join(dir, "argv.json"), "utf8")); }
+      catch (e) { if (e.code === "ENOENT") return null; throw e; }
+    },
   };
 }
 
-function runCli(args, env, logPath) {
+function runCli(args, env, logPath, { cwd } = {}) {
   return spawnSync("node", [SCRIPT, ...args], {
-    env: { ...env, CODEX_REVIEW_LOG: logPath }, encoding: "utf8", timeout: 30_000,
+    env: { ...env, CODEX_REVIEW_LOG: logPath }, encoding: "utf8", timeout: 30_000, ...(cwd ? { cwd } : {}),
   });
 }
 
@@ -473,4 +482,359 @@ test("resolveRepoRoot: fallback path leaks nothing to stderr", () => {
   ], { encoding: "utf8", timeout: 30_000 });
   assert.equal(r.stdout, "/tmp/nonexistent-dir-xyz");
   assert.equal(r.stderr, "", "git fatal output must not leak through resolveRepoRoot");
+});
+
+/** A throwaway git repo with two commits on main. Returns its root. */
+function fixtureRepo(t) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-diff-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", ["-C", dir, ...a], { stdio: ["ignore", "pipe", "ignore"] });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t.t");
+  git("config", "user.name", "t");
+  // Isolate from the developer machine's global hooksPath (e.g. a gitleaks pre-commit hook that
+  // itself runs `git diff --cached` without --no-textconv): without this, a global hook's OWN diff
+  // call can trip a configured textconv driver and falsely implicate resolveDiff()'s --no-textconv.
+  git("config", "core.hooksPath", "/dev/null");
+  writeFileSync(path.join(dir, "a.txt"), "one\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "first");
+  writeFileSync(path.join(dir, "a.txt"), "one\ntwo\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "second");
+  return dir;
+}
+
+const LIMITS = { maxLines: 4000, maxBytes: 400_000 };
+
+test("repoRootOfDir: resolves the repo of the DIRECTORY, not its parent", (t) => {
+  const repo = fixtureRepo(t);
+  // resolveRepoRoot() dirname()s its argument (it takes a FILE path). Reusing it for a directory
+  // would resolve the PARENT's repo — silently running every git command in the wrong place.
+  // realpathSync: on macOS, os.tmpdir() lives under /var, a symlink to /private/var — git resolves
+  // symlinks when reporting --show-toplevel, mkdtempSync does not.
+  assert.equal(repoRootOfDir(repo), realpathSync(repo));
+});
+
+test("isSafeGitRange: accepts the shapes we actually use", () => {
+  for (const r of ["main...HEAD", "main..HEAD", "HEAD~3..HEAD", "origin/main...HEAD",
+                   "v0.1.0..v0.2.0", "feat/some-branch...main", "abc1234..def5678"]) {
+    assert.equal(isSafeGitRange(r), true, `${r} should be accepted`);
+  }
+});
+
+test("isSafeGitRange: rejects anything git would read as a FLAG", () => {
+  // `git diff --output=/tmp/x` WRITES A FILE, in a tool whose safety story is a read-only sandbox.
+  // An argv array stops shell injection, not flag injection.
+  for (const r of ["--output=/tmp/pwned", "-O/tmp/pwned", "--ext-diff", "-z"]) {
+    assert.equal(isSafeGitRange(r), false, `${r} must be rejected: git parses it as a flag`);
+  }
+});
+
+test("isSafeGitRange: requires an explicit two- or three-dot range", () => {
+  // A bare ref means "diff the WORKING TREE against it" — uncommitted changes make the review
+  // non-deterministic and unreproducible from the chain record.
+  for (const r of ["HEAD", "main", "abc1234"]) {
+    assert.equal(isSafeGitRange(r), false, `${r} is a bare ref, not a range`);
+  }
+});
+
+test("isSafeGitRange: rejects junk", () => {
+  for (const r of ["", " ", "a b", "a;b", "a$(id)b", "a|b", "a\nb", "..", "...", "a'b", '"', "a".repeat(300)]) {
+    assert.equal(isSafeGitRange(r), false, `${JSON.stringify(r)} must be rejected`);
+  }
+  assert.equal(isSafeGitRange(null), false);
+  assert.equal(isSafeGitRange(undefined), false);
+});
+
+test("parseMaxLines: NaN and Infinity must NOT silently disable the limit", () => {
+  // `NaN <= 0` is FALSE, so a naive "reject non-positive" check lets NaN through and disables the cap.
+  for (const bad of ["NaN", "abc", "Infinity", "-1", "0", "1.5", "", undefined]) {
+    assert.throws(() => parseMaxLines(bad), /positive integer/i, `${bad} must be rejected`);
+  }
+  assert.equal(parseMaxLines("500"), 500);
+  assert.equal(parseMaxLines(500), 500);
+});
+
+test("resolveDiff: pins a symbolic range to immutable SHAs", (t) => {
+  const repo = fixtureRepo(t);
+  const d = resolveDiff(repo, "HEAD~1..HEAD", LIMITS);
+
+  assert.match(d.text, /\+two/, "the diff text contains the added line");
+  assert.deepEqual(d.files, ["a.txt"]);
+  assert.match(d.base, /^[0-9a-f]{40}$/, "base is pinned to a full SHA");
+  assert.match(d.head, /^[0-9a-f]{40}$/, "head is pinned to a full SHA");
+  assert.equal(d.pinnedRange, `${d.base}..${d.head}`);
+  // The pinned range is what we hash AND what Codex is told to run. A symbolic range would let HEAD
+  // move between the two, so the reviewer would read different content than the chain recorded.
+  assert.doesNotMatch(d.pinnedRange, /HEAD|main/);
+});
+
+test("resolveDiff: a three-dot range pins base to the MERGE BASE", (t) => {
+  const repo = fixtureRepo(t);
+  const git = (...a) => execFileSync("git", ["-C", repo, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  const mergeBase = git("merge-base", "HEAD~1", "HEAD").trim();
+  const d = resolveDiff(repo, "HEAD~1...HEAD", LIMITS);
+  assert.equal(d.base, mergeBase, "A...B means 'changes on B since it diverged from A'");
+});
+
+test("resolveDiff: an EMPTY diff is refused, not reviewed", (t) => {
+  const repo = fixtureRepo(t);
+  // Reviewing nothing and returning APPROVED is the worst possible outcome — it LOOKS like a pass.
+  assert.throws(() => resolveDiff(repo, "HEAD..HEAD", LIMITS), /empty/i);
+});
+
+test("resolveDiff: an oversized diff is refused, not silently truncated", (t) => {
+  const repo = fixtureRepo(t);
+  assert.throws(() => resolveDiff(repo, "HEAD~1..HEAD", { maxLines: 1, maxBytes: 400_000 }), /too large|narrow/i);
+  assert.throws(() => resolveDiff(repo, "HEAD~1..HEAD", { maxLines: 4000, maxBytes: 10 }), /too large|narrow/i);
+});
+
+test("resolveDiff: a bad range fails loudly rather than reviewing the wrong thing", (t) => {
+  const repo = fixtureRepo(t);
+  assert.throws(() => resolveDiff(repo, "no-such-ref..HEAD", LIMITS));
+  assert.throws(() => resolveDiff(repo, "--output=/tmp/pwned", LIMITS), /unsafe|malformed/i);
+});
+
+test("resolveDiff: a file hidden by .gitattributes '-diff' is REPORTED, never silently dropped", (t) => {
+  const repo = fixtureRepo(t);
+  const git = (...a) => execFileSync("git", ["-C", repo, ...a], { stdio: ["ignore", "pipe", "ignore"] });
+  // A repo can mark real SOURCE as -diff. git then shows nothing for it, while the diff still looks
+  // healthy — source code hidden from the reviewer, and silence reads as a pass.
+  writeFileSync(path.join(repo, ".gitattributes"), "secret.mjs -diff\n");
+  writeFileSync(path.join(repo, "secret.mjs"), "export const x = 1;\n");
+  writeFileSync(path.join(repo, "a.txt"), "one\ntwo\nthree\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "hide");
+
+  const d = resolveDiff(repo, "HEAD~1..HEAD", LIMITS);
+  assert.ok(d.undiffable.includes("secret.mjs"), "an undiffable file must be surfaced, not dropped");
+  assert.equal(d.files.includes("secret.mjs"), false, "and must not be listed as reviewable");
+  assert.ok(d.files.includes("a.txt"), "the genuinely reviewable file is still reviewed");
+});
+
+test("resolveDiff: refuses when EVERY changed file is undiffable", (t) => {
+  const repo = fixtureRepo(t);
+  const git = (...a) => execFileSync("git", ["-C", repo, ...a], { stdio: ["ignore", "pipe", "ignore"] });
+  writeFileSync(path.join(repo, ".gitattributes"), "*.bin -diff\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "attrs");
+  writeFileSync(path.join(repo, "blob.bin"), " binary ");
+  git("add", "-A");
+  git("commit", "-q", "-m", "binary only");
+
+  // Reviewing nothing and returning APPROVED is the worst possible outcome.
+  assert.throws(() => resolveDiff(repo, "HEAD~1..HEAD", LIMITS), /nothing reviewable|empty/i);
+});
+
+test("resolveDiff: does not run a repo-configured textconv program", (t) => {
+  const repo = fixtureRepo(t);
+  const git = (...a) => execFileSync("git", ["-C", repo, ...a], { stdio: ["ignore", "pipe", "ignore"] });
+  const marker = path.join(repo, "TEXTCONV_RAN");
+  // git textconv/external-diff drivers execute configured PROGRAMS — host-side code execution,
+  // outside Codex's read-only sandbox. --no-textconv/--no-ext-diff must prevent it.
+  git("config", "diff.pwned.textconv", `sh -c 'touch ${marker}' --`);
+  writeFileSync(path.join(repo, ".gitattributes"), "*.txt diff=pwned\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "attrs");
+  writeFileSync(path.join(repo, "a.txt"), "one\ntwo\nthree\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "third");
+
+  resolveDiff(repo, "HEAD~1..HEAD", LIMITS);
+  assert.equal(existsSync(marker), false, "textconv must not execute: --no-textconv is load-bearing");
+});
+
+test("isAuditMode / isDiffMode classify every mode", () => {
+  assert.equal(isAuditMode("audit"), true);
+  assert.equal(isAuditMode("diff-audit"), true);
+  assert.equal(isAuditMode("review"), false);
+  assert.equal(isAuditMode("diff"), false);
+  assert.equal(isDiffMode("diff"), true);
+  assert.equal(isDiffMode("diff-audit"), true);
+  assert.equal(isDiffMode("review"), false);
+  assert.equal(isDiffMode("audit"), false);
+});
+
+test("parseVerdict: diff uses the VERDICT contract, diff-audit uses the AUDIT contract", () => {
+  assert.equal(parseVerdict("x\nVERDICT: REVISE", "diff"), "REVISE");
+  assert.equal(parseVerdict("x\nVERDICT: APPROVED", "diff"), "APPROVED");
+  assert.equal(parseVerdict("x\nAUDIT: CONCERNS", "diff-audit"), "CONCERNS");
+  assert.equal(parseVerdict("x\nAUDIT: PASS", "diff-audit"), "PASS");
+  assert.equal(parseVerdict("no verdict", "diff"), "UNPARSEABLE");
+});
+
+test("buildDiffPrompt: instructs a CODE review of the PINNED range and names the files", () => {
+  const p = buildDiffPrompt("aaa111..bbb222", ["src/a.mjs", "src/b.mjs"]);
+  assert.match(p, /aaa111\.\.bbb222/);
+  assert.match(p, /src\/a\.mjs/);
+  assert.match(p, /src\/b\.mjs/);
+  assert.match(p, /VERDICT: APPROVED or VERDICT: REVISE/);
+  assert.match(p, /\[P1\]/);
+});
+
+test("buildDiffAuditPrompt: uses the AUDIT verdict line and the pinned range", () => {
+  const p = buildDiffAuditPrompt("aaa111..bbb222");
+  assert.match(p, /aaa111\.\.bbb222/);
+  assert.match(p, /AUDIT: PASS or AUDIT: CONCERNS/);
+  assert.doesNotMatch(p, /design\/plan document/, "a diff audit must not describe a plan document");
+});
+
+test("buildDiffResumePrompt: re-reviews CODE, not a revised document", () => {
+  const p = buildDiffResumePrompt("aaa111..bbb222");
+  assert.match(p, /aaa111\.\.bbb222/);
+  assert.match(p, /VERDICT: APPROVED or VERDICT: REVISE/);
+  assert.doesNotMatch(p, /document/i, "the plan-mode resume prompt would say 'the artifact ... has been revised'");
+});
+
+test("diff prompts do NOT smuggle in intent, a plan, or a self-assessment", () => {
+  // Framing degraded findings 3-4x in testing. The diff must stand on its own merits.
+  for (const p of [buildDiffPrompt("a..b", ["x.mjs"]), buildDiffResumePrompt("a..b"), buildDiffAuditPrompt("a..b")]) {
+    assert.doesNotMatch(p, /the (author|implementer) (says|claims|believes)/i);
+    assert.doesNotMatch(p, /is intended to|is meant to|aims to/i);
+    assert.doesNotMatch(p, /\bplan\b|\bspec\b/i);
+  }
+});
+
+test("CLI e2e: a diff chain opens, RESUMES after a fix commit, audits once, and closes", (t) => {
+  const repo = fixtureRepo(t);
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-cli-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const logPath = path.join(dir, "log.jsonl");
+  const shim = makeShim(dir, "ok");
+  const git = (...a) => execFileSync("git", ["-C", repo, ...a], { stdio: ["ignore", "pipe", "ignore"] });
+  const cli = (argv) => runCli(argv, { ...shim.env }, logPath, { cwd: repo });
+
+  // A feature branch, so the range `main...HEAD` is STABLE as fix commits land. This is the whole
+  // usage convention: a fixed base against a moving tip. A range like `HEAD~1..HEAD` would name a
+  // different artifact every round and could not be resumed at all.
+  git("checkout", "-q", "-b", "feature");
+  writeFileSync(path.join(repo, "a.txt"), "one\ntwo\nthree\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "feature work");
+  const RANGE = "main...HEAD";
+
+  const r1 = JSON.parse(cli(["diff", RANGE, "--force"]).stdout);
+  assert.equal(r1.mode, "diff");
+  assert.ok(r1.chainId);
+
+  // A fix commit moves HEAD. The SAME symbolic range still names this branch's changes — which is
+  // exactly why the chain's artifact must be the symbolic range and not the SHA-pinned one. Pinned,
+  // the artifact would stop matching here and the resume would be refused.
+  writeFileSync(path.join(repo, "a.txt"), "one\ntwo\nfixed\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "fix");
+
+  const r2 = JSON.parse(cli(["diff", RANGE, "--chain", r1.chainId, "--resume", r1.sessionId]).stdout);
+  assert.equal(r2.chainId, r1.chainId, "the resumed round stays on the SAME chain");
+
+  // The "ok" shim mode always emits VERDICT: REVISE text regardless of which CLI mode invoked it
+  // (it only reads SHIM_MODE, not argv) — so the audit round needs "auditpass" to produce an
+  // AUDIT: line, exactly as the existing plan-mode "review -> audit" e2e test does.
+  const a1 = JSON.parse(runCli(["diff-audit", RANGE, "--chain", r1.chainId], { ...shim.env, SHIM_MODE: "auditpass" }, logPath, { cwd: repo }).stdout);
+  assert.equal(a1.mode, "diff-audit");
+  assert.ok(["PASS", "CONCERNS"].includes(a1.verdict));
+
+  const a2 = cli(["diff-audit", RANGE, "--chain", r1.chainId]);
+  assert.notEqual(a2.status, 0, "a SECOND audit must be refused — the audit is run once");
+  assert.match(a2.stderr, /already has an audit/i);
+
+  // --retry-verdict must not be a bypass for that guard.
+  const a3 = cli(["diff-audit", RANGE, "--chain", r1.chainId, "--retry-verdict"]);
+  assert.notEqual(a3.status, 0, "--retry-verdict without --resume must not start a fresh second audit");
+
+  // And the chain can actually be closed. appendNote hard-codes mode names; without the widening,
+  // every non-aborted diff outcome throws LIFECYCLE_MISMATCH and the chain jams open forever.
+  const note = cli(["note", "--chain", r1.chainId, "--unique", "2",
+                    "--outcome", a1.verdict === "PASS" ? "audit-pass" : "audit-concerns-user-approved"]);
+  assert.equal(note.status, 0, `note must close a diff chain: ${note.stderr}`);
+});
+
+test("CLI e2e: a 4th review round is refused BEFORE spending quota", (t) => {
+  const repo = fixtureRepo(t);
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-cap-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const logPath = path.join(dir, "log.jsonl");
+  const shim = makeShim(dir, "ok");
+  const git = (...a) => execFileSync("git", ["-C", repo, ...a], { stdio: ["ignore", "pipe", "ignore"] });
+  const cli = (argv) => runCli(argv, { ...shim.env }, logPath, { cwd: repo });
+
+  git("checkout", "-q", "-b", "feature");
+  writeFileSync(path.join(repo, "a.txt"), "one\ntwo\nthree\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "work");
+  const RANGE = "main...HEAD";
+
+  const r1 = JSON.parse(cli(["diff", RANGE, "--force"]).stdout);
+  cli(["diff", RANGE, "--chain", r1.chainId, "--resume", r1.sessionId]); // round 2
+  cli(["diff", RANGE, "--chain", r1.chainId, "--resume", r1.sessionId]); // round 3
+
+  // The protocol is 3 rounds + 1 audit, and until now NOTHING enforced it — round was recorded and
+  // never checked, so a caller could burn unlimited paid rounds.
+  const r4 = cli(["diff", RANGE, "--chain", r1.chainId, "--resume", r1.sessionId]);
+  assert.notEqual(r4.status, 0, "a 4th review round must be refused");
+  assert.match(r4.stderr, /3 review rounds|rounds \+ 1 audit/i);
+});
+
+test("CLI e2e: an oversized diff is refused before any codex call", (t) => {
+  const repo = fixtureRepo(t);
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-cli2-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const shim = makeShim(dir, "ok");
+  const r = runCli(["diff", "HEAD~1..HEAD", "--force", "--max-lines", "1"],
+    { ...shim.env }, path.join(dir, "log.jsonl"), { cwd: repo });
+
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /too large|narrow/i);
+  assert.equal(shim.argv(), null, "codex must never be invoked for a refused diff — no quota spent");
+});
+
+// --- Regressions found by codex-review's own diff mode, reviewing the commit that introduced it.
+// First evidence that diff mode finds real code bugs — the open question it was built to answer.
+
+test("isSafeGitRange: rejects a range with MORE THAN ONE separator", () => {
+  // A ref may legally contain dots, so a naive `^REF\.{2,3}REF$` accepts this: the second "ref"
+  // swallows "HEAD~1..HEAD". resolveDiff then split("..")s it, destructures only the first two
+  // parts, and silently reviews HEAD..HEAD~1 — the WRONG range, REVERSED, reporting success.
+  for (const r of ["HEAD..HEAD~1..HEAD", "a..b..c", "a...b...c", "main..HEAD..HEAD"]) {
+    assert.equal(isSafeGitRange(r), false, `${r} has two separators and must be rejected`);
+  }
+  assert.equal(isSafeGitRange("main...HEAD"), true, "one separator is still fine");
+  assert.equal(isSafeGitRange("v1.2.3..v1.3.0"), true, "dots WITHIN a ref are still fine");
+});
+
+test("resolveDiff: a diff of exactly maxLines is accepted, not off-by-one refused", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-offby1-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", ["-C", dir, ...a], { stdio: ["ignore", "pipe", "ignore"] });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t.t");
+  git("config", "user.name", "t");
+  git("config", "core.hooksPath", "/dev/null");
+  writeFileSync(path.join(dir, "a.txt"), "one\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "first");
+  writeFileSync(path.join(dir, "a.txt"), "one\ntwo\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "second");
+
+  // Count the diff's lines INDEPENDENTLY. Deriving the expected count from resolveDiff itself would
+  // be vacuous: the off-by-one would cancel out on both sides and the test would pass against the
+  // buggy code (it did).
+  const raw = execFileSync("git", ["-C", dir, "diff", "--no-textconv", "--no-ext-diff", "HEAD~1..HEAD", "--"],
+    { encoding: "utf8" });
+  const trueLines = raw.replace(/\n$/, "").split("\n").length;
+
+  const d = resolveDiff(dir, "HEAD~1..HEAD", { maxLines: 100000, maxBytes: 400000 });
+  assert.equal(d.lines, trueLines, "git's diff ends with a newline; counting the empty trailing element inflates the count by one");
+
+  assert.doesNotThrow(
+    () => resolveDiff(dir, "HEAD~1..HEAD", { maxLines: trueLines, maxBytes: 400000 }),
+    "a diff of exactly maxLines must be accepted, not off-by-one refused",
+  );
+  assert.throws(
+    () => resolveDiff(dir, "HEAD~1..HEAD", { maxLines: trueLines - 1, maxBytes: 400000 }),
+    /too large|narrow/i,
+    "one line over the limit is still refused",
+  );
 });
