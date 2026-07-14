@@ -185,3 +185,17 @@ test("partitionWaveResults splits successes, halts, and pool errors", () => {
     [4, "task agent returned no result"],
   ]);
 });
+
+test("validateArgs rejects non-integer, non-positive, and duplicate task numbers", () => {
+  const withTasks = (tasks) => ({ planPath: "p.md", workdir: "/w", pluginDir: "/p", mergeBase: "abc", tasks });
+  assert.throws(
+    () => H.validateArgs(withTasks([{ n: 1, title: "a" }, { n: 1, title: "b" }])),
+    /duplicate/i,
+    "two tasks numbered 1 would race on sdd/t1, <workdir>-t1, and one report path",
+  );
+  assert.throws(() => H.validateArgs(withTasks([{ n: 1.5, title: "a" }])), /integer/i);
+  assert.throws(() => H.validateArgs(withTasks([{ n: 0, title: "a" }])), /integer|positive/i);
+  assert.throws(() => H.validateArgs(withTasks([{ n: -1, title: "a" }])), /integer|positive/i);
+  assert.throws(() => H.validateArgs(withTasks([{ n: NaN, title: "a" }])), /integer/i);
+  assert.equal(H.validateArgs(withTasks([{ n: 1, title: "a" }, { n: 2, title: "b" }])).tasks.length, 2);
+});

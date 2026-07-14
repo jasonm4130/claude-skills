@@ -35,7 +35,9 @@ function validateArgs(input) {
   if (!Array.isArray(input.tasks) || input.tasks.length === 0)
     throw new Error("args.tasks must be a non-empty array");
   const tasks = input.tasks.map((t, i) => {
-    if (typeof t.n !== "number") throw new Error(`tasks[${i}].n must be a number`);
+    if (!Number.isInteger(t.n) || t.n <= 0) {
+      throw new Error(`tasks[${i}].n must be a positive integer (got ${JSON.stringify(t.n)})`);
+    }
     if (typeof t.title !== "string" || !t.title) throw new Error(`tasks[${i}].title is required`);
     return {
       n: t.n,
@@ -44,6 +46,15 @@ function validateArgs(input) {
       deps: Array.isArray(t.deps) ? t.deps : [],
     };
   });
+  const seen = new Set();
+  for (const t of tasks) {
+    if (seen.has(t.n)) {
+      // n names the branch (sdd/t{n}), the worktree (<workdir>-t{n}) and the report path —
+      // two tasks sharing it would race on all three.
+      throw new Error(`duplicate task number ${t.n}: task numbers must be unique`);
+    }
+    seen.add(t.n);
+  }
   const li = input.limits || {};
   const limits = {
     fixRounds: Number.isInteger(li.fixRounds) ? li.fixRounds : 2,
