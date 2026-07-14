@@ -85,7 +85,11 @@ export function mintChainId(relPath, contentHash, ts, entropy = "") {
 export function resolveRepoRoot(artifactAbsPath) {
   const dir = dirname(artifactAbsPath);
   try {
-    return execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
+    // stderr ignored: the fallback path (non-repo / missing dir) is expected,
+    // and git's "fatal: ..." must not leak into the caller's output stream.
+    return execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], {
+      encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
   } catch {
     return dir;
   }
@@ -447,20 +451,30 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
   if (!result.ok) process.exit(4);
 }
 
+const USAGE = "usage: codex-review.mjs <review|audit|note|stats> …";
+
 export async function main(argv) {
   const [cmd, ...rest] = argv;
-  const { values, positionals } = parseArgs({
-    args: rest, allowPositionals: true,
-    options: {
-      auto: { type: "boolean" }, force: { type: "boolean" },
-      resume: { type: "string" }, chain: { type: "string" },
-      "retry-verdict": { type: "boolean" },
-      model: { type: "string", default: "gpt-5.6-terra" },
-      effort: { type: "string", default: "high" },
-      timeout: { type: "string", default: "300" },
-      unique: { type: "string" }, outcome: { type: "string" }, comment: { type: "string" },
-    },
-  });
+  let values, positionals;
+  try {
+    ({ values, positionals } = parseArgs({
+      args: rest, allowPositionals: true,
+      options: {
+        auto: { type: "boolean" }, force: { type: "boolean" },
+        resume: { type: "string" }, chain: { type: "string" },
+        "retry-verdict": { type: "boolean" },
+        model: { type: "string", default: "gpt-5.6-terra" },
+        effort: { type: "string", default: "high" },
+        timeout: { type: "string", default: "300" },
+        unique: { type: "string" }, outcome: { type: "string" }, comment: { type: "string" },
+      },
+    }));
+  } catch (e) {
+    die(`${e.message}\n${USAGE}`);
+  }
+  if ((cmd === "review" || cmd === "audit") && !positionals[0]) {
+    die(`${cmd} requires a <file> argument\n${USAGE}`);
+  }
   const common = {
     file: positionals[0], resume: values.resume, chain: values.chain,
     retryVerdict: values["retry-verdict"], auto: !!values.auto, force: !!values.force,

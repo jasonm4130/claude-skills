@@ -450,3 +450,27 @@ test("e2e: review → audit → note → stats close the loop with lifecycle int
   assert.equal(stats.eligible, 1);
   assert.equal(stats.uniquePer5, 5);
 });
+
+test("cli: missing <file> and unknown flags die with usage, not a stack trace", () => {
+  const logPath = join(tmp(), "log.jsonl");
+  const noFile = runCli(["review"], process.env, logPath);
+  assert.equal(noFile.status, 1);
+  assert.match(noFile.stderr, /review requires a <file> argument/);
+  assert.match(noFile.stderr, /usage:/);
+  assert.doesNotMatch(noFile.stderr, /TypeError/);
+  const badFlag = runCli(["review", "plan.md", "--bogus"], process.env, logPath);
+  assert.equal(badFlag.status, 1);
+  assert.match(badFlag.stderr, /usage:/);
+  assert.doesNotMatch(badFlag.stderr, /at .*\(node:/, "parseArgs failure must not print a raw stack trace");
+});
+
+test("resolveRepoRoot: fallback path leaks nothing to stderr", () => {
+  // Reproduces the SDD plan-conflict: git's "fatal: cannot change to …" used to
+  // inherit the parent's stderr whenever the non-repo fallback fired.
+  const r = spawnSync(process.execPath, [
+    "-e",
+    `import(${JSON.stringify("file://" + SCRIPT)}).then(m => process.stdout.write(m.resolveRepoRoot("/tmp/nonexistent-dir-xyz/plan.md")))`,
+  ], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(r.stdout, "/tmp/nonexistent-dir-xyz");
+  assert.equal(r.stderr, "", "git fatal output must not leak through resolveRepoRoot");
+});
