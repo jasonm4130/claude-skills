@@ -187,8 +187,17 @@ export function repoRootOfDir(dir) {
 export function isSafeGitRange(range) {
   if (typeof range !== "string" || range.length === 0 || range.length > 200) return false;
   if (range.startsWith("-")) return false; // git would read it as a flag
-  const REF = "[A-Za-z0-9][A-Za-z0-9._/~^-]*";
-  return new RegExp(`^${REF}\\.{2,3}${REF}$`).test(range);
+
+  // EXACTLY ONE separator. A ref may legally contain dots, so a naive `^REF\.{2,3}REF$` pattern
+  // accepts "HEAD..HEAD~1..HEAD" (the second "ref" swallows "HEAD~1..HEAD"). resolveDiff then does
+  // `range.split("..")` and destructures only the first two parts — silently reviewing HEAD..HEAD~1,
+  // the wrong range, REVERSED, while reporting success. Reviewing the wrong thing and calling it a
+  // pass is the exact failure this module exists to prevent.
+  const refs = range.split(/\.{2,3}/);
+  if (refs.length !== 2) return false;
+
+  const REF = /^[A-Za-z0-9][A-Za-z0-9._/~^-]*$/;
+  return refs.every((r) => REF.test(r) && !r.includes(".."));
 }
 
 /**
@@ -292,7 +301,9 @@ export function resolveDiff(repoRoot, range, limits) {
     throw err("EMPTY_DIFF", `range ${range} (${pinnedRange}) produced no diff text — nothing to review`);
   }
 
-  const lines = text.split("\n").length;
+  // Strip the trailing newline first: git's diff ends with one, so split("\n") yields an empty final
+  // element and a diff of exactly maxLines would be counted as maxLines + 1 and wrongly refused.
+  const lines = text.replace(/\n$/, "").split("\n").length;
   const bytes = Buffer.byteLength(text, "utf8");
   // Lines alone do not bound context: a minified bundle is one line and many megabytes.
   if (lines > limits.maxLines || bytes > limits.maxBytes) {

@@ -788,3 +788,53 @@ test("CLI e2e: an oversized diff is refused before any codex call", (t) => {
   assert.match(r.stderr, /too large|narrow/i);
   assert.equal(shim.argv(), null, "codex must never be invoked for a refused diff — no quota spent");
 });
+
+// --- Regressions found by codex-review's own diff mode, reviewing the commit that introduced it.
+// First evidence that diff mode finds real code bugs — the open question it was built to answer.
+
+test("isSafeGitRange: rejects a range with MORE THAN ONE separator", () => {
+  // A ref may legally contain dots, so a naive `^REF\.{2,3}REF$` accepts this: the second "ref"
+  // swallows "HEAD~1..HEAD". resolveDiff then split("..")s it, destructures only the first two
+  // parts, and silently reviews HEAD..HEAD~1 — the WRONG range, REVERSED, reporting success.
+  for (const r of ["HEAD..HEAD~1..HEAD", "a..b..c", "a...b...c", "main..HEAD..HEAD"]) {
+    assert.equal(isSafeGitRange(r), false, `${r} has two separators and must be rejected`);
+  }
+  assert.equal(isSafeGitRange("main...HEAD"), true, "one separator is still fine");
+  assert.equal(isSafeGitRange("v1.2.3..v1.3.0"), true, "dots WITHIN a ref are still fine");
+});
+
+test("resolveDiff: a diff of exactly maxLines is accepted, not off-by-one refused", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-offby1-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", ["-C", dir, ...a], { stdio: ["ignore", "pipe", "ignore"] });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t.t");
+  git("config", "user.name", "t");
+  git("config", "core.hooksPath", "/dev/null");
+  writeFileSync(path.join(dir, "a.txt"), "one\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "first");
+  writeFileSync(path.join(dir, "a.txt"), "one\ntwo\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "second");
+
+  // Count the diff's lines INDEPENDENTLY. Deriving the expected count from resolveDiff itself would
+  // be vacuous: the off-by-one would cancel out on both sides and the test would pass against the
+  // buggy code (it did).
+  const raw = execFileSync("git", ["-C", dir, "diff", "--no-textconv", "--no-ext-diff", "HEAD~1..HEAD", "--"],
+    { encoding: "utf8" });
+  const trueLines = raw.replace(/\n$/, "").split("\n").length;
+
+  const d = resolveDiff(dir, "HEAD~1..HEAD", { maxLines: 100000, maxBytes: 400000 });
+  assert.equal(d.lines, trueLines, "git's diff ends with a newline; counting the empty trailing element inflates the count by one");
+
+  assert.doesNotThrow(
+    () => resolveDiff(dir, "HEAD~1..HEAD", { maxLines: trueLines, maxBytes: 400000 }),
+    "a diff of exactly maxLines must be accepted, not off-by-one refused",
+  );
+  assert.throws(
+    () => resolveDiff(dir, "HEAD~1..HEAD", { maxLines: trueLines - 1, maxBytes: 400000 }),
+    /too large|narrow/i,
+    "one line over the limit is still refused",
+  );
+});
