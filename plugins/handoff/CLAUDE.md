@@ -5,7 +5,8 @@
 A Claude Code plugin that watches context fill via a `statusLine` command and
 triggers a handoff suggestion at a configurable threshold, re-firing on every
 10%-point band crossed at or above it (70 → 80 → 90; since 0.4.0) with
-severity-tiered, agent-directed wording. When triggered, the `/handoff` skill
+severity-tiered, agent-directed wording. Since 0.6.0 each band-nudge is
+idempotent under concurrency via an atomic claim marker. When triggered, the `/handoff` skill
 (agent-authored) writes a structured resume document to
 `$PROJECT_ROOT/.claude/handoffs/`. The next session's `SessionStart` hook
 auto-loads the document via `additionalContext` injection.
@@ -24,8 +25,8 @@ handoff/
 ├── hooks/
 │   └── hooks.json            — UserPromptSubmit + SessionStart
 ├── scripts/
-│   ├── lib.mjs               — shared stdin/env/flag helpers
-│   ├── status-and-flag.mjs   — statusLine: renders dir/worktree prefix + bar, writes flag at threshold; overlap guard (since 0.5.1) replays the last render when another invocation is in flight
+│   ├── lib.mjs               — shared stdin/env/flag helpers; also the atomic band-claim (claimBand/resetBands), in-flight lock (acquireInflightLock), and cached transcript parse (cachedTranscriptUsage) primitives (since 0.6.0)
+│   ├── status-and-flag.mjs   — statusLine: renders dir/worktree prefix + bar, writes flag at threshold; nudges are idempotent per band (since 0.6.0, via an atomic claim marker, not a lock); overlap guard replays the last render when another invocation is in flight — a performance guard, not a mutex, with no statusLine-timeout assumption
 │   ├── check-handoff-flag.mjs— UserPromptSubmit: consumes flag → additionalContext
 │   ├── load-pending-handoff.mjs — SessionStart: loads .pending handoff → additionalContext
 │   └── setup.mjs             — one-time helper that wires statusLine into ~/.claude/settings.json
@@ -53,7 +54,7 @@ handoff/
 Test scripts:
 ```bash
 # Run all tests
-node --test plugins/handoff/tests/
+bash scripts/run-node-tests.sh
 
 # Run a single test file
 node --test plugins/handoff/tests/status-and-flag.test.mjs
@@ -94,5 +95,12 @@ CLAUDE_PLUGIN_DATA=/tmp/test-handoff \
 - Use `path.join`, never string concatenation, for cross-platform path
   correctness. Use `os.tmpdir()`, never `/tmp`.
 - No external services. Transcript JSONL parsing is permitted as a fallback for
-  context-bar derivation (`lib.mjs: lastAssistantUsageFromTranscript`) — stdlib
-  only, no network.
+  context-bar derivation (`lib.mjs: lastAssistantUsageFromTranscript`, cached via
+  `cachedTranscriptUsage` on the transcript's path + mtime + size since 0.6.0) —
+  stdlib only, no network.
+- **Nudge concurrency (since 0.6.0):** correctness rests on `claimBand()` — an atomic
+  exclusive-create marker per band, not a lock — so a band fires at most once no matter
+  how many statusline invocations race. The in-flight overlap guard (`acquireInflightLock`)
+  is a separate, explicitly best-effort **performance** guard (don't pile up; replay the
+  cached render); it is never a mutex, never breaks a lock on age alone, and statusLine has
+  no documented invocation timeout to lean on.

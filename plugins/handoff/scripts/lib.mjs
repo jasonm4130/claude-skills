@@ -4,6 +4,10 @@
 import {
   mkdirSync,
   readFileSync,
+  writeFileSync,
+  readdirSync,
+  statSync,
+  rmSync,
   openSync,
   closeSync,
   fstatSync,
@@ -160,6 +164,78 @@ export function lastAssistantUsageFromTranscript(transcriptPath) {
   return null;
 }
 
+/**
+ * A cached usage record is usable only if it carries all three finite token counts. JSON.parse
+ * succeeding is NOT enough: a valid-JSON-but-malformed cache such as {"usage":{}} with a matching key
+ * would otherwise be returned as-is, producing NaN downstream and bailing the bar to "?" — the exact
+ * failure the "always fall back to a fresh parse" promise exists to prevent.
+ *
+ * @param {any} u
+ * @returns {boolean}
+ */
+function isUsageShape(u) {
+  return (
+    u !== null &&
+    typeof u === "object" &&
+    Number.isFinite(u.inputTokens) &&
+    Number.isFinite(u.cacheCreationTokens) &&
+    Number.isFinite(u.cacheReadTokens)
+  );
+}
+
+/**
+ * lastAssistantUsageFromTranscript, with a disk cache keyed on the transcript's path + mtime + size.
+ *
+ * The parse is a full synchronous read of an unboundedly-growing file, on a ~300ms debounce — that is
+ * the slow path that lets invocations pile up (ccusage#459: 34 concurrent statusline processes, 300%
+ * CPU). Caching the parse is the proven fix; ccusage does the same, keyed on transcript mtime.
+ *
+ * The PATH is part of the key because the cache filename is keyed on sid, and resolveSessionId falls
+ * back to the literal "unknown" — two no-ID sessions share one cache file, and must not be served
+ * each other's token counts.
+ *
+ * Every failure path falls back to a fresh parse: a cache is an optimization, never a correctness
+ * dependency.
+ *
+ * @param {string} transcriptPath
+ * @param {string} dataDir
+ * @param {string} sid
+ * @returns {{inputTokens: number, cacheCreationTokens: number, cacheReadTokens: number} | null}
+ */
+export function cachedTranscriptUsage(transcriptPath, dataDir, sid) {
+  /** @type {{mtimeMs: number, size: number}} */
+  let stat;
+  try {
+    const st = statSync(transcriptPath);
+    stat = { mtimeMs: st.mtimeMs, size: st.size };
+  } catch {
+    return null; // no transcript — nothing to parse or cache
+  }
+
+  const cacheFile = path.join(dataDir, `transcript-usage-${sid}.json`);
+  try {
+    const c = JSON.parse(readFileSync(cacheFile, "utf8"));
+    if (c && c.transcriptPath === transcriptPath && c.mtimeMs === stat.mtimeMs && c.size === stat.size) {
+      // A cached null is a VALID, cacheable answer ("this transcript has no main-chain assistant turn
+      // yet") — early in a session that state persists across many ticks, and re-scanning the whole
+      // file each time is precisely the expensive path this function exists to remove. Distinguish it
+      // from a malformed record by requiring an explicit null, not a falsy one.
+      if (c.usage === null) return null;
+      if (isUsageShape(c.usage)) return c.usage;
+    }
+  } catch {
+    // missing or corrupt cache — fall through to a fresh parse
+  }
+
+  const usage = lastAssistantUsageFromTranscript(transcriptPath);
+  try {
+    writeFileSync(cacheFile, JSON.stringify({ transcriptPath, ...stat, usage }));
+  } catch {
+    // the cache is an optimization; a failed write must not fail the render
+  }
+  return usage;
+}
+
 // POSIX-only flags; undefined on Windows, where we fall back to 0 and rely on the
 // (necessarily non-atomic) lstat pre-check. Windows has no filesystem FIFOs reachable
 // this way, so the blocking hazard O_NONBLOCK guards against does not apply there.
@@ -231,5 +307,164 @@ export function dirContainedIn(rootDir, dir) {
     return rel === "" ? true : !rel.startsWith("..") && !path.isAbsolute(rel);
   } catch {
     return false;
+  }
+}
+
+/**
+ * Where a session's "band N already fired" marker lives.
+ *
+ * The threshold is part of a band's IDENTITY: "band 0" means 70-80% under a threshold of 70 and
+ * 80-90% under a threshold of 80. Naming the marker after both keeps it self-describing and stops
+ * markers from two different thresholds colliding on one filename.
+ *
+ * This is NOT the mechanism for handling a changed HANDOFF_THRESHOLD_PCT — the transition gate in
+ * status-and-flag.mjs governs that, and may never reach this function. See Task 1's background.
+ *
+ * @param {string} dataDir
+ * @param {string} sid
+ * @param {number} threshold
+ * @param {number} band
+ * @returns {string}
+ */
+export function bandMarkerPath(dataDir, sid, threshold, band) {
+  return path.join(dataDir, `handoff-fired-${sid}-t${threshold}-b${band}`);
+}
+
+/**
+ * Atomically claim a band for this session. Returns true IFF this call created the marker.
+ *
+ * This is the whole concurrency story for nudges. `{ flag: "wx" }` is an exclusive create: of N
+ * concurrent invocations claiming the same band, exactly one succeeds and the rest get EEXIST. It is
+ * an idempotency key, not a mutex — no lease, no liveness check, no pid-reuse hazard.
+ *
+ * Scope of the guarantee: at most one nudge per band, under any interleaving of CLAIMS. It is not
+ * absolute across a concurrent resetBands() — see "Accepted residual races" in the plan.
+ *
+ * Returns false (never throws) on any I/O failure: a statusline must not die on a state write.
+ *
+ * @param {string} dataDir
+ * @param {string} sid
+ * @param {number} threshold
+ * @param {number} band
+ * @returns {boolean}
+ */
+export function claimBand(dataDir, sid, threshold, band) {
+  try {
+    writeFileSync(bandMarkerPath(dataDir, sid, threshold, band), "", { flag: "wx" });
+    return true;
+  } catch {
+    return false; // EEXIST (someone else fired it) or an I/O failure — either way, do not nudge.
+  }
+}
+
+/**
+ * Clear a session's whole ladder, across every threshold it has used.
+ *
+ * Called when context drops below the threshold — the climb is over (a /compact, or a fresh
+ * session). Without this, the band marker from a previous climb would suppress the post-compact
+ * nudge permanently.
+ *
+ * @param {string} dataDir
+ * @param {string} sid
+ * @returns {void}
+ */
+export function resetBands(dataDir, sid) {
+  try {
+    // Match the marker shape EXACTLY, not a bare prefix. `handoff-fired-${sid}-` would make session
+    // "a" delete session "a-x"'s markers, since "handoff-fired-a-x-t70-b0" starts with
+    // "handoff-fired-a-". Anchor on the full name and escape the sid.
+    const esc = sid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`^handoff-fired-${esc}-t-?[\\d.]+-b\\d+$`);
+    for (const f of readdirSync(dataDir)) {
+      if (re.test(f)) rmSync(path.join(dataDir, f), { force: true });
+    }
+  } catch {
+    // Best-effort. A surviving marker costs at most one missed nudge on the next climb — lower bands
+    // still fire, so the user is still nudged. Not worth a lock.
+  }
+}
+
+/**
+ * Is the holder process still running? EPERM means it exists but we may not signal it — still alive.
+ * @param {number} pid
+ * @returns {boolean}
+ */
+function holderAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return Boolean(e) && /** @type {NodeJS.ErrnoException} */ (e).code === "EPERM";
+  }
+}
+
+/**
+ * An unparseable lock gets a far longer grace than a pid-bearing one. See EMPTY_LOCK_GRACE_MS.
+ */
+const EMPTY_LOCK_GRACE_MS = 10_000;
+
+/**
+ * A lock is breakable only when it is past its lease AND we can conclude the holder is gone.
+ *
+ * A pid-bearing lock: past the lease and the process is gone → breakable.
+ *
+ * An unparseable lock (empty, or garbage): this is exactly what a lock looks like in the window
+ * between create() and write(), so we must NOT read it as a dead holder — that steals it from a live
+ * process mid-write. But we cannot call it alive forever either, or a crash between those two calls
+ * freezes the bar permanently. The create→write window is microseconds, so anything still unparseable
+ * after EMPTY_LOCK_GRACE_MS is a corpse: break it.
+ *
+ * @param {string} lockPath
+ * @param {number} staleMs
+ * @returns {boolean}
+ */
+function isStaleAndDead(lockPath, staleMs) {
+  try {
+    const age = Date.now() - statSync(lockPath).mtimeMs;
+    if (age <= staleMs) return false;
+    const holder = Number.parseInt(readFileSync(lockPath, "utf8").trim(), 10);
+    if (!Number.isInteger(holder) || holder <= 0) return age > EMPTY_LOCK_GRACE_MS;
+    return !holderAlive(holder);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Take the statusline's in-flight lock. Returns true iff this call now holds it.
+ *
+ * BEST-EFFORT BY DESIGN — this is a performance guard (don't pile up), not a mutex. Nudge
+ * correctness rides on claimBand(), not on this. Do not add lock ceremony here: four attempts at a
+ * "correct" lock each produced a new race, and none of them needed to exist.
+ *
+ * A lock is breakable only if it is BOTH past the lease AND its holder is provably gone. Age alone
+ * is never enough: there is no documented statusLine timeout, so a slow invocation can outlive any
+ * lease. An unparseable pid (an empty, partially-written lock) is likewise NOT proof of death.
+ *
+ * Residual accepted race: two invocations can both judge the same lock stale and both break it, so
+ * one can delete the other's freshly-created lock and both proceed. The cost is one duplicate
+ * render, which is invisible — Claude Code shows one status line, and the nudge is idempotent.
+ *
+ * @param {string} lockPath
+ * @param {number} staleMs
+ * @returns {boolean}
+ */
+export function acquireInflightLock(lockPath, staleMs) {
+  try {
+    writeFileSync(lockPath, String(process.pid), { flag: "wx" });
+    return true;
+  } catch {
+    // EEXIST: someone holds it. Either we lost a cold-start race to a live holder — never displace it
+    // — or the lock is genuinely abandoned. Only isStaleAndDead() can tell those apart.
+  }
+
+  if (!isStaleAndDead(lockPath, staleMs)) return false;
+  try {
+    rmSync(lockPath, { force: true });
+    writeFileSync(lockPath, String(process.pid), { flag: "wx" });
+    return true;
+  } catch {
+    return false; // another breaker beat us to it — render unheld
   }
 }
