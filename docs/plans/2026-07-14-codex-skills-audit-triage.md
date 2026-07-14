@@ -36,7 +36,22 @@ load-bearing: a plain `open()` on a planted FIFO blocks *before* any `fstat` che
 reject it, hanging SessionStart). Plan:
 `docs/superpowers/plans/2026-07-14-handoff-security-batch-b.md`.
 
-### B2. TOCTOU race in statusline overlap guard — P2 (DEFERRED to its own design pass)
+### B2. TOCTOU race in statusline overlap guard — P2 — ✅ SHIPPED (PR #33, handoff 0.6.0)
+
+**Resolved 2026-07-14.** Research: `docs/plans/2026-07-14-statusline-architecture-research.md`.
+Plan: `docs/superpowers/plans/2026-07-14-statusline-architecture.md` (3 Codex rounds + audit,
+11 unique findings). Outcome: the lock was the wrong primitive. Nudge firing is now idempotent
+via an atomic exclusive-create band marker (`claimBand`), so **correctness no longer depends on
+the guard at all**; the transcript parse is cached on path+mtime+size (removing the slow path
+that created the overlap pressure); and the guard is demoted to an explicitly best-effort
+performance guard. 342 tests pass. Residual races are documented, not papered over — see the
+plan's "Accepted residual races".
+
+The original analysis is kept below because B4 still references it.
+
+---
+
+**Original finding (2026-07-14):**
 `plugins/handoff/scripts/status-and-flag.mjs:100–119`: check ("no fresh lock") and
 `writeFileSync` are not atomic; two concurrent invocations both pass the check and
 both write. **Impact:** double-fired flags, clobbered `last-context-pct` — the
