@@ -1,0 +1,13 @@
+{
+  "name": "codex-review",
+  "description": "Cross-provider adversarial plan/design-doc review via OpenAI Codex (GPT-5.6 Terra): verdict-loop protocol, atomic chain guard, cross-repo decision-gate log.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Jason Matthew",
+    "email": "jasonm4130@gmail.com"
+  },
+  "homepage": "https://github.com/jasonm4130/claude-skills",
+  "repository": "https://github.com/jasonm4130/claude-skills",
+  "license": "MIT",
+  "keywords": ["claude-code", "codex", "cross-provider", "plan-review", "design-review", "adversarial-review"]
+}
