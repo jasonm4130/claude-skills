@@ -13,6 +13,7 @@ import {
   existsSync,
   mkdirSync,
   utimesSync,
+  symlinkSync,
 } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -120,4 +121,38 @@ test("test_load_pending_stale", async (t) => {
     "",
     `expected empty output for stale .pending, got: ${result.stdout}`
   );
+});
+
+test("traversal: a .pending pointing outside handoffs/ is refused and consumed", async (t) => {
+  const cwd = mkdtempSync(path.join(os.tmpdir(), "handoff-trav-"));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const handoffsDir = path.join(cwd, ".claude", "handoffs");
+  mkdirSync(handoffsDir, { recursive: true });
+  writeFileSync(path.join(cwd, "secret.env"), "API_KEY=super-secret-value");
+  const pending = path.join(handoffsDir, ".pending");
+  writeFileSync(pending, "../../secret.env");
+
+  const { code, stdout } = await run(JSON.stringify({ cwd }));
+
+  assert.equal(code, 0, "a refusal is not an error");
+  assert.doesNotMatch(stdout, /super-secret-value/, "traversal target must never reach context");
+  assert.equal(stdout.trim(), "", "no additionalContext is emitted for a refused marker");
+  assert.equal(existsSync(pending), false, "the poisoned marker is consumed, not left to retry");
+});
+
+test("traversal: a symlinked handoff target is refused and consumed", { skip: process.platform === "win32" }, async (t) => {
+  const cwd = mkdtempSync(path.join(os.tmpdir(), "handoff-symtrav-"));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const handoffsDir = path.join(cwd, ".claude", "handoffs");
+  mkdirSync(handoffsDir, { recursive: true });
+  writeFileSync(path.join(cwd, "secret.env"), "API_KEY=super-secret-value");
+  symlinkSync(path.join(cwd, "secret.env"), path.join(handoffsDir, "innocent.md"));
+  const pending = path.join(handoffsDir, ".pending");
+  writeFileSync(pending, "innocent.md");
+
+  const { code, stdout } = await run(JSON.stringify({ cwd }));
+
+  assert.equal(code, 0);
+  assert.doesNotMatch(stdout, /super-secret-value/, "a symlink out of handoffs/ must not be followed");
+  assert.equal(existsSync(pending), false);
 });

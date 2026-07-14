@@ -1,7 +1,16 @@
 // @ts-check
 // Shared helpers for handoff plugin scripts. Stdlib only.
 
-import { mkdirSync, readFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  openSync,
+  closeSync,
+  fstatSync,
+  lstatSync,
+  realpathSync,
+  constants,
+} from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import process from "node:process";
@@ -149,4 +158,78 @@ export function lastAssistantUsageFromTranscript(transcriptPath) {
     }
   }
   return null;
+}
+
+// POSIX-only flags; undefined on Windows, where we fall back to 0 and rely on the
+// (necessarily non-atomic) lstat pre-check. Windows has no filesystem FIFOs reachable
+// this way, so the blocking hazard O_NONBLOCK guards against does not apply there.
+const O_NOFOLLOW = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+const O_NONBLOCK = typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0;
+
+/**
+ * Read `name` from `baseDir` without following anything out of it.
+ *
+ * Deliberately not resolve-then-read: a validate-then-read is a TOCTOU — the validated
+ * file can be swapped for a symlink before the read. `name` must be a bare filename, and
+ * the file is opened once with O_NOFOLLOW, so the descriptor we validate is the
+ * descriptor we read.
+ *
+ * O_NONBLOCK matters: a plain open() on a FIFO blocks until a writer appears, so an
+ * fstat-based regular-file check would never run and a planted FIFO would hang
+ * SessionStart.
+ *
+ * Threat model: a hostile *checked-out repo* (static files). A concurrently running local
+ * attacker could still swap an intermediate directory between checks — Node has no openat
+ * — but such an attacker can read your files directly anyway. This refuses reads that
+ * escape the directory; it does not establish that the file's *author* was trusted.
+ *
+ * Refuses (returns null, never throws — the content is attacker-controlled): non-bare
+ * names, traversal, NUL bytes, missing files, symlinked final components, and anything
+ * that is not a regular file.
+ *
+ * @param {string} baseDir
+ * @param {string} name
+ * @returns {string | null}
+ */
+export function readContainedFile(baseDir, name) {
+  if (typeof name !== "string" || name.length === 0) return null;
+  if (name !== path.basename(name) || name === "." || name === "..") return null;
+  const target = path.join(baseDir, name);
+  /** @type {number | undefined} */
+  let fd;
+  try {
+    if (lstatSync(target).isSymbolicLink()) return null; // fast refusal; O_NOFOLLOW is the real guard
+    fd = openSync(target, constants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    if (!fstatSync(fd).isFile()) return null;
+    return readFileSync(fd, "utf8");
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        closeSync(fd);
+      } catch {
+        // best-effort
+      }
+    }
+  }
+}
+
+/**
+ * True when `dir` really lives inside `rootDir` — realpath'd, so a symlinked
+ * .claude/handoffs pointing at /etc does not pass. Uses path.relative, not a string
+ * prefix: startsWith("/root") would accept the sibling "/root-evil".
+ * @param {string} rootDir
+ * @param {string} dir
+ * @returns {boolean}
+ */
+export function dirContainedIn(rootDir, dir) {
+  try {
+    const root = realpathSync(path.resolve(rootDir));
+    const real = realpathSync(path.resolve(dir));
+    const rel = path.relative(root, real);
+    return rel === "" ? true : !rel.startsWith("..") && !path.isAbsolute(rel);
+  } catch {
+    return false;
+  }
 }
