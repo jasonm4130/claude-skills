@@ -148,14 +148,86 @@ test("lock: held fresh lock refuses; stale lock broken; release is ownership-saf
   const t1 = acquireLock(lockPath);
   assert.throws(() => acquireLock(lockPath), (e) => e.code === "LOCK_HELD");
   releaseLock(lockPath, t1);
-  const t2 = acquireLock(lockPath);
+  // A crashed holder: a pid that cannot exist. Ageing a lock held by THIS (live) process no longer
+  // makes it breakable — that is the point of the fix.
+  const t2 = `2147483646-1-crashed`;
+  writeFileSync(lockPath, t2);
   const old = (Date.now() - 60_000) / 1000;
-  utimesSync(lockPath, old, old); // simulate a crashed/paused holder
-  const t3 = acquireLock(lockPath, 30_000); // breaks the stale lock instead of throwing
-  releaseLock(lockPath, t2); // the paused ex-holder returns: must NOT delete t3's lock
+  utimesSync(lockPath, old, old);
+  const t3 = acquireLock(lockPath, 30_000); // breaks the DEAD holder's stale lock
+  releaseLock(lockPath, t2);                // the ex-holder returns: must NOT delete t3's lock
   assert.ok(existsSync(lockPath), "ownership-safe release must not remove another holder's lock");
   releaseLock(lockPath, t3);
   assert.ok(!existsSync(lockPath));
+});
+
+test("acquireLock: does NOT break a stale-looking lock whose holder is ALIVE", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-lock-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lock = path.join(dir, "l.lock");
+  // A lock held by THIS (alive) process, aged past the lease. Age alone must never justify a break:
+  // two breakers who both judge it stale will cascade — the second renames away the FIRST's fresh
+  // lock, and both end up holding it.
+  writeFileSync(lock, `${process.pid}-1-abc`);
+  const old = new Date(Date.now() - 120_000);
+  utimesSync(lock, old, old);
+
+  assert.throws(() => acquireLock(lock, 30_000), /held/i, "a live holder's lock must not be broken");
+  assert.equal(readFileSync(lock, "utf8"), `${process.pid}-1-abc`, "and must be left intact");
+});
+
+test("acquireLock: DOES break a stale lock whose holder is dead", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-lock2-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lock = path.join(dir, "l.lock");
+  writeFileSync(lock, "2147483646-1-abc"); // a pid that cannot exist
+  const old = new Date(Date.now() - 120_000);
+  utimesSync(lock, old, old);
+
+  const token = acquireLock(lock, 30_000);
+  assert.ok(token, "a dead holder's stale lock must not wedge the log forever");
+  assert.equal(readFileSync(lock, "utf8"), token);
+});
+
+test("acquireLock: a FRESH empty lock is a holder mid-write, not a corpse", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-lock3-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lock = path.join(dir, "l.lock");
+  writeFileSync(lock, ""); // openSync("wx") returned; writeSync has not landed yet
+  assert.throws(() => acquireLock(lock, 30_000), /held/i, "an unparseable pid is not proof of death");
+});
+
+test("acquireLock: an ANCIENT empty lock IS broken — a crash mid-write must not wedge the log", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-lock4-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lock = path.join(dir, "l.lock");
+  writeFileSync(lock, ""); // a process died between openSync and writeSync
+  const ancient = new Date(Date.now() - 600_000);
+  utimesSync(lock, ancient, ancient);
+
+  assert.ok(acquireLock(lock, 30_000), "if 'unparseable' meant 'alive' forever, this lock would be immortal");
+});
+
+test("acquireLock: the empty-lock grace is ADDED to the lease, not raced against it", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-lock4b-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lock = path.join(dir, "l.lock");
+  writeFileSync(lock, "");
+  const old = new Date(Date.now() - 130_000);
+  utimesSync(lock, old, old);
+
+  // Lease 120s, grace 60s, age 130s. `age > EMPTY_LOCK_GRACE_MS` alone would say "breakable" — the
+  // 60s grace evaporates entirely whenever the lease exceeds it, which is exactly when a mid-write
+  // window is most likely. It must take staleMs + grace = 180s.
+  assert.throws(() => acquireLock(lock, 120_000), /held/i);
+});
+
+test("acquireLock: a free lock is acquired", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-lock5-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lock = path.join(dir, "l.lock");
+  const token = acquireLock(lock, 30_000);
+  assert.equal(readFileSync(lock, "utf8"), token);
 });
 
 test("guard scope is repo+artifact+hash; identical content elsewhere doesn't block; unreadable log fails closed", () => {
