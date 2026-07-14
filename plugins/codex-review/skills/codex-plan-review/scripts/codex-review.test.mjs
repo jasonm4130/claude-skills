@@ -8,7 +8,7 @@ import { join } from "node:path";
 import {
   parseEventStream, parseVerdict, countFindings,
   buildReviewPrompt, buildResumePrompt, buildAuditPrompt, buildRetryPrompt,
-  contentHashOf, mintChainId, resolveRepoRoot,
+  contentHashOf, mintChainId, resolveRepoRoot, parseTimeoutS,
   readLogLines, acquireLock, releaseLock, reserveChain, appendResult, appendNote, computeStats, getChainState, OUTCOMES,
 } from "./codex-review.mjs";
 
@@ -83,6 +83,21 @@ test("contentHashOf and mintChainId are deterministic short hashes", () => {
   assert.notEqual(id, mintChainId("docs/plan.md", h, "2026-07-14T00:00:01Z"));
 });
 
+test("mintChainId: entropy param prevents identical ids for identical relPath+hash+ts", () => {
+  const ts = "2026-07-14T00:00:00.000Z";
+  const a = mintChainId("docs/plan.md", "hash", ts, "1:aaa");
+  const b = mintChainId("docs/plan.md", "hash", ts, "2:bbb");
+  assert.notEqual(a, b, "same-millisecond racers must not mint the same chainId");
+  assert.equal(mintChainId("docs/plan.md", "hash", ts, "same"), mintChainId("docs/plan.md", "hash", ts, "same"));
+});
+
+test("parseTimeoutS: numeric strings pass through; non-numeric/missing fall back to the 300s default", () => {
+  assert.equal(parseTimeoutS("300"), 300);
+  assert.equal(parseTimeoutS("45"), 45);
+  assert.equal(parseTimeoutS("abc"), 300, "a bad --timeout value must fall back, not become an immediate kill");
+  assert.equal(parseTimeoutS(undefined), 300);
+});
+
 test("resolveRepoRoot: git repo resolves to toplevel, non-repo falls back to dir", () => {
   const here = new URL(".", import.meta.url).pathname;
   // Ground-truth the expected toplevel via git itself rather than hardcoding a
@@ -114,6 +129,14 @@ test("reserveChain: force bypasses hash check but not IO failure; auto fails clo
   const roLog = join(roDir, "log.jsonl");
   assert.throws(() => reserveChain({ ...base, logPath: roLog, trigger: "auto" }), (e) => e.code === "RESERVE_FAILED");
   assert.throws(() => reserveChain({ ...base, logPath: roLog, trigger: "forced" }), (e) => e.code === "RESERVE_FAILED");
+});
+
+test("reserveChain: repeated forced reservations of identical content never collide on chainId", () => {
+  const logPath = join(tmp(), "log.jsonl");
+  const base = { logPath, repo: "r", repoKey: "/x/r", artifact: "a.md", contentHash: "ffff000000000000", trigger: "forced" };
+  const ids = new Set();
+  for (let i = 0; i < 50; i++) ids.add(reserveChain(base).chainId);
+  assert.equal(ids.size, 50, "entropy in the chainId seed must prevent collisions even at identical timestamps");
 });
 
 test("lock: held fresh lock refuses; stale lock broken; release is ownership-safe", () => {

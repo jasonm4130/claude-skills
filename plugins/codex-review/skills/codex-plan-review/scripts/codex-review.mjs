@@ -2,7 +2,7 @@
 // @ts-check
 // codex-review.mjs — deterministic mechanics for the codex-plan-review skill.
 // Spec: docs/superpowers/specs/2026-07-14-codex-plan-review-design.md
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { dirname, resolve as resolvePath, relative as relativePath } from "node:path";
 import {
@@ -67,12 +67,19 @@ export function buildRetryPrompt(mode) {
     : "Your previous message was missing the verdict line — end with VERDICT: APPROVED or VERDICT: REVISE.";
 }
 
+const DEFAULT_TIMEOUT_S = 300;
+
+export function parseTimeoutS(raw) {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : DEFAULT_TIMEOUT_S;
+}
+
 export function contentHashOf(buffer) {
   return createHash("sha256").update(buffer).digest("hex").slice(0, 16);
 }
 
-export function mintChainId(relPath, contentHash, ts) {
-  return createHash("sha256").update(`${relPath}\0${contentHash}\0${ts}`).digest("hex").slice(0, 12);
+export function mintChainId(relPath, contentHash, ts, entropy = "") {
+  return createHash("sha256").update(`${relPath}\0${contentHash}\0${ts}\0${entropy}`).digest("hex").slice(0, 12);
 }
 
 export function resolveRepoRoot(artifactAbsPath) {
@@ -192,8 +199,10 @@ export function reserveChain({ logPath, repo, repoKey, artifact, contentHash, tr
       }
     }
     // repoKey is part of chain identity — identical path+content in two repos must
-    // not be able to mint the same id in the same millisecond.
-    const chainId = mintChainId(`${repoKey}:${artifact}`, contentHash, ts);
+    // not be able to mint the same id in the same millisecond. pid+random entropy
+    // also guards two racers in the same process/millisecond (only reachable via a
+    // concurrent stale-lock break) from minting an identical chainId.
+    const chainId = mintChainId(`${repoKey}:${artifact}`, contentHash, ts, `${process.pid}:${randomBytes(8).toString("hex")}`);
     const line = { ts, chainId, repo, repoKey, artifact, contentHash, mode: "open", trigger };
     try {
       appendFileSync(logPath, JSON.stringify(line) + "\n");
@@ -455,7 +464,7 @@ export async function main(argv) {
   const common = {
     file: positionals[0], resume: values.resume, chain: values.chain,
     retryVerdict: values["retry-verdict"], auto: !!values.auto, force: !!values.force,
-    model: values.model, effort: values.effort, timeoutS: Number(values.timeout),
+    model: values.model, effort: values.effort, timeoutS: parseTimeoutS(values.timeout),
   };
   if (cmd === "review") return runRound({ ...common, mode: "review" });
   if (cmd === "audit") return runRound({ ...common, mode: "audit" });
