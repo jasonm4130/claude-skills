@@ -3,14 +3,15 @@
 // codex-review.mjs — deterministic mechanics for the codex-plan-review skill.
 // Spec: docs/superpowers/specs/2026-07-14-codex-plan-review-design.md
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { dirname } from "node:path";
+import { execFileSync, spawn } from "node:child_process";
+import { dirname, resolve as resolvePath, relative as relativePath } from "node:path";
 import {
   readFileSync, appendFileSync, mkdirSync, openSync, closeSync, writeSync,
   unlinkSync, statSync, existsSync, renameSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { join as joinPath } from "node:path";
+import { parseArgs } from "node:util";
 
 export function parseEventStream(stdoutText) {
   let sessionId = null, finalMessage = null, terminal = "missing", usage = null;
@@ -308,4 +309,171 @@ export function computeStats(logPath) {
   }
   if (s.eligible > 0) s.uniquePer5 = (s.uniqueTotal / s.eligible) * 5;
   return s;
+}
+
+export function runCodex(args, { cwd, timeoutMs }) {
+  return new Promise((resolveP) => {
+    let child;
+    try {
+      child = spawn("codex", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    } catch (e) {
+      resolveP({ stdout: "", stderr: String(e.message), timedOut: false, spawnError: true });
+      return;
+    }
+    let stdout = "", stderr = "", timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, timeoutMs);
+    child.stdout.on("data", (d) => { stdout += d; });
+    child.stderr.on("data", (d) => { stderr += d; });
+    child.on("error", (e) => { clearTimeout(timer); resolveP({ stdout, stderr: stderr + e.message, timedOut, spawnError: true }); });
+    child.on("close", () => { clearTimeout(timer); resolveP({ stdout, stderr, timedOut, spawnError: false }); });
+  });
+}
+
+function die(msg, code = 1) { process.stderr.write(msg + "\n"); process.exit(code); }
+
+async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, model, effort, timeoutS }) {
+  const logPath = logPathDefault();
+  const abs = resolvePath(file);
+  let fileStat;
+  try { fileStat = statSync(abs); } catch { die(`artifact not found: ${abs}`); }
+  if (!fileStat.isFile()) die(`artifact must be a regular file: ${abs}`);
+  const repoRoot = resolveRepoRoot(abs);
+  const relPath = relativePath(repoRoot, abs) || abs;
+  const repo = repoRoot.split("/").at(-1);
+  const hash = contentHashOf(readFileSync(abs)); // recorded per round — artifact changes between rounds
+  let chainId = chain, trigger;
+
+  if (!resume && mode === "review") {
+    if (auto === force) die("exactly one of --auto or --force is required to open a chain");
+    trigger = auto ? "auto" : "forced";
+    try {
+      chainId = reserveChain({ logPath, repo, repoKey: repoRoot, artifact: relPath, contentHash: hash, trigger }).chainId;
+    } catch (e) {
+      die(`refused: ${e.message}`, e.code === "CHAIN_EXISTS" ? 3 : 2);
+    }
+  } else {
+    if (!chainId) die("--chain <chainId> is required for resumed rounds and audits");
+    // Validate before spending quota: a typo'd/stale chain id would produce
+    // orphan result lines that note can never close.
+    let st;
+    try { st = getChainState(logPath, chainId); } catch (e) { die(`log unusable: ${e.message}`, 2); }
+    if (!st) die(`unknown chain: ${chainId}`, 6);
+    if (st.note) die(`chain ${chainId} is already closed (outcome: ${st.note.outcome})`, 6);
+    if (st.open.repoKey !== repoRoot || st.open.artifact !== relPath) {
+      die(`chain ${chainId} belongs to ${st.open.repoKey}:${st.open.artifact}, not ${repoRoot}:${relPath}`, 6);
+    }
+    if (resume) {
+      let priorSessions = [];
+      try {
+        priorSessions = readLogLines(logPath)
+          .filter((l) => l.chainId === chainId && l.mode === mode && l.sessionId)
+          .map((l) => l.sessionId);
+      } catch { /* log unreadable — validated at reservation; handled below */ }
+      if (mode === "audit") {
+        // audit --resume exists ONLY to retry that audit's own UNPARSEABLE session —
+        // strict on all three counts, or the one-audit boundary is bypassable.
+        if (!retryVerdict) die("audit --resume is only valid with --retry-verdict", 6);
+        if (!priorSessions.includes(resume)) die(`session ${resume} is not a recorded audit session for chain ${chainId}`, 6);
+        let latestAudit;
+        try {
+          latestAudit = readLogLines(logPath)
+            .filter((l) => l.chainId === chainId && l.mode === "audit" && l.verdict).at(-1);
+        } catch { /* validated strict at getChainState already */ }
+        if (latestAudit?.verdict !== "UNPARSEABLE") {
+          die(`audit --resume is only for an UNPARSEABLE audit; recorded verdict: ${latestAudit?.verdict ?? "none"}`, 6);
+        }
+      } else {
+        // Review-resume: bind when records exist; result appends are best-effort,
+        // so an empty record set only warns.
+        if (priorSessions.length > 0 && !priorSessions.includes(resume)) {
+          die(`session ${resume} is not recorded for chain ${chainId} (${mode})`, 6);
+        }
+        if (priorSessions.length === 0) {
+          process.stderr.write("warn: no recorded sessions for this chain (result logging is best-effort); proceeding\n");
+        }
+      }
+    }
+  }
+
+  let round;
+  if (mode === "review") {
+    try {
+      round = 1 + readLogLines(logPath).filter((l) => l.chainId === chainId && l.mode === "review").length;
+    } catch { round = undefined; } // result logging is best-effort; never block the round on this
+  }
+
+  const prompt = retryVerdict ? buildRetryPrompt(mode)
+    : resume && mode === "review" ? buildResumePrompt(relPath)
+    : mode === "audit" ? buildAuditPrompt(relPath)
+    : buildReviewPrompt(relPath);
+  const modelArgs = ["-m", model, "-c", `model_reasoning_effort=${effort}`];
+  const args = resume
+    ? ["exec", "resume", resume, "--json", ...modelArgs, "--skip-git-repo-check", prompt]
+    : ["exec", "--json", "--sandbox", "read-only", ...modelArgs, "--skip-git-repo-check", prompt];
+
+  const t0 = Date.now();
+  const { stdout, stderr, timedOut, spawnError } = await runCodex(args, { cwd: repoRoot, timeoutMs: timeoutS * 1000 });
+  // Never die() after reservation without emitting result JSON: the caller needs
+  // pendingNoteChainId to close the chain, or it stays open and blocks auto-runs.
+  if (spawnError) process.stderr.write(`codex could not be spawned (installed? logged in?): ${stderr.slice(0, 300)}\n`);
+  const stream = parseEventStream(stdout);
+  // Spec: success requires BOTH a clean terminal event AND a final message.
+  const verdict = spawnError ? "error"
+    : timedOut ? "timeout"
+    : stream.terminal !== "completed" || !stream.finalMessage ? "error"
+    : parseVerdict(stream.finalMessage, mode);
+  const findings = countFindings(stream.finalMessage ?? "");
+  const result = {
+    ok: verdict !== "error" && verdict !== "timeout",
+    mode, chainId, sessionId: stream.sessionId, verdict, findings,
+    finalMessage: stream.finalMessage, usage: stream.usage,
+    durationMs: Date.now() - t0, pendingNoteChainId: chainId,
+  };
+  appendResult(logPath, {
+    chainId, repo, artifact: relPath, contentHash: hash, mode, round,
+    verdict, findings, sessionId: stream.sessionId, model, effort,
+    usage: stream.usage, durationMs: result.durationMs,
+  });
+  process.stdout.write(JSON.stringify(result, null, 1) + "\n");
+  if (!result.ok) process.exit(4);
+}
+
+export async function main(argv) {
+  const [cmd, ...rest] = argv;
+  const { values, positionals } = parseArgs({
+    args: rest, allowPositionals: true,
+    options: {
+      auto: { type: "boolean" }, force: { type: "boolean" },
+      resume: { type: "string" }, chain: { type: "string" },
+      "retry-verdict": { type: "boolean" },
+      model: { type: "string", default: "gpt-5.6-terra" },
+      effort: { type: "string", default: "high" },
+      timeout: { type: "string", default: "300" },
+      unique: { type: "string" }, outcome: { type: "string" }, comment: { type: "string" },
+    },
+  });
+  const common = {
+    file: positionals[0], resume: values.resume, chain: values.chain,
+    retryVerdict: values["retry-verdict"], auto: !!values.auto, force: !!values.force,
+    model: values.model, effort: values.effort, timeoutS: Number(values.timeout),
+  };
+  if (cmd === "review") return runRound({ ...common, mode: "review" });
+  if (cmd === "audit") return runRound({ ...common, mode: "audit" });
+  if (cmd === "note") {
+    if (!values.chain || values.unique === undefined || !values.outcome) die("note requires --chain, --unique, --outcome");
+    try {
+      appendNote(logPathDefault(), { chainId: values.chain, unique: values.unique, outcome: values.outcome, comment: values.comment });
+    } catch (e) { die(`note failed: ${e.message}`, 5); }
+    process.stdout.write(JSON.stringify({ ok: true, mode: "note", chainId: values.chain }) + "\n");
+    return;
+  }
+  if (cmd === "stats") {
+    process.stdout.write(JSON.stringify(computeStats(logPathDefault()), null, 1) + "\n");
+    return;
+  }
+  die("usage: codex-review.mjs <review|audit|note|stats> …");
+}
+
+if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+  await main(process.argv.slice(2));
 }

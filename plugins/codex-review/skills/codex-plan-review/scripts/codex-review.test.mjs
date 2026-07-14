@@ -1,7 +1,7 @@
 // @ts-check
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync, spawn as spawnAsync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, chmodSync, mkdirSync, utimesSync, existsSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -193,4 +193,237 @@ test("computeStats: eligible = auto && !aborted; uniquePer5; open chains flagged
   assert.equal(s.forced, 1);
   assert.deepEqual(s.openChainIds, [c4]);
   assert.equal(s.byOutcome["aborted"], 1);
+});
+
+const SCRIPT = new URL("./codex-review.mjs", import.meta.url).pathname;
+
+function makeShim(dir, mode) {
+  // mode: ok | noverdict | fail | slow | garbage | auditpass — recorded argv goes to <dir>/argv.json
+  const shim = `#!/usr/bin/env node
+const fs = require("node:fs");
+fs.writeFileSync(process.env.SHIM_DIR + "/argv.json", JSON.stringify(process.argv.slice(2)));
+const mode = process.env.SHIM_MODE;
+if (mode === "slow") { setTimeout(() => process.exit(0), 10_000); return; }
+if (mode === "garbage") { console.log("<<<definitely not json>>>"); return; }
+console.log(JSON.stringify({ type: "thread.started", thread_id: "sess-123" }));
+if (mode === "fail") {
+  console.log(JSON.stringify({ type: "turn.failed", error: { message: "boom" } }));
+} else {
+  const text = mode === "noverdict" ? "- [P1] thing\\nno verdict here"
+    : mode === "auditpass" ? "All coherent as a whole.\\nAUDIT: PASS"
+    : "- [P1] one\\n- [P2] two\\nVERDICT: REVISE";
+  console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text } }));
+  console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 2 } }));
+}
+`;
+  writeFileSync(join(dir, "codex"), shim);
+  chmodSync(join(dir, "codex"), 0o755);
+  return {
+    env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, SHIM_DIR: dir, SHIM_MODE: mode },
+    argv: () => JSON.parse(readFileSync(join(dir, "argv.json"), "utf8")),
+  };
+}
+
+function runCli(args, env, logPath) {
+  return spawnSync("node", [SCRIPT, ...args], {
+    env: { ...env, CODEX_REVIEW_LOG: logPath }, encoding: "utf8", timeout: 30_000,
+  });
+}
+
+test("e2e: fresh auto review — verdict, findings, log lines, exact codex args", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "ok");
+  const r = runCli(["review", artifact, "--auto"], shim.env, logPath);
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.verdict, "REVISE");
+  assert.deepEqual(out.findings, { p1: 1, p2: 1, p3: 0 });
+  assert.equal(out.sessionId, "sess-123");
+  assert.equal(out.pendingNoteChainId, out.chainId);
+  const argv = shim.argv();
+  assert.deepEqual(argv.slice(0, 3), ["exec", "--json", "--sandbox"]);
+  assert.ok(argv.includes("read-only") && argv.includes("-m") && argv.includes("gpt-5.6-terra"));
+  assert.ok(argv.includes("model_reasoning_effort=high") && argv.includes("--skip-git-repo-check"));
+  const lines = readLogLines(logPath);
+  assert.equal(lines[0].mode, "open");
+  assert.equal(lines[1].mode, "review");
+  assert.equal(lines[1].verdict, "REVISE");
+});
+
+test("e2e: second auto review of same content refuses (guard); --force proceeds", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# same");
+  const shim = makeShim(dir, "ok");
+  assert.equal(runCli(["review", artifact, "--auto"], shim.env, logPath).status, 0);
+  const refused = runCli(["review", artifact, "--auto"], shim.env, logPath);
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /chain .* already exists/);
+  assert.equal(runCli(["review", artifact, "--force"], shim.env, logPath).status, 0);
+});
+
+test("e2e: resume round uses exact resume argv and honors --retry-verdict", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "ok");
+  const first = JSON.parse(runCli(["review", artifact, "--auto"], shim.env, logPath).stdout);
+  const r = runCli(["review", artifact, "--resume", first.sessionId, "--chain", first.chainId, "--retry-verdict"], shim.env, logPath);
+  assert.equal(r.status, 0, r.stderr);
+  const argv = shim.argv();
+  assert.deepEqual(argv.slice(0, 3), ["exec", "resume", "sess-123"]);
+  assert.ok(argv.includes("--json") && argv.includes("-m"));
+  assert.ok(argv.includes("--skip-git-repo-check"), "resume must work for non-repo scratchpad artifacts too");
+  assert.match(argv[argv.length - 1], /missing the verdict line/);
+  const lines = readLogLines(logPath);
+  assert.equal(lines.at(-1).chainId, first.chainId); // chain propagated
+  assert.equal(lines.at(-1).round, 2); // fresh was round 1
+  assert.ok(lines.at(-1).contentHash, "each round records the revision it reviewed");
+});
+
+test("e2e: bogus or closed --chain refuses before spending quota", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "ok");
+  const bogus = runCli(["review", artifact, "--resume", "sess-123", "--chain", "ffffffffffff"], shim.env, logPath);
+  assert.notEqual(bogus.status, 0);
+  assert.match(bogus.stderr, /unknown chain/);
+  const first = JSON.parse(runCli(["review", artifact, "--auto"], shim.env, logPath).stdout);
+  runCli(["note", "--chain", first.chainId, "--unique", "0", "--outcome", "aborted", "--comment", "aborted: test"], shim.env, logPath);
+  const closed = runCli(["review", artifact, "--resume", first.sessionId, "--chain", first.chainId], shim.env, logPath);
+  assert.notEqual(closed.status, 0);
+  assert.match(closed.stderr, /already closed/);
+});
+
+test("e2e: spawn failure after reservation still emits result JSON with pendingNoteChainId", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  // process.execPath, not "node": node lives under mise on this machine, so a
+  // stripped PATH must only remove codex from lookup, not node itself.
+  const r = spawnSync(process.execPath, [SCRIPT, "review", artifact, "--auto"], {
+    env: { ...process.env, PATH: "/usr/bin:/bin", CODEX_REVIEW_LOG: logPath }, // no codex on PATH
+    encoding: "utf8", timeout: 30_000,
+  });
+  assert.notEqual(r.status, 0);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.verdict, "error");
+  assert.ok(out.pendingNoteChainId, "caller must be able to close the orphaned chain as aborted");
+});
+
+test("e2e: chain bound to another artifact refuses before spawning", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const a1 = join(dir, "plan-a.md"); writeFileSync(a1, "# plan a");
+  const a2 = join(dir, "plan-b.md"); writeFileSync(a2, "# plan b");
+  const shim = makeShim(dir, "ok");
+  const first = JSON.parse(runCli(["review", a1, "--auto"], shim.env, logPath).stdout);
+  const r = runCli(["review", a2, "--resume", first.sessionId, "--chain", first.chainId], shim.env, logPath);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /belongs to/);
+});
+
+test("e2e: malformed (non-JSON) stream → verdict error, non-zero exit", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "garbage");
+  const r = runCli(["review", artifact, "--auto"], shim.env, logPath);
+  assert.notEqual(r.status, 0);
+  assert.equal(JSON.parse(r.stdout).verdict, "error");
+});
+
+test("e2e: audit --retry-verdict resumes only the audit's own recorded session", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "ok");
+  const first = JSON.parse(runCli(["review", artifact, "--auto"], shim.env, logPath).stdout);
+  // audit --resume before ANY audit ran must refuse (no recorded audit session)
+  const early = runCli(["audit", artifact, "--chain", first.chainId, "--resume", "sess-123", "--retry-verdict"], shim.env, logPath);
+  assert.notEqual(early.status, 0);
+  assert.match(early.stderr, /not a recorded audit session/);
+  // fresh audit records its session (shim always reports sess-123)…
+  assert.equal(runCli(["audit", artifact, "--chain", first.chainId], shim.env, logPath).status, 0);
+  // …audit --resume without --retry-verdict refuses…
+  const noRetry = runCli(["audit", artifact, "--chain", first.chainId, "--resume", "sess-123"], shim.env, logPath);
+  assert.notEqual(noRetry.status, 0);
+  assert.match(noRetry.stderr, /only valid with --retry-verdict/);
+  // …and the legitimate retry (recorded audit verdict is UNPARSEABLE — the "ok"
+  // shim has no AUDIT line) resumes with the AUDIT-specific nudge.
+  const a = runCli(["audit", artifact, "--chain", first.chainId, "--resume", "sess-123", "--retry-verdict"], shim.env, logPath);
+  assert.equal(a.status, 0, a.stderr);
+  const argv = shim.argv();
+  assert.deepEqual(argv.slice(0, 3), ["exec", "resume", "sess-123"]);
+  assert.match(argv[argv.length - 1], /missing the audit line/);
+  assert.doesNotMatch(argv[argv.length - 1], /VERDICT:/);
+  // A COMPLETED audit (real verdict) must not be resumable — one audit per chain.
+  const a2 = join(dir, "plan2.md"); writeFileSync(a2, "# plan two");
+  const second = JSON.parse(runCli(["review", a2, "--auto"], shim.env, logPath).stdout);
+  runCli(["audit", a2, "--chain", second.chainId], { ...shim.env, SHIM_MODE: "auditpass" }, logPath);
+  const done = runCli(["audit", a2, "--chain", second.chainId, "--resume", "sess-123", "--retry-verdict"], shim.env, logPath);
+  assert.notEqual(done.status, 0);
+  assert.match(done.stderr, /only for an UNPARSEABLE audit/);
+});
+
+test("e2e: concurrent auto opens on the same artifact — exactly one wins", async () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "ok");
+  const env = { ...shim.env, CODEX_REVIEW_LOG: logPath };
+  const run = () => new Promise((res) => {
+    const c = spawnAsync("node", [SCRIPT, "review", artifact, "--auto"], { env });
+    c.on("close", (code) => res(code));
+  });
+  const codes = await Promise.all([run(), run()]);
+  assert.equal(codes.filter((c) => c === 0).length, 1, `expected exactly one winner, got exit codes ${codes}`);
+  // Correctness is append-order verification, not the lock: a losing racer may
+  // have appended an open line, but it must have self-aborted it.
+  const lines = readLogLines(logPath);
+  const aborted = new Set(lines.filter((l) => l.mode === "note" && l.outcome === "aborted").map((l) => l.chainId));
+  const liveOpens = lines.filter((l) => l.mode === "open" && !aborted.has(l.chainId));
+  assert.equal(liveOpens.length, 1, "exactly one non-aborted reservation");
+});
+
+test("e2e: terminal failure event → verdict error + non-zero exit; audit variant parses AUDIT", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const failShim = makeShim(dir, "fail");
+  const r = runCli(["review", artifact, "--auto"], failShim.env, logPath);
+  assert.notEqual(r.status, 0);
+  assert.equal(JSON.parse(r.stdout).verdict, "error");
+  // audit against a fresh artifact/chain, shim emits VERDICT-less review text → audit-mode UNPARSEABLE
+  const dir2 = tmp(); const log2 = join(dir2, "log.jsonl");
+  const artifact2 = join(dir2, "plan.md"); writeFileSync(artifact2, "# b plan");
+  const shim2 = makeShim(dir2, "noverdict");
+  const first = JSON.parse(runCli(["review", artifact2, "--auto"], shim2.env, log2).stdout);
+  assert.equal(first.verdict, "UNPARSEABLE");
+  const a = runCli(["audit", artifact2, "--chain", first.chainId], shim2.env, log2);
+  assert.equal(a.status, 0, a.stderr);
+  assert.equal(JSON.parse(a.stdout).verdict, "UNPARSEABLE"); // no AUDIT line in shim output either
+});
+
+test("e2e: timeout kills codex, verdict timeout, non-zero exit", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "slow");
+  const start = Date.now();
+  const r = runCli(["review", artifact, "--auto", "--timeout", "2"], shim.env, logPath);
+  assert.ok(Date.now() - start < 8_000, "should not wait for the slow shim");
+  assert.notEqual(r.status, 0);
+  assert.equal(JSON.parse(r.stdout).verdict, "timeout");
+});
+
+test("e2e: review → audit → note → stats close the loop with lifecycle intact", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "ok");
+  const first = JSON.parse(runCli(["review", artifact, "--auto"], shim.env, logPath).stdout);
+  // note before any audit must refuse (lifecycle) …
+  const early = runCli(["note", "--chain", first.chainId, "--unique", "1", "--outcome", "audit-pass"], shim.env, logPath);
+  assert.notEqual(early.status, 0);
+  // … audit passes (auditpass shim), then the note is legal
+  const a = runCli(["audit", artifact, "--chain", first.chainId], { ...shim.env, SHIM_MODE: "auditpass" }, logPath);
+  assert.equal(JSON.parse(a.stdout).verdict, "PASS");
+  const n = runCli(["note", "--chain", first.chainId, "--unique", "1", "--outcome", "audit-pass", "--comment", "dogfood"], shim.env, logPath);
+  assert.equal(n.status, 0, n.stderr);
+  const s = runCli(["stats"], shim.env, logPath);
+  const stats = JSON.parse(s.stdout);
+  assert.equal(stats.eligible, 1);
+  assert.equal(stats.uniquePer5, 5);
 });
