@@ -15,7 +15,7 @@ const block = src.split("// >>> PURE")[1]?.split("// <<< PURE")[0];
 assert.ok(block, "fanout.mjs must contain a // >>> PURE ... // <<< PURE block");
 const PURE = new Function(
   block +
-    "\nreturn { partitionWaves, validateArgs, shouldEscalate, tallyMeta, researchPrompt, verifyPrompt };"
+    "\nreturn { partitionWaves, validateArgs, shouldEscalate, tallyMeta, researchPrompt, verifyPrompt, researchProblems, isPlaceholderHost, depsSatisfied };"
 )();
 
 test("partitionWaves: empty deps -> wave 1, non-empty deps -> wave 2", () => {
@@ -116,4 +116,127 @@ test("validateArgs: parses a JSON string (runtime delivers args as a string)", (
 
 test("validateArgs: throws on an invalid JSON string", () => {
   assert.throws(() => PURE.validateArgs("{not json"), /JSON/);
+});
+
+const { researchProblems, depsSatisfied, tallyMeta } = PURE;
+
+const good = {
+  angleId: "a1", kind: "core",
+  summary: "Cloudflare's workerd runs untrusted code in V8 isolates rather than containers.",
+  findings: [{ claim: "Rust adoption in Cloudflare Workers grew via workerd's V8 isolates.",
+               sourceUrl: "https://blog.cloudflare.com/workerd", sourceTitle: "workerd", sourceDate: "2024-01-01" }],
+};
+
+test("researchProblems: a real result has no problems", () => {
+  assert.deepEqual(researchProblems(good), []);
+});
+
+test("researchProblems: zero findings is a FAILED angle, not an empty success", () => {
+  // Schema-valid. Reported as completed research today. The synthesis then treats "nothing" as
+  // evidence of nothing, rather than as a worker that failed.
+  assert.ok(researchProblems({ ...good, findings: [] }).some((p) => /no findings/i.test(p)));
+});
+
+test("researchProblems: an unusable SUMMARY fails the angle — wave 2 is built from it", () => {
+  // Dep satisfaction keys off !failed, and the wave-2 digest is built ENTIRELY from research.summary.
+  // A root with real findings and an empty summary is "successful", satisfies its dependents, and
+  // dispatches them with a heading and nothing under it — so they research a question with a blank
+  // premise and return a well-formed answer to it.
+  for (const summary of ["", "   ", undefined, "TODO", "n/a", "short"]) {
+    assert.ok(researchProblems({ ...good, summary }).some((p) => /summary/i.test(p)),
+      `summary ${JSON.stringify(summary)} must fail the angle`);
+  }
+});
+
+test("researchProblems: placeholder URLs are the fingerprint of a fabricated citation", () => {
+  for (const url of ["https://example.com", "http://example.org/x", "https://localhost:3000/a",
+                     "https://127.0.0.1/a", "http://test.com/a", "https://"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.ok(researchProblems(r).length > 0, `${url} must be rejected`);
+  }
+});
+
+test("researchProblems: a non-http source was never fetched", () => {
+  for (const url of ["internal-knowledge", "ftp://x/y", "file:///etc/passwd", "not a url"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.ok(researchProblems(r).some((p) => /url/i.test(p)), `${url} must be rejected`);
+  }
+});
+
+test("researchProblems: userinfo cannot smuggle a placeholder host past the check", () => {
+  // A hand-rolled split on "/" reads the host of `https://evil@example.com/x` as "evil@example.com",
+  // which is not in the blocklist — so the placeholder walks straight through. URL.hostname does not.
+  for (const url of ["https://evil@example.com/x", "https://a:b@localhost/y", "https://x@127.0.0.1/z"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.ok(researchProblems(r).some((p) => /placeholder/i.test(p)), `${url} must be rejected`);
+  }
+});
+
+test("researchProblems: DNS variants of a placeholder host are the same fabricated citation", () => {
+  // Two equality-check bypasses, both trivial:
+  //   - `example.com.` is a fully-qualified name. It resolves identically and is NOT === "example.com".
+  //   - `sub.example.com` is a placeholder with a label bolted on.
+  for (const url of ["https://example.com./x", "https://sub.example.com/x", "https://docs.example.org/y",
+                     "https://a.b.test.com/z", "https://EXAMPLE.COM/x"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.ok(researchProblems(r).some((p) => /placeholder/i.test(p)), `${url} must be rejected`);
+  }
+  // …but a real host that merely CONTAINS a placeholder name is not one. Do not over-reject.
+  for (const url of ["https://example.community/x", "https://notexample.com/x", "https://myexample.com/x"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.deepEqual(researchProblems(r), [], `${url} is a legitimate host`);
+  }
+});
+
+test("researchProblems: placeholder and stub claims are rejected", () => {
+  for (const claim of ["TODO", "TBD", "placeholder", "Lorem ipsum dolor sit", "Example claim here", "short"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], claim }] };
+    assert.ok(researchProblems(r).length > 0, `claim ${JSON.stringify(claim)} must be rejected`);
+  }
+});
+
+test("researchProblems: a null/garbage result is rejected, not thrown on", () => {
+  assert.ok(researchProblems(null).length > 0);
+  assert.ok(researchProblems({}).length > 0);
+  assert.ok(researchProblems({ findings: "not an array" }).length > 0);
+});
+
+test("researchProblems: a result must be BOUND to the angle it was dispatched for", () => {
+  // `reports` emits research.angleId, while deps, failedAngles and meta all key off the DISPATCHED
+  // angle.id. A worker that returns someone else's angleId therefore misattributes coverage: angle a2
+  // appears answered twice, a1 is never answered, and nothing anywhere says so.
+  const a1 = { id: "a1", kind: "core" };
+  assert.deepEqual(researchProblems(good, a1), [], "the matching case still passes");
+  const mismatch = researchProblems({ ...good, angleId: "a2" }, a1);
+  assert.ok(mismatch.some((p) => /dispatched for/i.test(p)), "a foreign angleId must fail the angle");
+  const wrongKind = researchProblems(good, { id: "a1", kind: "follow-up" });
+  assert.ok(wrongKind.some((p) => /kind/i.test(p)));
+});
+
+test("depsSatisfied: an angle with no deps is always runnable", () => {
+  assert.equal(depsSatisfied({ id: "b", deps: [] }, new Set()), true);
+  assert.equal(depsSatisfied({ id: "b" }, new Set()), true);
+});
+
+test("depsSatisfied: an angle runs only when EVERY dep succeeded", () => {
+  assert.equal(depsSatisfied({ id: "c", deps: ["a"] }, new Set(["a"])), true);
+  assert.equal(depsSatisfied({ id: "c", deps: ["a", "b"] }, new Set(["a", "b"])), true);
+  // The dep exists precisely because the angle is not well-posed without it. Running anyway means
+  // researching a question built on a digest that is missing the thing it depended on.
+  assert.equal(depsSatisfied({ id: "c", deps: ["a"] }, new Set()), false);
+  assert.equal(depsSatisfied({ id: "c", deps: ["a", "b"] }, new Set(["a"])), false);
+});
+
+test("tallyMeta counts failures from the flag, not from truthiness", () => {
+  const settled = [
+    { angle: { id: "a" }, escalated: true },
+    { angle: { id: "b" }, failed: true, reason: "unusable research" },
+    { angle: { id: "c" }, failed: true, reason: "dep-failed: b" },
+  ];
+  const m = tallyMeta("deep", 2, settled);
+  // A failure record is a TRUTHY OBJECT. Counting completions with filter(Boolean) reports
+  // anglesFailed: 0 while failedAngles lists two — a meta block that contradicts itself.
+  assert.equal(m.anglesCompleted, 1);
+  assert.equal(m.anglesFailed, 2);
+  assert.equal(m.escalations, 1);
 });

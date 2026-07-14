@@ -30,6 +30,24 @@ For one-shot factual questions ("what does this return", "syntax for X"), the sk
 3. **Critic → citation-judge → final-judge passes.** Distinct roles, in order. Critic finds holes; citation-judge verifies every URL resolves and supports the claim; final-judge ships or sends back.
 4. **Cite explicitly.** Every claim has a URL + title + date. Single-domain runs get a "single-perspective" warning.
 
+## Workflow return shape
+
+`fanout.mjs` returns `{ reports, verification, failedAngles, meta }`:
+
+- `reports[]` — usable research only: `{ angleId, kind, summary, findings }`.
+- `verification[]` — tier-1 (or, if escalated, tier-2) verdicts: `{ angleId, reliability, flags }`.
+- `failedAngles[]` — **the authoritative list** of every angle that did not produce usable research:
+  crashed, returned schema-valid junk (placeholder URLs, empty findings, an unusable summary), or was
+  skipped because a declared dep failed. Each entry is `{ angleId, kind, question, reason }`. The
+  orchestrator MUST surface this to the user in the synthesis — see the skill's process step 4.
+- `meta` — **counts only** (`anglesCompleted`, `anglesFailed`, `failedCore`, `escalations`), never a
+  second copy of `failedAngles`.
+
+An angle's research is validated semantically, not just against a JSON schema: zero findings, an
+unusable summary, placeholder/non-http source URLs, and placeholder claims all fail the angle (retried
+once, then reported in `failedAngles` rather than silently passed through as evidence). This is a
+placeholder/junk filter, not provenance verification — it cannot prove a URL was actually fetched.
+
 ## Tools
 
 Prefers Exa MCP, then Tavily MCP, then WebSearch, then WebFetch. Uses Exa *and* Tavily — different rankings catch different sources.
