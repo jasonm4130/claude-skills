@@ -40,6 +40,14 @@ for each wave (tasks with satisfied deps, run concurrently in sibling worktrees)
 final whole-branch reviewer (opus) → merge-readiness + ponytail-debt harvest
 ```
 
+Every state advance — each singleton task, each wave merge, and the final fix — is re-checked by
+an independent `sonnet` verifier before `base` moves: the claimed commit must resolve, it must
+actually be the branch head, it must contain every succeeded task's commit, and the suite must be
+green. The workflow advances only to the SHA the verifier resolved, never to the claim. That
+in-workflow check is a confidence check, not proof — the sandbox has no `child_process` — so the
+controller re-runs `git` and the suite itself against the returned `head` before presenting or
+finishing (see step 7 above).
+
 ### The contract
 
 **args (controller → workflow):**
@@ -51,7 +59,7 @@ current tip, `git rev-parse HEAD`) anchors wave-0 dispatch. Omitting
 stale tree whenever the branch is ahead of the merge-base — always pass it.
 
 **return:**
-`{ tasks, planConflicts, halted, finalReview, mergeBase, head, merges, ledgerPath, meta }`
+`{ tasks, planConflicts, halted, finalReview, finalFix, mergeBase, head, merges, ledgerPath, meta }`
 
 ### Model tiering
 
