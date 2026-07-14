@@ -8,9 +8,11 @@ import {
   mkdtempSync,
   rmSync,
   writeFileSync,
+  readFileSync,
   mkdirSync,
   symlinkSync,
   realpathSync,
+  utimesSync,
 } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -25,6 +27,10 @@ import {
   lastAssistantUsageFromTranscript,
   readContainedFile,
   dirContainedIn,
+  claimBand,
+  bandMarkerPath,
+  resetBands,
+  acquireInflightLock,
 } from "../scripts/lib.mjs";
 
 test("safeJsonParse returns object for valid JSON", () => {
@@ -274,4 +280,139 @@ test("dirContainedIn: true inside the root, false for an escaping symlink", { sk
   symlinkSync(outside, escaped);
   assert.equal(dirContainedIn(root, escaped), false, ".claude/handoffs symlinked out must not pass");
   assert.equal(dirContainedIn(root, path.join(root, "nope")), false, "a missing dir is not contained");
+});
+
+// --- claimBand / bandMarkerPath / resetBands / acquireInflightLock (Task 1) ---
+
+test("claimBand: exactly one of N callers claiming the same band wins", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-claim-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  // The EEXIST branch, reached deterministically — no child processes, no hoping two spawns overlap.
+  const results = [0, 1, 2, 3].map(() => claimBand(dir, "sid", 70, 0));
+  assert.deepEqual(results, [true, false, false, false], "the first claim wins; the rest see EEXIST");
+  assert.equal(existsSync(bandMarkerPath(dir, "sid", 70, 0)), true);
+});
+
+test("claimBand: different bands are independent claims", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-claim2-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(claimBand(dir, "sid", 70, 0), true);
+  assert.equal(claimBand(dir, "sid", 70, 1), true, "band 1 is a separate claim from band 0");
+  assert.equal(claimBand(dir, "sid", 70, 1), false, "but band 1 is still claim-once");
+});
+
+test("claimBand: a band's identity includes its threshold", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-claim3-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // "band 0" means 70-80% under a threshold of 70 and 80-90% under a threshold of 80 — different
+  // bands, so different markers. This is about marker identity, NOT about what happens when a user
+  // changes HANDOFF_THRESHOLD_PCT: the transition gate governs that, and it may never reach here.
+  assert.equal(claimBand(dir, "sid", 70, 0), true);
+  assert.equal(claimBand(dir, "sid", 80, 0), true, "a different threshold is a different band");
+  assert.equal(claimBand(dir, "sid", 70, 0), false, "…and each is still claim-once");
+});
+
+test("claimBand: an unwritable data dir returns false rather than throwing", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-claim4-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // The statusline must never die on a state-write failure.
+  assert.equal(claimBand(path.join(dir, "does-not-exist"), "sid", 70, 0), false);
+});
+
+test("resetBands: clears this session's ladder across thresholds, leaves other sessions alone", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-reset-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  claimBand(dir, "mine", 70, 0);
+  claimBand(dir, "mine", 80, 1);
+  claimBand(dir, "other", 70, 0);
+
+  resetBands(dir, "mine");
+
+  assert.equal(existsSync(bandMarkerPath(dir, "mine", 70, 0)), false);
+  assert.equal(existsSync(bandMarkerPath(dir, "mine", 80, 1)), false, "reset spans thresholds");
+  assert.equal(existsSync(bandMarkerPath(dir, "other", 70, 0)), true, "another session is untouched");
+  assert.equal(claimBand(dir, "mine", 70, 0), true, "after a reset, the band can be claimed again");
+});
+
+test("resetBands: a session id that PREFIXES another does not eat its markers", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-reset2-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  claimBand(dir, "a", 70, 0);
+  claimBand(dir, "a-x", 70, 0); // "handoff-fired-a-x-t70-b0" starts with "handoff-fired-a-"
+
+  resetBands(dir, "a");
+
+  assert.equal(existsSync(bandMarkerPath(dir, "a", 70, 0)), false, "our own marker is cleared");
+  assert.equal(
+    existsSync(bandMarkerPath(dir, "a-x", 70, 0)), true,
+    "a bare-prefix match would have deleted this — the reset must anchor on the full marker name",
+  );
+});
+
+test("acquireInflightLock: acquires when free, refuses when a LIVE holder is present", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-lock-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lock = path.join(dir, "l.lock");
+
+  assert.equal(acquireInflightLock(lock, 2000), true, "a free lock is acquired");
+  assert.equal(readFileSync(lock, "utf8"), String(process.pid));
+
+  // A live holder (this process), fresh. A second acquire must lose — and must NOT overwrite the pid.
+  assert.equal(acquireInflightLock(lock, 2000), false, "a held lock is not stolen");
+  assert.equal(readFileSync(lock, "utf8"), String(process.pid), "the holder's lock is intact");
+});
+
+test("acquireInflightLock: refuses to displace a LIVE holder even past the lease", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-lock2-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lock = path.join(dir, "l.lock");
+  writeFileSync(lock, String(process.pid)); // this process is alive
+  const old = new Date(Date.now() - 30_000);
+  utimesSync(lock, old, old); // and its lock is far past the 2s lease
+
+  // There is NO statusLine timeout, so a slow invocation can outlive any lease we pick. Age alone
+  // must never justify a break — this is the bug that produced double-fires in 0.5.1.
+  assert.equal(acquireInflightLock(lock, 2000), false, "an old lock held by a LIVE process is not stale");
+  assert.equal(readFileSync(lock, "utf8"), String(process.pid));
+});
+
+test("acquireInflightLock: breaks a lock that is BOTH past the lease AND held by a dead pid", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-lock3-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lock = path.join(dir, "l.lock");
+  writeFileSync(lock, "2147483646"); // a pid that cannot exist
+  const old = new Date(Date.now() - 30_000);
+  utimesSync(lock, old, old);
+
+  assert.equal(acquireInflightLock(lock, 2000), true, "a dead holder's stale lock must not freeze the bar forever");
+  assert.equal(readFileSync(lock, "utf8"), String(process.pid), "we are the new holder");
+});
+
+test("acquireInflightLock: a FRESH empty lock is not treated as a dead holder", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-lock4-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lock = path.join(dir, "l.lock");
+  writeFileSync(lock, ""); // create() has returned but write() has not landed yet
+
+  // parseInt("") is NaN. Treating NaN as "dead" would steal the lock from a live process mid-write —
+  // one of the four races that killed 0.5.1.
+  assert.equal(acquireInflightLock(lock, 2000), false, "an unparseable pid is NOT proof the holder is dead");
+  assert.equal(readFileSync(lock, "utf8"), "", "the mid-write holder's lock is untouched");
+});
+
+test("acquireInflightLock: an ANCIENT empty lock is broken — a crash must not freeze the bar forever", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-lock5-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lock = path.join(dir, "l.lock");
+  writeFileSync(lock, ""); // a process died between create() and write()
+  const ancient = new Date(Date.now() - 60_000);
+  utimesSync(lock, ancient, ancient);
+
+  // The complement of the test above, and the reason EMPTY_LOCK_GRACE_MS exists: if "unparseable"
+  // meant "alive" forever, this lock would be immortal and every future invocation would replay a
+  // stale render or "?" — the bar would freeze permanently. The create→write window is microseconds,
+  // so a lock still empty after 10s is a corpse.
+  assert.equal(acquireInflightLock(lock, 2000), true, "an ancient empty lock is breakable");
+  assert.equal(readFileSync(lock, "utf8"), String(process.pid), "we are the new holder");
 });
