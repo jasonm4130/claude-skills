@@ -2,14 +2,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync, spawn as spawnAsync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, chmodSync, mkdirSync, utimesSync, existsSync, appendFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, chmodSync, mkdirSync, utimesSync, existsSync, appendFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as os from "node:os";
+import * as path from "node:path";
 import {
   parseEventStream, parseVerdict, countFindings,
   buildReviewPrompt, buildResumePrompt, buildAuditPrompt, buildRetryPrompt,
   contentHashOf, mintChainId, resolveRepoRoot, parseTimeoutS,
   readLogLines, acquireLock, releaseLock, reserveChain, appendResult, appendNote, computeStats, getChainState, OUTCOMES,
+  repoRootOfDir, isSafeGitRange, parseMaxLines, resolveDiff,
 } from "./codex-review.mjs";
 
 // Real stream captured from codex-cli 0.144.3 on 2026-07-14.
@@ -473,4 +476,165 @@ test("resolveRepoRoot: fallback path leaks nothing to stderr", () => {
   ], { encoding: "utf8", timeout: 30_000 });
   assert.equal(r.stdout, "/tmp/nonexistent-dir-xyz");
   assert.equal(r.stderr, "", "git fatal output must not leak through resolveRepoRoot");
+});
+
+/** A throwaway git repo with two commits on main. Returns its root. */
+function fixtureRepo(t) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-diff-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", ["-C", dir, ...a], { stdio: ["ignore", "pipe", "ignore"] });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t.t");
+  git("config", "user.name", "t");
+  // Isolate from the developer machine's global hooksPath (e.g. a gitleaks pre-commit hook that
+  // itself runs `git diff --cached` without --no-textconv): without this, a global hook's OWN diff
+  // call can trip a configured textconv driver and falsely implicate resolveDiff()'s --no-textconv.
+  git("config", "core.hooksPath", "/dev/null");
+  writeFileSync(path.join(dir, "a.txt"), "one\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "first");
+  writeFileSync(path.join(dir, "a.txt"), "one\ntwo\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "second");
+  return dir;
+}
+
+const LIMITS = { maxLines: 4000, maxBytes: 400_000 };
+
+test("repoRootOfDir: resolves the repo of the DIRECTORY, not its parent", (t) => {
+  const repo = fixtureRepo(t);
+  // resolveRepoRoot() dirname()s its argument (it takes a FILE path). Reusing it for a directory
+  // would resolve the PARENT's repo — silently running every git command in the wrong place.
+  // realpathSync: on macOS, os.tmpdir() lives under /var, a symlink to /private/var — git resolves
+  // symlinks when reporting --show-toplevel, mkdtempSync does not.
+  assert.equal(repoRootOfDir(repo), realpathSync(repo));
+});
+
+test("isSafeGitRange: accepts the shapes we actually use", () => {
+  for (const r of ["main...HEAD", "main..HEAD", "HEAD~3..HEAD", "origin/main...HEAD",
+                   "v0.1.0..v0.2.0", "feat/some-branch...main", "abc1234..def5678"]) {
+    assert.equal(isSafeGitRange(r), true, `${r} should be accepted`);
+  }
+});
+
+test("isSafeGitRange: rejects anything git would read as a FLAG", () => {
+  // `git diff --output=/tmp/x` WRITES A FILE, in a tool whose safety story is a read-only sandbox.
+  // An argv array stops shell injection, not flag injection.
+  for (const r of ["--output=/tmp/pwned", "-O/tmp/pwned", "--ext-diff", "-z"]) {
+    assert.equal(isSafeGitRange(r), false, `${r} must be rejected: git parses it as a flag`);
+  }
+});
+
+test("isSafeGitRange: requires an explicit two- or three-dot range", () => {
+  // A bare ref means "diff the WORKING TREE against it" — uncommitted changes make the review
+  // non-deterministic and unreproducible from the chain record.
+  for (const r of ["HEAD", "main", "abc1234"]) {
+    assert.equal(isSafeGitRange(r), false, `${r} is a bare ref, not a range`);
+  }
+});
+
+test("isSafeGitRange: rejects junk", () => {
+  for (const r of ["", " ", "a b", "a;b", "a$(id)b", "a|b", "a\nb", "..", "...", "a'b", '"', "a".repeat(300)]) {
+    assert.equal(isSafeGitRange(r), false, `${JSON.stringify(r)} must be rejected`);
+  }
+  assert.equal(isSafeGitRange(null), false);
+  assert.equal(isSafeGitRange(undefined), false);
+});
+
+test("parseMaxLines: NaN and Infinity must NOT silently disable the limit", () => {
+  // `NaN <= 0` is FALSE, so a naive "reject non-positive" check lets NaN through and disables the cap.
+  for (const bad of ["NaN", "abc", "Infinity", "-1", "0", "1.5", "", undefined]) {
+    assert.throws(() => parseMaxLines(bad), /positive integer/i, `${bad} must be rejected`);
+  }
+  assert.equal(parseMaxLines("500"), 500);
+  assert.equal(parseMaxLines(500), 500);
+});
+
+test("resolveDiff: pins a symbolic range to immutable SHAs", (t) => {
+  const repo = fixtureRepo(t);
+  const d = resolveDiff(repo, "HEAD~1..HEAD", LIMITS);
+
+  assert.match(d.text, /\+two/, "the diff text contains the added line");
+  assert.deepEqual(d.files, ["a.txt"]);
+  assert.match(d.base, /^[0-9a-f]{40}$/, "base is pinned to a full SHA");
+  assert.match(d.head, /^[0-9a-f]{40}$/, "head is pinned to a full SHA");
+  assert.equal(d.pinnedRange, `${d.base}..${d.head}`);
+  // The pinned range is what we hash AND what Codex is told to run. A symbolic range would let HEAD
+  // move between the two, so the reviewer would read different content than the chain recorded.
+  assert.doesNotMatch(d.pinnedRange, /HEAD|main/);
+});
+
+test("resolveDiff: a three-dot range pins base to the MERGE BASE", (t) => {
+  const repo = fixtureRepo(t);
+  const git = (...a) => execFileSync("git", ["-C", repo, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  const mergeBase = git("merge-base", "HEAD~1", "HEAD").trim();
+  const d = resolveDiff(repo, "HEAD~1...HEAD", LIMITS);
+  assert.equal(d.base, mergeBase, "A...B means 'changes on B since it diverged from A'");
+});
+
+test("resolveDiff: an EMPTY diff is refused, not reviewed", (t) => {
+  const repo = fixtureRepo(t);
+  // Reviewing nothing and returning APPROVED is the worst possible outcome — it LOOKS like a pass.
+  assert.throws(() => resolveDiff(repo, "HEAD..HEAD", LIMITS), /empty/i);
+});
+
+test("resolveDiff: an oversized diff is refused, not silently truncated", (t) => {
+  const repo = fixtureRepo(t);
+  assert.throws(() => resolveDiff(repo, "HEAD~1..HEAD", { maxLines: 1, maxBytes: 400_000 }), /too large|narrow/i);
+  assert.throws(() => resolveDiff(repo, "HEAD~1..HEAD", { maxLines: 4000, maxBytes: 10 }), /too large|narrow/i);
+});
+
+test("resolveDiff: a bad range fails loudly rather than reviewing the wrong thing", (t) => {
+  const repo = fixtureRepo(t);
+  assert.throws(() => resolveDiff(repo, "no-such-ref..HEAD", LIMITS));
+  assert.throws(() => resolveDiff(repo, "--output=/tmp/pwned", LIMITS), /unsafe|malformed/i);
+});
+
+test("resolveDiff: a file hidden by .gitattributes '-diff' is REPORTED, never silently dropped", (t) => {
+  const repo = fixtureRepo(t);
+  const git = (...a) => execFileSync("git", ["-C", repo, ...a], { stdio: ["ignore", "pipe", "ignore"] });
+  // A repo can mark real SOURCE as -diff. git then shows nothing for it, while the diff still looks
+  // healthy — source code hidden from the reviewer, and silence reads as a pass.
+  writeFileSync(path.join(repo, ".gitattributes"), "secret.mjs -diff\n");
+  writeFileSync(path.join(repo, "secret.mjs"), "export const x = 1;\n");
+  writeFileSync(path.join(repo, "a.txt"), "one\ntwo\nthree\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "hide");
+
+  const d = resolveDiff(repo, "HEAD~1..HEAD", LIMITS);
+  assert.ok(d.undiffable.includes("secret.mjs"), "an undiffable file must be surfaced, not dropped");
+  assert.equal(d.files.includes("secret.mjs"), false, "and must not be listed as reviewable");
+  assert.ok(d.files.includes("a.txt"), "the genuinely reviewable file is still reviewed");
+});
+
+test("resolveDiff: refuses when EVERY changed file is undiffable", (t) => {
+  const repo = fixtureRepo(t);
+  const git = (...a) => execFileSync("git", ["-C", repo, ...a], { stdio: ["ignore", "pipe", "ignore"] });
+  writeFileSync(path.join(repo, ".gitattributes"), "*.bin -diff\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "attrs");
+  writeFileSync(path.join(repo, "blob.bin"), " binary ");
+  git("add", "-A");
+  git("commit", "-q", "-m", "binary only");
+
+  // Reviewing nothing and returning APPROVED is the worst possible outcome.
+  assert.throws(() => resolveDiff(repo, "HEAD~1..HEAD", LIMITS), /nothing reviewable|empty/i);
+});
+
+test("resolveDiff: does not run a repo-configured textconv program", (t) => {
+  const repo = fixtureRepo(t);
+  const git = (...a) => execFileSync("git", ["-C", repo, ...a], { stdio: ["ignore", "pipe", "ignore"] });
+  const marker = path.join(repo, "TEXTCONV_RAN");
+  // git textconv/external-diff drivers execute configured PROGRAMS — host-side code execution,
+  // outside Codex's read-only sandbox. --no-textconv/--no-ext-diff must prevent it.
+  git("config", "diff.pwned.textconv", `sh -c 'touch ${marker}' --`);
+  writeFileSync(path.join(repo, ".gitattributes"), "*.txt diff=pwned\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "attrs");
+  writeFileSync(path.join(repo, "a.txt"), "one\ntwo\nthree\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "third");
+
+  resolveDiff(repo, "HEAD~1..HEAD", LIMITS);
+  assert.equal(existsSync(marker), false, "textconv must not execute: --no-textconv is load-bearing");
 });

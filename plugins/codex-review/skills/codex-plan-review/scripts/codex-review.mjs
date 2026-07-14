@@ -95,6 +95,161 @@ export function resolveRepoRoot(artifactAbsPath) {
   }
 }
 
+/**
+ * The repo root containing a DIRECTORY.
+ *
+ * resolveRepoRoot() takes a FILE path and dirname()s it first, so reusing it here would resolve the
+ * PARENT directory's repo — silently running every git command in the wrong place. Its file semantics
+ * have existing callers; leave it alone and use this for directories.
+ *
+ * @param {string} dir
+ * @returns {string}
+ */
+export function repoRootOfDir(dir) {
+  try {
+    return execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], {
+      encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return dir;
+  }
+}
+
+/**
+ * Is this string safe to hand to `git diff` as a range?
+ *
+ * We spawn git with an argv array, so shell metacharacters cannot inject. But argv is not safety by
+ * itself: git parses a leading `-` as a FLAG, and `git diff --output=/tmp/x` WRITES A FILE — inside a
+ * tool whose whole safety story is a read-only sandbox.
+ *
+ * An explicit `..`/`...` range is REQUIRED. A bare ref means "diff the working tree against it", which
+ * folds uncommitted changes into the review and makes it unreproducible from the chain record.
+ *
+ * @param {unknown} range
+ * @returns {boolean}
+ */
+export function isSafeGitRange(range) {
+  if (typeof range !== "string" || range.length === 0 || range.length > 200) return false;
+  if (range.startsWith("-")) return false; // git would read it as a flag
+  const REF = "[A-Za-z0-9][A-Za-z0-9._/~^-]*";
+  return new RegExp(`^${REF}\\.{2,3}${REF}$`).test(range);
+}
+
+/**
+ * Coerce a --max-lines value. Throws on anything that is not a finite positive integer.
+ *
+ * Written carefully on purpose: `Number("NaN")` is `NaN`, and **`NaN <= 0` is `false`** — so the
+ * obvious "reject non-positive" check lets NaN straight through and silently disables the cap.
+ * `Infinity` slips past it too.
+ *
+ * @param {unknown} raw
+ * @returns {number}
+ */
+export function parseMaxLines(raw) {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw err("BAD_MAX_LINES", `--max-lines must be a positive integer, got ${JSON.stringify(raw)}`);
+  }
+  return n;
+}
+
+const MAX_DIFF_BYTES = 400_000;
+
+/**
+ * Resolve a git range to its diff, pinned to immutable commit SHAs.
+ *
+ * Pinning is not a nicety: we hash the diff for the chain record, then tell Codex to run `git diff`
+ * itself. If we handed it a symbolic range, a HEAD that moved in between would make the reviewer read
+ * different content than the chain recorded — the audit trail would be a lie.
+ *
+ * Throws a tagged error rather than returning junk: an empty or truncated review that reports
+ * VERDICT: APPROVED is worse than no review at all.
+ *
+ * @param {string} repoRoot
+ * @param {string} range
+ * @param {{maxLines: number, maxBytes: number}} limits
+ * @returns {{text: string, pinnedRange: string, base: string, head: string, lines: number,
+ *            bytes: number, files: string[], undiffable: string[]}}
+ */
+export function resolveDiff(repoRoot, range, limits) {
+  if (!isSafeGitRange(range)) {
+    throw err("BAD_RANGE", `unsafe or malformed git range: ${JSON.stringify(range)}`);
+  }
+
+  // core.quotePath=false: without it git C-quotes any path with a space or non-ASCII character
+  // (`"src/\303\251.mjs"`), and we would name a mangled path in the prompt.
+  /** @param {string[]} args */
+  const git = (args) =>
+    execFileSync("git", ["-C", repoRoot, "-c", "core.quotePath=false", ...args], {
+      encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
+    });
+
+  const threeDot = range.includes("...");
+  const [left, right] = range.split(threeDot ? "..." : "..");
+
+  let base, head;
+  try {
+    head = git(["rev-parse", "--verify", `${right}^{commit}`]).trim();
+    base = threeDot
+      ? git(["merge-base", left, right]).trim()          // A...B = changes on B since it left A
+      : git(["rev-parse", "--verify", `${left}^{commit}`]).trim();
+  } catch (e) {
+    throw err("BAD_RANGE", `git could not resolve ${JSON.stringify(range)}: ${String(e.message).split("\n")[0]}`);
+  }
+
+  const pinnedRange = `${base}..${head}`;
+  // --no-textconv / --no-ext-diff: git's textconv and external-diff drivers EXECUTE configured
+  // programs — host-side code execution, outside Codex's read-only sandbox. These flags must appear
+  // on EVERY diff invocation, including the one we tell Codex to run (see DIFF_CMD in Task 2).
+  const NO_EXEC = ["--no-textconv", "--no-ext-diff"];
+
+  let text, numstat;
+  try {
+    text = git(["diff", ...NO_EXEC, pinnedRange, "--"]);
+    numstat = git(["diff", ...NO_EXEC, "--numstat", pinnedRange, "--"]);
+  } catch (e) {
+    throw err("BAD_RANGE", `git diff failed for ${pinnedRange}: ${String(e.message).split("\n")[0]}`);
+  }
+
+  // numstat prints "added\tdeleted\tpath", with "-\t-" for anything git will not diff: binaries, and
+  // — the nasty one — any file a .gitattributes marks `-diff`. Such a file is INVISIBLE in the diff
+  // text while still looking like a healthy change. A repo could hide real source from the reviewer.
+  /** @type {string[]} */ const files = [];
+  /** @type {string[]} */ const undiffable = [];
+  for (const row of numstat.split("\n")) {
+    if (!row.trim()) continue;
+    const [add, del, ...rest] = row.split("\t");
+    const p = rest.join("\t").trim();
+    if (!p) continue;
+    (add === "-" && del === "-" ? undiffable : files).push(p);
+  }
+
+  if (files.length === 0) {
+    throw err(
+      "EMPTY_DIFF",
+      undiffable.length > 0
+        ? `range ${range} (${pinnedRange}) changes only files git will not diff (${undiffable.join(", ")}) — nothing reviewable`
+        : `range ${range} (${pinnedRange}) is empty — nothing to review`,
+    );
+  }
+  if (text.trim().length === 0) {
+    throw err("EMPTY_DIFF", `range ${range} (${pinnedRange}) produced no diff text — nothing to review`);
+  }
+
+  const lines = text.split("\n").length;
+  const bytes = Buffer.byteLength(text, "utf8");
+  // Lines alone do not bound context: a minified bundle is one line and many megabytes.
+  if (lines > limits.maxLines || bytes > limits.maxBytes) {
+    throw err(
+      "DIFF_TOO_LARGE",
+      `diff is ${lines} lines / ${bytes} bytes (limits ${limits.maxLines} / ${limits.maxBytes}) across ` +
+        `${files.length} files — narrow the range or raise --max-lines. Refusing rather than ` +
+        `truncating: a truncated review that returns APPROVED is worse than no review.`,
+    );
+  }
+  return { text, pinnedRange, base, head, lines, bytes, files, undiffable };
+}
+
 export const OUTCOMES = ["audit-pass", "audit-concerns-user-approved", "audit-concerns-dismissed", "cap-revise", "aborted"];
 
 export function logPathDefault() {
