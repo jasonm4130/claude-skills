@@ -20,6 +20,34 @@ Send a finalized plan/spec/design/ADR to OpenAI Codex (Terra, high effort, read-
 7. **Always close the chain** (every path: pass, cap, concerns, timeout, error, abort): `… note --chain <chainId> --unique <n> --outcome <audit-pass|audit-concerns-user-approved|audit-concerns-dismissed|cap-revise|aborted> --comment "…"`. A finding counts toward `--unique` only if you judge it real AND it wasn't already known or caught by the Claude-side review stack. The result JSON's `pendingNoteChainId` reminds you which chain is open.
 8. **Report one line:** rounds used, final verdict, unique findings, and cumulative gate stats (`… stats`). Include token usage from the result JSON so the user can track quota burn.
 
+## Diff mode (code review)
+
+> **Maturity: diff mode is unproven.** The decision gate that unlocked it was earned entirely on
+> *plan* review — every P1 Codex has found to date was in a design artifact, not in code. Whether a
+> cross-family reviewer finds code bugs an Opus review misses is an **open question this mode exists
+> to answer**. Treat its findings as a second opinion, not an authority, and do not wire it into an
+> automated gate until it has earned one the way plan mode did.
+
+`diff <range> --force` reviews a git range instead of a file; `diff-audit <range> --chain <id>` is its
+one fresh-session audit round. Same script, same verdict-loop mechanics, same chain log.
+
+- **Use a fixed base against a moving tip — `main...HEAD`.** The chain's identity *is* the range
+  string, so it must stay meaningful as fix commits land. `main...HEAD` still names "the changes on
+  this branch" after every commit; `HEAD~1..HEAD` means something *different* after each one and
+  therefore **cannot be resumed** — usable only for a one-shot review. Within each round the range is
+  pinned to commit SHAs, so the diff Codex renders is the diff that was hashed and recorded. That
+  guarantee covers the *diff*; surrounding files are read from the working tree, by design — that is
+  what a reviewer needs for context.
+- An explicit `..`/`...` range is required — a bare ref would fold in uncommitted working-tree changes
+  and make the review unreproducible from the chain record.
+- `--max-lines` (default 4000) plus a 400KB byte cap. An oversized diff is **refused, not truncated** —
+  narrow the range or raise the limit.
+- Files git will not render (binary, or marked `-diff` in `.gitattributes`) are **named in the prompt
+  as NOT SHOWN** — never silently dropped.
+- Same 3-round + 1-audit protocol as plan mode — **and it is now actually enforced** (documented but
+  not implemented before this): a 4th review round and a 2nd audit are both refused before any paid
+  call.
+
 ## Presenting findings (always)
 
 Never paste Codex's raw findings as your primary output. For every finding you surface to the user (REVISE walks, audit concerns), translate it to plain language in this shape:
