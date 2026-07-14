@@ -351,19 +351,19 @@ Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
 - Consumes: `mintChainId`, `contentHashOf` from Task 2.
 - Produces (exact exports Task 4 consumes):
   - `logPathDefault() -> string` (env `CODEX_REVIEW_LOG` or `~/.claude/codex-review-log.jsonl`; lock is always `<logPath>.lock`)
-  - `readLogLines(logPath) -> object[]` (parsed JSONL, junk lines skipped; missing file → `[]`; **any other read error throws** `.code="LOG_UNREADABLE"` — an unreadable log must never look empty to the guard)
+  - `readLogLines(logPath, {strict}={}) -> object[]` (parsed JSONL; missing file → `[]`; **any other read error throws** `.code="LOG_UNREADABLE"`. Default mode skips malformed lines; `strict: true` — used by the guard, chain validation, and notes — throws `.code="LOG_CORRUPT"` on a malformed non-empty line, because a truncated reservation must not look absent)
   - `acquireLock(lockPath, staleMs=30000) -> token: string` (throws `.code="LOCK_HELD"` if held and fresh; breaks stale locks once) / `releaseLock(lockPath, token)` (**ownership-safe**: deletes the lock only if it still contains `token`, so a stale ex-holder can't remove a replacement holder's lock)
   - `getChainState(logPath, chainId) -> {open, note}|null` (Task 4 uses this to validate `--chain` before spending quota)
-  - `reserveChain({logPath, repo, artifact, contentHash, trigger}) -> {chainId, ts}` — atomic check+append under lock; `trigger` is `"auto"|"forced"`; throws `.code="CHAIN_EXISTS"` (auto only, non-aborted match on **repo+artifact+contentHash** — hash alone would let identical content in different repos/paths suppress each other across the shared log) or `.code="RESERVE_FAILED"` (any lock/IO/log-read failure — fatal both modes)
+  - `reserveChain({logPath, repo, repoKey, artifact, contentHash, trigger}) -> {chainId, ts}` — check+append with post-append order verification; `repo` is the display name (basename), `repoKey` the **canonical absolute repo root** (basename alone would let two same-named clones suppress each other); `trigger` is `"auto"|"forced"`; throws `.code="CHAIN_EXISTS"` (auto only, non-aborted match on **repoKey+artifact+contentHash**) or `.code="RESERVE_FAILED"` (any lock/IO/log-read/corrupt-log failure — fatal both modes)
   - `appendResult(logPath, entry) -> boolean` (non-fatal: false + stderr warning on failure)
-  - `appendNote(logPath, {chainId, unique, outcome, comment}) -> void` (throws on unknown chain, duplicate note, invalid outcome, or IO failure)
-  - `computeStats(logPath) -> {open: number, byOutcome: object, forced: number, eligible: number, uniqueTotal: number, uniquePer5: number|null, openChainIds: string[]}`
+  - `appendNote(logPath, {chainId, unique, outcome, comment}) -> void` (throws on unknown chain, duplicate note, invalid outcome, non-integer/negative unique, IO failure, or **lifecycle mismatch** — the claimed outcome must match recorded events: `audit-pass` needs an audit line with verdict `PASS`, `audit-concerns-*` an audit line with `CONCERNS`, `cap-revise` a review line with `REVISE`; `aborted` is always allowed as the escape hatch. Refusal messages point at manual log repair for the rare best-effort-append-failure case)
+  - `computeStats(logPath) -> {open: number, byOutcome: object, forced: number, eligible: number, uniqueTotal: number, uniquePer5: number|null, openChainIds: string[], corruptLines: number}` (tolerant read, but corrupt lines are counted and reported, never hidden)
   - `OUTCOMES` = `["audit-pass","audit-concerns-user-approved","audit-concerns-dismissed","cap-revise","aborted"]` (`…-dismissed` = user dispositioned concerns by dismissal-with-reason rather than amendment — distinct class so the gate data stays honest)
 
 - [ ] **Step 1: Write the failing tests (append to the test file)**
 
 ```js
-import { mkdtempSync, writeFileSync, readFileSync, chmodSync, mkdirSync, utimesSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, chmodSync, mkdirSync, utimesSync, existsSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -374,7 +374,7 @@ const tmp = () => mkdtempSync(join(tmpdir(), "codexrev-"));
 
 test("reserveChain: auto refuses on existing non-aborted hash; aborted chains don't block", () => {
   const logPath = join(tmp(), "log.jsonl");
-  const base = { logPath, repo: "r", artifact: "a.md", contentHash: "aaaa000000000000", trigger: "auto" };
+  const base = { logPath, repo: "r", repoKey: "/x/r", artifact: "a.md", contentHash: "aaaa000000000000", trigger: "auto" };
   const { chainId } = reserveChain(base);
   assert.throws(() => reserveChain(base), (e) => e.code === "CHAIN_EXISTS");
   appendNote(logPath, { chainId, unique: 0, outcome: "aborted", comment: "aborted: timeout" });
@@ -384,7 +384,7 @@ test("reserveChain: auto refuses on existing non-aborted hash; aborted chains do
 test("reserveChain: force bypasses hash check but not IO failure; auto fails closed on unwritable log", () => {
   const dir = tmp();
   const logPath = join(dir, "log.jsonl");
-  const base = { logPath, repo: "r", artifact: "a.md", contentHash: "bbbb000000000000" };
+  const base = { logPath, repo: "r", repoKey: "/x/r", artifact: "a.md", contentHash: "bbbb000000000000" };
   reserveChain({ ...base, trigger: "auto" });
   assert.ok(reserveChain({ ...base, trigger: "forced" }).chainId); // duplicate hash allowed under force
   const roDir = join(dir, "ro"); mkdirSync(roDir); chmodSync(roDir, 0o500);
@@ -410,10 +410,10 @@ test("lock: held fresh lock refuses; stale lock broken; release is ownership-saf
 
 test("guard scope is repo+artifact+hash; identical content elsewhere doesn't block; unreadable log fails closed", () => {
   const logPath = join(tmp(), "log.jsonl");
-  const a = { logPath, repo: "r", artifact: "a.md", contentHash: "dddd000000000000", trigger: "auto" };
+  const a = { logPath, repo: "r", repoKey: "/x/r", artifact: "a.md", contentHash: "dddd000000000000", trigger: "auto" };
   reserveChain(a);
   assert.ok(reserveChain({ ...a, artifact: "b.md" }).chainId, "same content at a different path must not be blocked");
-  assert.ok(reserveChain({ ...a, repo: "other" }).chainId, "same content in a different repo must not be blocked");
+  assert.ok(reserveChain({ ...a, repoKey: "/y/r" }).chainId, "a same-named clone at a different path must not be blocked");
   chmodSync(logPath, 0o000);
   assert.throws(() => reserveChain({ ...a, contentHash: "eeee000000000000" }), (e) => e.code === "RESERVE_FAILED",
     "an unreadable log must fail closed, not look empty");
@@ -422,31 +422,48 @@ test("guard scope is repo+artifact+hash; identical content elsewhere doesn't blo
   chmodSync(logPath, 0o600);
 });
 
-test("appendNote validates chain, duplicates, outcome class; appendResult is non-fatal", () => {
+test("appendNote validates chain, duplicates, outcome class, unique, and lifecycle; appendResult is non-fatal", () => {
   const logPath = join(tmp(), "log.jsonl");
-  const { chainId } = reserveChain({ logPath, repo: "r", artifact: "a.md", contentHash: "cccc000000000000", trigger: "auto" });
+  const { chainId } = reserveChain({ logPath, repo: "r", repoKey: "/x/r", artifact: "a.md", contentHash: "cccc000000000000", trigger: "auto" });
   assert.throws(() => appendNote(logPath, { chainId: "nope", unique: 0, outcome: "audit-pass" }));
   assert.throws(() => appendNote(logPath, { chainId, unique: 0, outcome: "not-a-class" }));
   for (const bad of [-1, 1.5, NaN, Infinity, "abc"]) {
     assert.throws(() => appendNote(logPath, { chainId, unique: bad, outcome: "audit-pass" }), (e) => e.code === "BAD_UNIQUE");
   }
+  // lifecycle: an outcome must match recorded events — audit-pass with no passing audit refuses
+  assert.throws(() => appendNote(logPath, { chainId, unique: 2, outcome: "audit-pass" }), (e) => e.code === "LIFECYCLE_MISMATCH");
+  assert.equal(appendResult(logPath, { chainId, mode: "audit", verdict: "PASS" }), true);
   appendNote(logPath, { chainId, unique: 2, outcome: "audit-pass", comment: "ok" });
   assert.throws(() => appendNote(logPath, { chainId, unique: 1, outcome: "audit-pass" })); // duplicate
   assert.equal(appendResult(join(tmp(), "no-such-dir-parent", "x", "log.jsonl"), { mode: "review" }), false);
-  assert.equal(appendResult(logPath, { mode: "review", chainId, round: 1, verdict: "REVISE" }), true);
+});
+
+test("strict reads: a malformed log line is fatal to guard and notes, counted by stats", () => {
+  const logPath = join(tmp(), "log.jsonl");
+  const a = { logPath, repo: "r", repoKey: "/x/r", artifact: "a.md", contentHash: "abcd000000000000", trigger: "auto" };
+  const { chainId } = reserveChain(a);
+  appendFileSync(logPath, '{"ts":"2026-07-14","chainId":"tru\n'); // truncated mid-write
+  assert.throws(() => reserveChain({ ...a, contentHash: "abce000000000000" }), (e) => e.code === "RESERVE_FAILED",
+    "guard must not treat corrupted state as absent");
+  assert.throws(() => appendNote(logPath, { chainId, unique: 0, outcome: "aborted" }),
+    (e) => e.code === "LOG_CORRUPT" || e.code === "NOTE_FAILED");
+  assert.equal(computeStats(logPath).corruptLines, 1);
 });
 
 test("computeStats: eligible = auto && !aborted; uniquePer5; open chains flagged", () => {
   const logPath = join(tmp(), "log.jsonl");
-  const mk = (hash, trigger) => reserveChain({ logPath, repo: "r", artifact: "a.md", contentHash: hash, trigger }).chainId;
+  const mk = (hash, trigger) => reserveChain({ logPath, repo: "r", repoKey: "/x/r", artifact: "a.md", contentHash: hash, trigger }).chainId;
   const c1 = mk("0000000000000001", "auto");
+  appendResult(logPath, { chainId: c1, mode: "audit", verdict: "PASS" });
   appendNote(logPath, { chainId: c1, unique: 2, outcome: "audit-pass" });
   const c2 = mk("0000000000000002", "auto");
   appendNote(logPath, { chainId: c2, unique: 0, outcome: "aborted", comment: "aborted: error" });
   const c3 = mk("0000000000000003", "forced");
+  appendResult(logPath, { chainId: c3, mode: "review", verdict: "REVISE" });
   appendNote(logPath, { chainId: c3, unique: 1, outcome: "cap-revise" });
   const c4 = mk("0000000000000004", "auto"); // open, no note
   const s = computeStats(logPath);
+  assert.equal(s.corruptLines, 0);
   assert.equal(s.eligible, 1);
   assert.equal(s.uniqueTotal, 2);
   assert.equal(s.uniquePer5, 10); // 2 unique / 1 eligible * 5
@@ -479,7 +496,7 @@ export function logPathDefault() {
 
 function err(code, message) { const e = new Error(message); e.code = code; return e; }
 
-export function readLogLines(logPath) {
+export function readLogLines(logPath, { strict = false } = {}) {
   let raw;
   try {
     raw = readFileSync(logPath, "utf8");
@@ -490,7 +507,12 @@ export function readLogLines(logPath) {
   const out = [];
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
-    try { out.push(JSON.parse(line)); } catch { /* skip junk */ }
+    try {
+      out.push(JSON.parse(line));
+    } catch {
+      // A truncated reservation must not look absent to the guard/notes.
+      if (strict) throw err("LOG_CORRUPT", `malformed log line (repair ${logPath} manually): ${line.slice(0, 80)}`);
+    }
   }
   return out;
 }
@@ -541,10 +563,10 @@ function chainStates(lines) {
 }
 
 export function getChainState(logPath, chainId) {
-  return chainStates(readLogLines(logPath)).get(chainId) ?? null;
+  return chainStates(readLogLines(logPath, { strict: true })).get(chainId) ?? null;
 }
 
-export function reserveChain({ logPath, repo, artifact, contentHash, trigger }) {
+export function reserveChain({ logPath, repo, repoKey, artifact, contentHash, trigger }) {
   const lockPath = logPath + ".lock";
   const ts = new Date().toISOString();
   try { mkdirSync(joinPath(logPath, ".."), { recursive: true }); } catch { }
@@ -559,24 +581,24 @@ export function reserveChain({ logPath, repo, artifact, contentHash, trigger }) 
     // would otherwise open a chain that can never be validated or closed.
     let lines;
     try {
-      lines = readLogLines(logPath);
+      lines = readLogLines(logPath, { strict: true });
     } catch (e) {
       throw err("RESERVE_FAILED", `cannot read log, failing closed: ${e.message}`);
     }
     if (trigger === "auto") {
       for (const { open, note } of chainStates(lines).values()) {
-        // Scope: repo + artifact + hash — hash alone would let identical content
-        // in different repos/paths suppress each other across the shared log.
-        if (open.repo === repo && open.artifact === artifact && open.contentHash === contentHash
+        // Scope: repoKey (canonical absolute root, not basename — two clones named
+        // alike must not suppress each other) + artifact + hash.
+        if (open.repoKey === repoKey && open.artifact === artifact && open.contentHash === contentHash
             && note?.outcome !== "aborted") {
-          throw err("CHAIN_EXISTS", `non-aborted chain ${open.chainId} already exists for ${repo}:${artifact}@${contentHash}`);
+          throw err("CHAIN_EXISTS", `non-aborted chain ${open.chainId} already exists for ${repoKey}:${artifact}@${contentHash}`);
         }
       }
     }
-    // repo is part of chain identity — identical path+content in two repos must
+    // repoKey is part of chain identity — identical path+content in two repos must
     // not be able to mint the same id in the same millisecond.
-    const chainId = mintChainId(`${repo}:${artifact}`, contentHash, ts);
-    const line = { ts, chainId, repo, artifact, contentHash, mode: "open", trigger };
+    const chainId = mintChainId(`${repoKey}:${artifact}`, contentHash, ts);
+    const line = { ts, chainId, repo, repoKey, artifact, contentHash, mode: "open", trigger };
     try {
       appendFileSync(logPath, JSON.stringify(line) + "\n");
     } catch (e) {
@@ -588,12 +610,12 @@ export function reserveChain({ logPath, repo, artifact, contentHash, trigger }) 
     // exactly one racer wins; losers self-abort their own line and refuse.
     if (trigger === "auto") {
       let after;
-      try { after = readLogLines(logPath); } catch (e) {
+      try { after = readLogLines(logPath, { strict: true }); } catch (e) {
         throw err("RESERVE_FAILED", `post-append verification read failed: ${e.message}`);
       }
       const states = chainStates(after);
       const firstOpen = after.find((l) =>
-        l.mode === "open" && l.repo === repo && l.artifact === artifact && l.contentHash === contentHash
+        l.mode === "open" && l.repoKey === repoKey && l.artifact === artifact && l.contentHash === contentHash
         && states.get(l.chainId)?.note?.outcome !== "aborted");
       if (firstOpen && firstOpen.chainId !== chainId) {
         // Lost the race — close our own line so it never blocks anything.
@@ -634,9 +656,23 @@ export function appendNote(logPath, { chainId, unique, outcome, comment }) {
     throw err("NOTE_FAILED", `could not lock log for note: ${e.message}`);
   }
   try {
-    const chain = chainStates(readLogLines(logPath)).get(chainId);
+    const lines = readLogLines(logPath, { strict: true });
+    const chain = chainStates(lines).get(chainId);
     if (!chain) throw err("UNKNOWN_CHAIN", `no open line for chain ${chainId}`);
     if (chain.note) throw err("DUPLICATE_NOTE", `chain ${chainId} already has a note`);
+    // Lifecycle: the claimed outcome must match recorded events, or the gate's
+    // sole success metric can be corrupted by a bookkeeping slip. "aborted" is
+    // the always-allowed escape hatch.
+    if (outcome !== "aborted") {
+      const has = (m, v) => lines.some((l) => l.chainId === chainId && l.mode === m && l.verdict === v);
+      const ok = outcome === "audit-pass" ? has("audit", "PASS")
+        : outcome === "cap-revise" ? has("review", "REVISE")
+        : has("audit", "CONCERNS"); // both audit-concerns-* classes
+      if (!ok) {
+        throw err("LIFECYCLE_MISMATCH",
+          `outcome ${outcome} does not match recorded events for chain ${chainId}; if a best-effort result append was lost, repair ${logPath} manually`);
+      }
+    }
     const line = {
       ts: new Date().toISOString(), chainId, mode: "note",
       unique: n, trigger: chain.open.trigger, outcome, comment: comment ?? "",
@@ -648,8 +684,23 @@ export function appendNote(logPath, { chainId, unique, outcome, comment }) {
 }
 
 export function computeStats(logPath) {
-  const chains = chainStates(readLogLines(logPath));
-  const s = { open: 0, byOutcome: {}, forced: 0, eligible: 0, uniqueTotal: 0, uniquePer5: null, openChainIds: [] };
+  // Tolerant read (stats must work on a damaged log), but corruption is
+  // counted and reported — never hidden.
+  let raw;
+  try {
+    raw = readFileSync(logPath, "utf8");
+  } catch (e) {
+    if (e.code !== "ENOENT") throw err("LOG_UNREADABLE", `log read failed: ${e.message}`);
+    raw = "";
+  }
+  const lines = [];
+  let corruptLines = 0;
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try { lines.push(JSON.parse(line)); } catch { corruptLines++; }
+  }
+  const chains = chainStates(lines);
+  const s = { open: 0, byOutcome: {}, forced: 0, eligible: 0, uniqueTotal: 0, uniquePer5: null, openChainIds: [], corruptLines };
   for (const [chainId, { open, note }] of chains) {
     if (!note) { s.open++; s.openChainIds.push(chainId); continue; }
     s.byOutcome[note.outcome] = (s.byOutcome[note.outcome] ?? 0) + 1;
@@ -667,7 +718,7 @@ export function computeStats(logPath) {
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `node --test plugins/codex-review/skills/codex-plan-review/scripts/codex-review.test.mjs`
-Expected: PASS (14/14).
+Expected: PASS (15/15).
 
 - [ ] **Step 5: Commit**
 
@@ -707,7 +758,7 @@ import { spawnSync, spawn as spawnAsync } from "node:child_process";
 const SCRIPT = new URL("./codex-review.mjs", import.meta.url).pathname;
 
 function makeShim(dir, mode) {
-  // mode: ok | noverdict | fail | slow | garbage — recorded argv goes to <dir>/argv.json
+  // mode: ok | noverdict | fail | slow | garbage | auditpass — recorded argv goes to <dir>/argv.json
   const shim = `#!/usr/bin/env node
 const fs = require("node:fs");
 fs.writeFileSync(process.env.SHIM_DIR + "/argv.json", JSON.stringify(process.argv.slice(2)));
@@ -719,6 +770,7 @@ if (mode === "fail") {
   console.log(JSON.stringify({ type: "turn.failed", error: { message: "boom" } }));
 } else {
   const text = mode === "noverdict" ? "- [P1] thing\\nno verdict here"
+    : mode === "auditpass" ? "All coherent as a whole.\\nAUDIT: PASS"
     : "- [P1] one\\n- [P2] two\\nVERDICT: REVISE";
   console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text } }));
   console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 2 } }));
@@ -852,13 +904,21 @@ test("e2e: audit --retry-verdict resumes only the audit's own recorded session",
   const noRetry = runCli(["audit", artifact, "--chain", first.chainId, "--resume", "sess-123"], shim.env, logPath);
   assert.notEqual(noRetry.status, 0);
   assert.match(noRetry.stderr, /only valid with --retry-verdict/);
-  // …and the legitimate retry resumes with the AUDIT-specific nudge.
+  // …and the legitimate retry (recorded audit verdict is UNPARSEABLE — the "ok"
+  // shim has no AUDIT line) resumes with the AUDIT-specific nudge.
   const a = runCli(["audit", artifact, "--chain", first.chainId, "--resume", "sess-123", "--retry-verdict"], shim.env, logPath);
   assert.equal(a.status, 0, a.stderr);
   const argv = shim.argv();
   assert.deepEqual(argv.slice(0, 3), ["exec", "resume", "sess-123"]);
   assert.match(argv[argv.length - 1], /missing the audit line/);
   assert.doesNotMatch(argv[argv.length - 1], /VERDICT:/);
+  // A COMPLETED audit (real verdict) must not be resumable — one audit per chain.
+  const a2 = join(dir, "plan2.md"); writeFileSync(a2, "# plan two");
+  const second = JSON.parse(runCli(["review", a2, "--auto"], shim.env, logPath).stdout);
+  runCli(["audit", a2, "--chain", second.chainId], { ...shim.env, SHIM_MODE: "auditpass" }, logPath);
+  const done = runCli(["audit", a2, "--chain", second.chainId, "--resume", "sess-123", "--retry-verdict"], shim.env, logPath);
+  assert.notEqual(done.status, 0);
+  assert.match(done.stderr, /only for an UNPARSEABLE audit/);
 });
 
 test("e2e: concurrent auto opens on the same artifact — exactly one wins", async () => {
@@ -909,11 +969,17 @@ test("e2e: timeout kills codex, verdict timeout, non-zero exit", () => {
   assert.equal(JSON.parse(r.stdout).verdict, "timeout");
 });
 
-test("e2e: note + stats close the loop", () => {
+test("e2e: review → audit → note → stats close the loop with lifecycle intact", () => {
   const dir = tmp(); const logPath = join(dir, "log.jsonl");
   const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
   const shim = makeShim(dir, "ok");
   const first = JSON.parse(runCli(["review", artifact, "--auto"], shim.env, logPath).stdout);
+  // note before any audit must refuse (lifecycle) …
+  const early = runCli(["note", "--chain", first.chainId, "--unique", "1", "--outcome", "audit-pass"], shim.env, logPath);
+  assert.notEqual(early.status, 0);
+  // … audit passes (auditpass shim), then the note is legal
+  const a = runCli(["audit", artifact, "--chain", first.chainId], { ...shim.env, SHIM_MODE: "auditpass" }, logPath);
+  assert.equal(JSON.parse(a.stdout).verdict, "PASS");
   const n = runCli(["note", "--chain", first.chainId, "--unique", "1", "--outcome", "audit-pass", "--comment", "dogfood"], shim.env, logPath);
   assert.equal(n.status, 0, n.stderr);
   const s = runCli(["stats"], shim.env, logPath);
@@ -971,7 +1037,7 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
     if (auto === force) die("exactly one of --auto or --force is required to open a chain");
     trigger = auto ? "auto" : "forced";
     try {
-      chainId = reserveChain({ logPath, repo, artifact: relPath, contentHash: hash, trigger }).chainId;
+      chainId = reserveChain({ logPath, repo, repoKey: repoRoot, artifact: relPath, contentHash: hash, trigger }).chainId;
     } catch (e) {
       die(`refused: ${e.message}`, e.code === "CHAIN_EXISTS" ? 3 : 2);
     }
@@ -979,11 +1045,12 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
     if (!chainId) die("--chain <chainId> is required for resumed rounds and audits");
     // Validate before spending quota: a typo'd/stale chain id would produce
     // orphan result lines that note can never close.
-    const st = getChainState(logPath, chainId);
+    let st;
+    try { st = getChainState(logPath, chainId); } catch (e) { die(`log unusable: ${e.message}`, 2); }
     if (!st) die(`unknown chain: ${chainId}`, 6);
     if (st.note) die(`chain ${chainId} is already closed (outcome: ${st.note.outcome})`, 6);
-    if (st.open.repo !== repo || st.open.artifact !== relPath) {
-      die(`chain ${chainId} belongs to ${st.open.repo}:${st.open.artifact}, not ${repo}:${relPath}`, 6);
+    if (st.open.repoKey !== repoRoot || st.open.artifact !== relPath) {
+      die(`chain ${chainId} belongs to ${st.open.repoKey}:${st.open.artifact}, not ${repoRoot}:${relPath}`, 6);
     }
     if (resume) {
       let priorSessions = [];
@@ -994,9 +1061,17 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
       } catch { /* log unreadable — validated at reservation; handled below */ }
       if (mode === "audit") {
         // audit --resume exists ONLY to retry that audit's own UNPARSEABLE session —
-        // strict on both counts, or the fresh-session audit boundary is bypassable.
+        // strict on all three counts, or the one-audit boundary is bypassable.
         if (!retryVerdict) die("audit --resume is only valid with --retry-verdict", 6);
         if (!priorSessions.includes(resume)) die(`session ${resume} is not a recorded audit session for chain ${chainId}`, 6);
+        let latestAudit;
+        try {
+          latestAudit = readLogLines(logPath)
+            .filter((l) => l.chainId === chainId && l.mode === "audit" && l.verdict).at(-1);
+        } catch { /* validated strict at getChainState already */ }
+        if (latestAudit?.verdict !== "UNPARSEABLE") {
+          die(`audit --resume is only for an UNPARSEABLE audit; recorded verdict: ${latestAudit?.verdict ?? "none"}`, 6);
+        }
       } else {
         // Review-resume: bind when records exist; result appends are best-effort,
         // so an empty record set only warns.
@@ -1099,7 +1174,7 @@ Note for the implementer: `round` is computed by counting prior `mode:"review"` 
 - [ ] **Step 4: Run the full test file**
 
 Run: `node --test plugins/codex-review/skills/codex-plan-review/scripts/codex-review.test.mjs`
-Expected: PASS (26/26).
+Expected: PASS (27/27).
 
 - [ ] **Step 5: Run the repo-wide suites to check nothing else broke**
 
@@ -1153,6 +1228,14 @@ Send a finalized plan/spec/design/ADR to OpenAI Codex (Terra, high effort, read-
 6. **UNPARSEABLE:** retry once — `… review <file> --resume <sessionId> --chain <chainId> --retry-verdict` (or the `audit … --resume <sessionId> --retry-verdict` form). If the result JSON has no `sessionId` (nothing to resume), skip the retry entirely. Still unparseable, or no session → surface to user, close the chain as aborted.
 7. **Always close the chain** (every path: pass, cap, concerns, timeout, error, abort): `… note --chain <chainId> --unique <n> --outcome <audit-pass|audit-concerns-user-approved|audit-concerns-dismissed|cap-revise|aborted> --comment "…"`. A finding counts toward `--unique` only if you judge it real AND it wasn't already known or caught by the Claude-side review stack. The result JSON's `pendingNoteChainId` reminds you which chain is open.
 8. **Report one line:** rounds used, final verdict, unique findings, and cumulative gate stats (`… stats`). Include token usage from the result JSON so the user can track quota burn.
+
+## Presenting findings (always)
+
+Never paste Codex's raw findings as your primary output. For every finding you surface to the user (REVISE walks, audit concerns), translate it to plain language in this shape:
+
+> **N. [plain-sentence headline].** What breaks if ignored: [one concrete consequence]. *Fix: [recommended action].*
+
+Keep the reviewer's original text available on request ("want the raw reviewer output?") — don't lead with it. Severity tags ([P1]/[P2]/[P3]) may be kept; reviewer jargon, file:line references, and prompt-protocol vocabulary may not, unless the user asks.
 
 ## Decision gate (trial until ~2026-07-28)
 
