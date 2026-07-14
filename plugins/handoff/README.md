@@ -9,9 +9,15 @@ when your context window fills up, and auto-loads it in the next session.
    progress bar and detects when context crosses a configurable threshold (default 70%).
    Since 0.5.0 the bar is prefixed with the working-dir basename (and `⎇branch` when in
    a git worktree) so parallel sessions in different tabs are tellable apart at a glance.
-   Since 0.5.1 overlapping statusline invocations (Claude Code can fire the next one
-   before a slow render finishes) are guarded: a concurrent run replays the previous
-   render instead of double-firing nudges or interleaving state writes.
+   Since 0.6.0, each nudge is **idempotent per band**: an atomic exclusive-create marker
+   (not a lock) guarantees a band fires at most once no matter how many invocations race,
+   and the transcript-derivation fallback is cached on the transcript's path + mtime + size
+   so the expensive read only runs when the transcript actually changed. Overlapping
+   invocations (Claude Code can fire the next one before a slow render finishes) are still
+   guarded — a concurrent run replays the previous render — but that guard is a
+   **performance guard**, not a mutex: it never breaks a lock on age alone or one whose
+   holder is alive, and correctness does not depend on it (statusLine has no documented
+   timeout).
 2. **Nudges escalate with context** — a nudge fires on every 10%-point band
    entered at or above the threshold (e.g. 70%, then again at 80%, then again
    at 90%), not just once. Marathon sessions that sail past the first nudge
@@ -161,6 +167,23 @@ deciles — so a non-decile `HANDOFF_THRESHOLD_PCT` (e.g. 75) still fires its
 first nudge as soon as context crosses 75%, then again at 85%, 95%, etc.,
 rather than waiting for the next absolute 10%-boundary.
 
+### Concurrency and caching (0.6.0)
+
+- **Nudges are idempotent per band.** An atomic exclusive-create marker
+  (`handoff-fired-<sid>-t<thr>-b<N>`) — not a lock — is what guarantees a band fires at
+  most once, no matter how many statusline invocations race to claim it. Dropping below
+  the threshold (a fresh session, or a `/compact`) clears the marker ladder, so a
+  compact-then-refill still escalates again.
+- **The transcript JSONL fallback is cached** on the transcript's path + mtime + size, so
+  the expensive full-file parse only runs when the transcript has actually changed since
+  the last invocation.
+- **The overlap guard is a performance guard** (don't pile up; replay the cached render
+  instead of recomputing), not a mutex. It never breaks a lock on age alone and never
+  breaks one whose holder is alive — but it is explicitly not race-free, and nudge
+  correctness does not depend on it.
+- **No timeout claim.** statusLine is not a hook and has no documented invocation timeout;
+  nothing here rests on Claude Code killing a slow run.
+
 ## Troubleshooting
 
 **No nudge firing even though context is high:**
@@ -202,7 +225,9 @@ gives you context, but the retro waits until you've actually done work in the ne
 | `handoff-statusline.mjs` | `~/.claude/` | Stable wrapper script that auto-resolves the latest installed plugin version (written by setup.mjs) |
 | `last-context-pct-<sid>.txt` | `$CLAUDE_PLUGIN_DATA` | Tracks last seen context % for band-crossing detection |
 | `handoff-nudge-<sid>.flag` | `$CLAUDE_PLUGIN_DATA` | Nudge flag, consumed by UserPromptSubmit; re-written on each new 10%-point band |
-| `statusline-inflight-<sid>.lock` | `$CLAUDE_PLUGIN_DATA` | In-flight marker for the overlap guard; treated as stale after 2 s |
+| `handoff-fired-<sid>-t<thr>-b<N>` | `$CLAUDE_PLUGIN_DATA` | Per-band claim marker — the atomic arbiter that makes a nudge fire at most once per band, however many invocations race. Cleared when context drops below the threshold. |
+| `transcript-usage-<sid>.json` | `$CLAUDE_PLUGIN_DATA` | Cached transcript parse, keyed on the transcript's path + mtime + size |
+| `statusline-inflight-<sid>.lock` | `$CLAUDE_PLUGIN_DATA` | In-flight marker for the (best-effort) overlap guard; breakable once past its lease AND its holder is provably gone — age alone never breaks it |
 | `last-render-<sid>.txt` | `$CLAUDE_PLUGIN_DATA` | Last rendered statusline output, replayed verbatim by overlapping invocations |
 | `<ts>-<slug>.md` | `$PROJECT_ROOT/.claude/handoffs/` | The handoff document (agent-authored) |
 | `.pending` | `$PROJECT_ROOT/.claude/handoffs/` | Auto-load marker for next session (24h TTL) |
