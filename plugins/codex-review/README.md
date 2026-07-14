@@ -1,6 +1,6 @@
 # codex-review
 
-Cross-provider adversarial **plan/design-doc review** for Claude Code, using OpenAI Codex (GPT-5.6 Terra) as the reviewer. Fills the gap the official [`openai/codex-plugin-cc`](https://github.com/openai/codex-plugin-cc) plugin doesn't cover (its issue #4): reviewing plans and design docs, not just diffs. v0.2 adds an experimental **diff mode** (see below) — unproven, and not a replacement for the official plugin's `/codex:review`.
+Cross-provider adversarial **plan/design-doc review** for Claude Code, using OpenAI Codex (GPT-5.6 Terra) as the reviewer. Fills the gap the official [`openai/codex-plugin-cc`](https://github.com/openai/codex-plugin-cc) plugin doesn't cover (its issue #4): reviewing plans and design docs, not just diffs. v0.2 added **diff mode** (see below), now proven on three dogfoods — still not a replacement for the official plugin's interactive `/codex:review`.
 
 Design: `docs/superpowers/specs/2026-07-14-codex-plan-review-design.md`. Research: `docs/plans/2026-07-14-codex-adversarial-review-skill-research.md`.
 
@@ -19,12 +19,24 @@ At plan gates (finalized spec/plan/ADR) — or on "codex review this plan" — C
 
 Key protections (see spec for rationale): reviewer never sees Claude's self-assessment; content-hash guard prevents duplicate auto-reviews of the same artifact version (atomic, cross-session); codex exit codes are never trusted; `--output-schema` is never used; explicit `-m gpt-5.6-terra` on every call.
 
-## Diff mode (v0.2, experimental — unproven)
+## Diff mode — ✅ PROVEN (2026-07-14)
 
-**Maturity: diff mode is unproven.** The decision gate that unlocked it was earned entirely on *plan*
-review — every P1 Codex has found to date was in a design artifact, not in code. Whether Codex finds
-code bugs an Opus review misses is the open question this mode exists to answer; treat its findings as
-a second opinion, not an authority.
+Diff mode shipped with a caveat: whether a cross-family reviewer finds *code* bugs an Opus review misses
+was an open question. **Three dogfoods answered it — each found real bugs in code that had already
+passed a Claude-side review:**
+
+| Run | Reviewed | Found |
+|---|---|---|
+| 1 | its own introducing commit | a range parser that silently reviewed the **wrong, reversed** git range while reporting success; an off-by-one |
+| 2 | the deep-dive integrity branch — *after* 3 plan rounds + an audit | a host guard that let a fabricated citation aim the verifier's `WebFetch` at `169.254.169.254`; `startsWith`-only placeholder matching; unvalidated `sourceTitle`/`sourceDate` |
+| 3 | the handoff provenance branch | `.claude/handoffs/` shipped as a **git submodule** bypassed the new provenance check entirely |
+
+**Plan review and diff review catch different classes of thing.** Run 2 is the proof: a plan that had
+survived three review rounds *and* a fresh-session audit still shipped three real bugs.
+
+**So the skill now runs diff mode after implementing a reviewed plan, before the PR opens.** Findings are
+still a second opinion, not an authority — verify each against HEAD before acting (run 3 produced one
+genuine bypass and one finding that named a real test gap but was wrong about the mechanism).
 
 `diff <range> --force` reviews a git range instead of a file; `diff-audit <range> --chain <id>` is its
 one fresh-session audit round:
@@ -45,24 +57,28 @@ node plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs diff
 - Same 3-round + 1-audit protocol as plan mode, now actually enforced: a 4th review round and a 2nd
   audit are both refused before any paid call.
 
-## Decision gate
+## Decision gate — ✅ PASSED 2026-07-14, two weeks early
 
-Trial until ~2026-07-28: the skill must produce **≥1 confirmed unique finding per ~5 eligible chains** or be retired. Check anytime:
+The trial required **≥1 confirmed unique finding per ~5 eligible chains** by ~2026-07-28. It came in at
+**37.5 per 5 — roughly 37× the bar.** The plugin is kept. `stats` is now a health check rather than a
+survival test; if `uniquePer5` collapses toward 1, revisit.
 
 ```
 node plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs stats
 ```
 
-## Escalation paths (documented, not built — unlock only if diff mode's own gate passes)
+## Escalation paths (documented, not built — still ungated)
 
 1. **SDD integration** — add Codex as an extra reviewer in the subagent-driven-development review stage.
 2. **adversarial-agents persona** — a `codex` persona dispatched via Bash CLI instead of an Agent subagent.
 
-Both need evidence that diff mode itself pulls weight before adding a paid external call to a hot path
-like every SDD run. Not planned: PR-number input (`--pr 34`) — a git range already covers it — and
-reviewing a diff against its plan, which is exactly what the self-assessment redaction rule forbids.
+Diff mode has now earned its keep (above), which was the precondition. Neither of these is built yet:
+both put a **paid external call on a hot path** (every SDD run, every panel), so each needs its own
+trial before it goes in — the same discipline that made diff mode worth keeping. Do not wire either into
+an automated gate on the strength of diff mode's numbers alone.
 
-If the gate fails: retire this plugin; keep the official plugin for interactive diff review.
+Not planned: PR-number input (`--pr 34`) — a git range already covers it — and reviewing a diff against
+its plan, which is exactly what the self-assessment redaction rule forbids.
 
 ## Manual smoke test (run after Codex CLI upgrades)
 

@@ -1,6 +1,6 @@
 ---
 name: codex-plan-review
-description: Cross-provider adversarial review of a finalized plan, spec, design doc, or ADR using OpenAI Codex (GPT-5.6 Terra). AUTO-TRIGGER at plan gates — invoke this skill immediately after any of: (1) a brainstorming spec is written and user-approved, (2) a writing-plans implementation plan is finalized, (3) an ADR draft is completed, (4) an SDD plan is confirmed at its gate. Also invoke on request — "codex review this plan", "get a second opinion on this design", "terra review". Runs a bounded verdict loop (max 3 rounds + 1 audit) via the local codex CLI; each chain burns ChatGPT-subscription quota, so never re-run on the same artifact without an explicit user ask.
+description: Cross-provider adversarial review of a finalized plan, spec, design doc, or ADR using OpenAI Codex (GPT-5.6 Terra). AUTO-TRIGGER at plan gates — invoke this skill immediately after any of: (1) a brainstorming spec is written and user-approved, (2) a writing-plans implementation plan is finalized, (3) an ADR draft is completed, (4) an SDD plan is confirmed at its gate. Also AUTO-TRIGGER for code: after implementing a Codex-reviewed plan, run diff mode on the branch range before opening the PR — a reviewed plan is NOT a reviewed diff (proven: a branch that passed 3 plan rounds + an audit still shipped 3 real bugs that diff mode caught). Also invoke on request — "codex review this plan", "codex review this diff", "get a second opinion on this design", "terra review". Runs a bounded verdict loop (max 3 rounds + 1 audit) via the local codex CLI; each chain burns ChatGPT-subscription quota, so never re-run on the same artifact without an explicit user ask.
 ---
 
 # Codex Plan Review
@@ -22,11 +22,31 @@ Send a finalized plan/spec/design/ADR to OpenAI Codex (Terra, high effort, read-
 
 ## Diff mode (code review)
 
-> **Maturity: diff mode is unproven.** The decision gate that unlocked it was earned entirely on
-> *plan* review — every P1 Codex has found to date was in a design artifact, not in code. Whether a
-> cross-family reviewer finds code bugs an Opus review misses is an **open question this mode exists
-> to answer**. Treat its findings as a second opinion, not an authority, and do not wire it into an
-> automated gate until it has earned one the way plan mode did.
+> **Maturity: PROVEN (2026-07-14). The open question is answered — run it.**
+>
+> Diff mode shipped with the caveat that a cross-family reviewer finding *code* bugs an Opus review
+> misses was an open question. Three dogfoods answered it, and each found real bugs **in code that had
+> already passed a Claude-side review**:
+>
+> | Run | Reviewed | Found |
+> |---|---|---|
+> | 1 | its own introducing commit | a range parser that silently reviewed the **wrong, reversed** git range while reporting success; an off-by-one |
+> | 2 | the deep-dive integrity branch — *after* 3 plan rounds + an audit | a host guard that let a fabricated finding aim the verifier's `WebFetch` at `169.254.169.254`; `startsWith`-only placeholder matching; unvalidated `sourceTitle`/`sourceDate` |
+> | 3 | the handoff provenance branch | `.claude/handoffs/` as a **git submodule** bypassed the provenance check entirely (the parent tracks only a gitlink) |
+>
+> **Plan review and diff review catch different classes of thing.** Run #2 is the proof: a plan that
+> had survived three review rounds *and* a fresh-session audit still shipped three real bugs. Do not
+> treat "the plan was reviewed" as "the code is reviewed."
+>
+> **So: after implementing a reviewed plan, run `diff <mergeBase>..HEAD --force` before opening the PR.**
+> Fold the findings, verify each against the actual code (see below), then merge.
+
+**Verify every finding against HEAD before acting on it.** A finding is a *hypothesis about the code*,
+and it can be stale, or simply wrong about the mechanism. Reproduce it at the console first — it costs
+one command. In run #3, one finding was a genuine submodule bypass (reproduced end to end, fixed) and
+the other named a real test gap but proposed a mechanism that was **false** (`ls-files --error-unmatch`
+reads the index, not the worktree, so the unlink it blamed was irrelevant). Both were worth having;
+neither should have been applied on trust.
 
 `diff <range> --force` reviews a git range instead of a file; `diff-audit <range> --chain <id>` is its
 one fresh-session audit round. Same script, same verdict-loop mechanics, same chain log.
@@ -56,9 +76,14 @@ Never paste Codex's raw findings as your primary output. For every finding you s
 
 Keep the reviewer's original text available on request ("want the raw reviewer output?") — don't lead with it. Severity tags ([P1]/[P2]/[P3]) may be kept; reviewer jargon, file:line references, and prompt-protocol vocabulary may not, unless the user asks.
 
-## Decision gate (trial until ~2026-07-28)
+## Decision gate — ✅ PASSED 2026-07-14, two weeks early
 
-`stats` must show ≥1 unique finding per 5 eligible chains (`uniquePer5 >= 1`) for the skill to survive. If the trial fails, recommend retiring the skill (escalation paths live in the plugin README).
+The trial required ≥1 unique finding per 5 eligible chains (`uniquePer5 >= 1`) by ~2026-07-28. It came
+in at **37.5 per 5 — about 37× the bar** — and diff mode has since cleared its own open question (above).
+
+The skill is **kept**. `stats` is now a health check, not a survival test: if `uniquePer5` collapses
+toward 1, revisit. Remaining escalation paths (SDD hook, adversarial persona) live in the plugin README
+and are still ungated — do not wire this into an automated gate without a fresh trial.
 
 ## Common mistakes
 
