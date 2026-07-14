@@ -37,9 +37,14 @@ So the design is two layers, each honest about what it is:
    results or doing anything irreversible. That is a real process exit code, and it is the gate
    that actually holds. It is post-hoc, which is exactly why layer 1 exists as well.
 
-The in-workflow check is also *structurally* strengthened so a lazy verifier has less room:
-the claimed SHA must equal the observed `HEAD`, and for a merge, every merged task's branch tip
-must be an ancestor of that head. A merger cannot satisfy that by naming some old green commit.
+The in-workflow check is also *structurally* strengthened so a lazy verifier has less room. The
+verifier reports **the two SHAs git actually printed** (the resolved claim, and the resolved
+`HEAD`) and the workflow compares them itself — a boolean like `headMatchesClaim` would just be
+another string the agent could set. And for a merge, every **succeeded task's commit** must be an
+ancestor of that head. Note *commit*, not branch: `prompts/merger.md:21` runs
+`git branch -d sdd/t<N>` before returning, so a branch-name ancestry check would fail on every
+wave (Codex review, round 2, P1). Checking the immutable commit SHA the implementer reported is
+both correct and stronger.
 
 **Tech Stack:** Node 18+ ESM, stdlib only, `// @ts-check`. Tests: `node --test`.
 
@@ -151,31 +156,37 @@ Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
 - Create: `plugins/subagent-driven-development/workflows/sdd.orchestration.test.mjs`
 
 **Interfaces:**
-- Produces: `runWorkflow({ args, respond })` → the workflow's return value, plus the recorded
-  call log. Tasks 3 and 4 test their orchestration through it.
+- Produces: `runWorkflow({ args, respond })` → `{ result, calls }`. Tasks 3 and 4 test their
+  orchestration through it.
 
 **Background (Codex review, round 1, P2):** the existing tests cannot catch the bugs this batch
-fixes. `sdd.test.mjs` extracts and unit-tests *pure helpers*; `sdd.smoke.test.mjs` runs regexes
-over the *source text*. Neither can tell you that `base` advanced before verification, that a
-verifier ran at all, or that the final fixer's result reached `head` — those are orchestration
-properties, and a regex asserting "the source contains `verify:final-fix`" passes happily while
-the wiring around it is wrong.
+fixes. `sdd.test.mjs` unit-tests *pure helpers*; `sdd.smoke.test.mjs` runs regexes over the
+*source text*. Neither can tell you that `base` advanced before verification or that the final
+fixer's result reached `head` — those are orchestration properties, and a regex asserting "the
+source contains `verify:final-fix`" passes happily while the wiring around it is wrong.
 
 The file cannot be `import()`ed: a Workflow script has a top-level `return` (the runtime wraps the
-body in a function). So the harness reconstructs that wrapper — strip the `export const meta`
-declaration, wrap the rest in an async `Function` whose parameters are the runtime globals
-(`agent`, `phase`, `log`, `parallel`, `pipeline`, `args`), and drive it with a scripted `agent`
-mock keyed by each call's `label`.
+body in a function). So the harness reconstructs that wrapper — strip `export const meta`, wrap the
+rest in an async `Function` whose parameters are the runtime globals — and drives it with an
+`agent` mock keyed by each call's `label`.
 
-- [ ] **Step 1: Write the harness and a baseline test that must pass today**
+**Two facts the harness must respect, or its tests are worthless:**
+- **Wave indices start at 0.** The loop is `for (let w = 0; ...)`, so the first wave's merge label
+  is `merge:w0`, not `merge:w1`.
+- **A single-task wave never reaches the merge gate.** `sdd.mjs` short-circuits `wave.length === 1`
+  to a shared-workdir path with no merge agent. **A merge test therefore needs at least two
+  dependency-free tasks** (Codex review, round 2, P1) — a one-task fixture would silently test
+  nothing.
+
+- [ ] **Step 1: Write the harness and a baseline test that passes against the CURRENT sdd.mjs**
 
 Create `plugins/subagent-driven-development/workflows/sdd.orchestration.test.mjs`:
 
 ```js
 // @ts-check
 // Orchestration tests: run the ACTUAL workflow body with a mocked agent() so we can assert
-// ordering and state transitions. sdd.test.mjs covers pure helpers; sdd.smoke.test.mjs greps
-// the source; neither can catch "base advanced before verification".
+// ordering and state transitions. sdd.test.mjs covers pure helpers; sdd.smoke.test.mjs greps the
+// source; neither can catch "base advanced before verification".
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -186,21 +197,25 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "sdd.mjs"), "utf8");
 
 // A Workflow script has a top-level `return` (the runtime wraps the body in a function), so it
-// cannot be import()ed. Rebuild that wrapper: drop the `export const meta = {...};` declaration
-// and run the remainder as an async function whose params are the runtime globals.
+// cannot be import()ed. Rebuild that wrapper.
 const body = src.replace(/export const meta\s*=\s*\{[\s\S]*?\n\};/, "");
+
+const SHA = (c) => c.repeat(40);
 
 /**
  * @param {{args: any, respond: (label: string, prompt: string) => any}} opts
- * @returns {Promise<{result: any, calls: {label: string, model: string, phase?: string}[]}>}
+ * @returns {Promise<{result: any, calls: {label: string, model: string}[], prompts: Record<string,string>}>}
  */
 async function runWorkflow({ args, respond }) {
-  /** @type {{label: string, model: string, phase?: string}[]} */
+  /** @type {{label: string, model: string}[]} */
   const calls = [];
+  /** @type {Record<string,string>} */
+  const prompts = {};
   const agent = async (prompt, opts = {}) => {
     const label = opts.label || "(unlabeled)";
     assert.ok(opts.model, `agent(${label}) must set an explicit model`);
-    calls.push({ label, model: opts.model, phase: opts.phase });
+    calls.push({ label, model: opts.model });
+    prompts[label] = prompt;
     return respond(label, prompt);
   };
   const phase = () => {};
@@ -220,54 +235,70 @@ async function runWorkflow({ args, respond }) {
     `return (async () => { ${body} })();`,
   );
   const result = await fn(agent, phase, log, parallel, pipeline, args);
-  return { result, calls };
+  return { result, calls, prompts };
 }
 
-const baseArgs = () => ({
-  planPath: "p.md", workdir: "/w", pluginDir: "/p", mergeBase: "base000",
-  branchTip: "tip000", testCmd: "npm test",
+// TWO dependency-free tasks: a single-task wave short-circuits past the merge gate entirely, so a
+// one-task fixture cannot test merge verification at all.
+const waveArgs = () => ({
+  planPath: "p.md", workdir: "/w", pluginDir: "/p", mergeBase: SHA("0"),
+  branchTip: SHA("1"), testCmd: "npm test",
+  tasks: [
+    { n: 1, title: "one", tier: "sonnet", deps: [] },
+    { n: 2, title: "two", tier: "sonnet", deps: [] },
+  ],
+});
+
+const soloArgs = () => ({
+  planPath: "p.md", workdir: "/w", pluginDir: "/p", mergeBase: SHA("0"),
+  branchTip: SHA("1"), testCmd: "npm test",
   tasks: [{ n: 1, title: "one", tier: "sonnet", deps: [] }],
 });
 
-// A scripted happy path: implementer DONE, reviewer passes, merge green, verifier confirms,
-// final review clean. Individual tests override single labels via `overrides`.
+const MERGED = SHA("b");
+
+/** Scripted happy path; override any single label. Wave indices start at 0 → `merge:w0`. */
 function happyResponder(overrides = {}) {
   return (label) => {
     if (label in overrides) return overrides[label];
-    if (label.startsWith("impl")) {
-      return { status: "DONE", headSha: "a".repeat(40), testSummary: "1 pass", concerns: "", reportPath: "/w/.sdd/task-1-report.md" };
+    if (label.startsWith("impl:t")) {
+      const n = label.slice("impl:t".length);
+      return { status: "DONE", headSha: SHA(n === "1" ? "a" : "c"), testSummary: "1 pass", concerns: "", reportPath: `/w/.sdd/task-${n}-report.md` };
     }
-    if (label.startsWith("review")) {
+    if (label.startsWith("review:t")) {
       return { spec: "pass", findings: [], cannotVerify: [], quality: "fine", ponytail: { net: 0, items: [] } };
     }
-    if (label.startsWith("merge")) {
-      return { headSha: "b".repeat(40), merged: [1], conflictsResolved: [], testSummary: "1 pass", suite: "green" };
+    if (label.startsWith("merge:w")) {
+      return { headSha: MERGED, merged: [1, 2], conflictsResolved: [], testSummary: "2 pass", suite: "green" };
     }
-    if (label.startsWith("verify")) {
-      return { shaExists: true, headSha: "b".repeat(40), headMatchesClaim: true, missingTaskTips: [], suite: "green", evidence: "1 pass, 0 fail" };
+    if (label.startsWith("verify:")) {
+      // Default: the verifier confirms whatever was claimed. Tests override to inject disagreement.
+      return { claimSha: MERGED, headSha: MERGED, missingCommits: [], suite: "green", evidence: "2 pass, 0 fail" };
     }
     if (label === "final-review") return { verdict: "approve", findings: [], ponytailDebt: [] };
     throw new Error(`unscripted agent label: ${label}`);
   };
 }
 
-test("harness: the happy path completes and every agent call has a model", async () => {
-  const { result, calls } = await runWorkflow({ args: baseArgs(), respond: happyResponder() });
-  assert.equal(result.halted, null);
-  assert.equal(result.tasks.length, 1);
-  assert.ok(calls.length >= 3, "implementer, reviewer, merge at minimum");
+test("harness: a two-task wave runs implement -> review -> merge and completes", async () => {
+  const { result, calls } = await runWorkflow({ args: waveArgs(), respond: happyResponder() });
+  assert.equal(result.halted, null, JSON.stringify(result.halted));
+  assert.equal(result.tasks.length, 2);
+  const labels = calls.map((c) => c.label);
+  assert.ok(labels.includes("impl:t1") && labels.includes("impl:t2"), "both tasks implemented");
+  assert.ok(labels.includes("merge:w0"), "a two-task wave reaches the merge gate (indices start at 0)");
 });
 ```
 
-- [ ] **Step 2: Run it — the baseline must pass against the CURRENT sdd.mjs**
+**Note on the baseline:** run this against the *current* `sdd.mjs`, before Task 3. It must pass.
+The `verify:` branch in `happyResponder` is unused until Task 3 adds those calls — that is fine and
+expected. If the baseline fails for any other reason, fix the **harness**, not `sdd.mjs`, and report
+what the wrapper got wrong: a harness that does not faithfully run the real body is worse than none.
+
+- [ ] **Step 2: Run it**
 
 Run: `node --test plugins/subagent-driven-development/workflows/sdd.orchestration.test.mjs`
-Expected: PASS. This proves the harness faithfully drives the real body before you change any
-behavior with it. If the happy path throws `unscripted agent label: verify:w1`, that is expected
-**only after** Task 3 lands — right now nothing verifies, so no verify label is requested.
-
-If it fails for any other reason, fix the harness (not `sdd.mjs`) and report what the wrapper got
-wrong — a harness that does not run the real body is worse than no harness.
+Expected: PASS against the current, unmodified `sdd.mjs`.
 
 - [ ] **Step 3: Commit**
 
@@ -275,52 +306,60 @@ wrong — a harness that does not run the real body is worse than no harness.
 git add plugins/subagent-driven-development/workflows/sdd.orchestration.test.mjs
 git commit -m "test(sdd): orchestration harness that runs the real workflow body
 
-Pure-helper unit tests and source-regex smoke tests cannot catch orchestration bugs — that
-base advanced before verification, or that an agent's result was discarded. This rebuilds the
-runtime's function wrapper (a Workflow script has a top-level return, so it cannot be imported)
-and drives the real body with a scripted agent() mock.
+Pure-helper unit tests and source-regex smoke tests cannot catch orchestration bugs — that base
+advanced before verification, or that an agent's result was discarded. This rebuilds the runtime's
+function wrapper (a Workflow script has a top-level return, so it cannot be imported) and drives
+the real body with a scripted agent() mock. Uses a two-task wave: a single-task wave
+short-circuits past the merge gate, so a one-task fixture would test nothing.
 
 Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
 ```
 
 ---
 
-## Task 3: Independently check the merge gate's claim before advancing `base` (D2)
+## Task 3: Check every state advance against an independent verifier (D2 + the singleton path)
 
 **Files:**
-- Modify: `plugins/subagent-driven-development/workflows/sdd.mjs` (add `VERIFY_SCHEMA` beside
-  `MERGE_SCHEMA` ~line 215; add `isSha` + `acceptVerification` inside the PURE block; add a
-  `verifyPrompt` builder beside `mergePrompt` ~line 303; rewire the merge gate ~lines 399-411)
+- Modify: `plugins/subagent-driven-development/workflows/sdd.mjs` — add `VERIFY_SCHEMA` beside
+  `MERGE_SCHEMA` (~line 215); add `isSha` + `acceptVerification` to the PURE block; add
+  `verifyPrompt` beside `mergePrompt` (~line 303); rewire **both** the singleton path (~lines
+  384-391) and the merge gate (~lines 399-411)
 - Test: `plugins/subagent-driven-development/workflows/sdd.test.mjs`
 - Test: `plugins/subagent-driven-development/workflows/sdd.orchestration.test.mjs`
 
 **Interfaces:**
-- Produces (Task 4 consumes all three):
-  - `isSha(s)` → `true` for a full 40-char hex commit SHA. Pure.
-  - `acceptVerification(v, claimedSha, testCmd, expectTasks)` →
-    `{ ok: boolean, reason: string, headSha: string }`. Pure. `headSha` is **only ever the SHA the
-    verifier observed** — never a fallback to the claim.
-  - `verifyPrompt(claimedSha, claim, taskTips)` → prompt for a read-only verifier agent.
-  - `VERIFY_SCHEMA` — `{ shaExists, headSha, headMatchesClaim, missingTaskTips, suite, evidence }`.
+- Produces (Task 4 consumes all):
+  - `isSha(s)` → `true` only for a full 40-char lowercase hex SHA. Pure.
+  - `acceptVerification(v, testCmd)` → `{ ok, reason, headSha }`. Pure. `headSha` is **only ever
+    the SHA the verifier observed** — never a fallback to the claim.
+  - `verifyPrompt(claimedSha, claim, expectCommits)` → prompt for a read-only verifier.
+    `expectCommits` is `[{ n, sha }]` — task commits that must be contained in HEAD.
+  - `VERIFY_SCHEMA` — `{ claimSha, headSha, missingCommits, suite, evidence }`.
 
-**Background:** at `sdd.mjs:405-409` the workflow pushes the merge agent's self-reported `headSha`
-into `merges` and sets `base = merge.headSha` whenever `merge.suite !== "red"`. Nothing resolves
-the SHA against git; nothing runs `testCmd`.
+**Background:** two places advance `base` on an unchecked claim.
 
-Three structural requirements, each from a review finding — a weaker check is worse than none,
-because it manufactures false confidence:
+- **The merge gate** (`sdd.mjs:405-409`) pushes the merger's self-reported `headSha` into `merges`
+  and sets `base = merge.headSha` whenever `suite !== "red"`. Nothing resolves the SHA; nothing
+  runs `testCmd`.
+- **The singleton path** (`sdd.mjs:388-390`) — `base = r.task.headSha`, straight from the
+  *implementer's* claim, with no merge agent involved at all. This is the **common** case: a linear
+  plan is all singleton waves, so before this fix a linear run was entirely unchecked (Codex review,
+  round 2, P1). Fixing only the merge gate would leave the majority of real runs unprotected.
 
-1. **The observed head must be a real, normalized SHA.** If the verifier reports `headSha: ""`,
-   reject. Never fall back to the claimed SHA — that would advance to exactly the unverified value
-   this whole task exists to distrust (Codex review, round 1, P1).
-2. **The claimed SHA must BE the branch head** (`headMatchesClaim`). Otherwise a merger can name
-   any old green commit while the branch head is something else entirely.
-3. **For a merge, every merged task's branch tip must be an ancestor of that head**
-   (`missingTaskTips` empty). Otherwise a merger can drop a task branch, leave a green unrelated
-   head, and the workflow still records every `succeeded` task as merged.
+Four structural requirements. A weaker check is worse than none, because it manufactures
+confidence:
 
-`suite: "unknown"` is legitimate **only** when no `testCmd` was configured. With one, an
-unconfirmable suite is not evidence of green.
+1. **The verifier reports the two SHAs git printed; the workflow compares them.** Not a boolean —
+   `headMatchesClaim: true` is a string an agent can emit without looking at anything.
+   `acceptVerification` requires `claimSha === headSha`, both full 40-hex.
+2. **Never fall back to the claimed SHA.** If the verifier reports no resolved head, reject. A
+   fallback would advance to precisely the value under suspicion.
+3. **Every *succeeded* task's commit must be an ancestor of HEAD** — checked by **commit SHA**, not
+   branch name (`prompts/merger.md:21` deletes `sdd/t<N>`), and derived from the **workflow's own**
+   `succeeded` list, not the merger's `merged` array (which is itself an untrusted claim — a merger
+   could omit task 2 from `merged` and the verifier would never look for it).
+4. **`suite: "unknown"` is legitimate only when no `testCmd` was configured.** With one, an
+   unconfirmable suite is not evidence of green.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -330,93 +369,135 @@ In `sdd.test.mjs`, add `isSha` and `acceptVerification` to the destructured `H` 
 ```js
 const SHA_A = "a".repeat(40);
 const SHA_B = "b".repeat(40);
-const good = (over = {}) => ({
-  shaExists: true, headSha: SHA_A, headMatchesClaim: true, missingTaskTips: [],
-  suite: "green", evidence: "294 pass, 0 fail", ...over,
+const ok = (over = {}) => ({
+  claimSha: SHA_A, headSha: SHA_A, missingCommits: [], suite: "green",
+  evidence: "294 pass, 0 fail", ...over,
 });
 
-test("isSha accepts a full hex sha and rejects everything else", () => {
+test("isSha accepts only a full 40-char hex sha", () => {
   assert.equal(H.isSha(SHA_A), true);
   assert.equal(H.isSha(""), false);
-  assert.equal(H.isSha("abc123"), false, "a short sha is not a normalized resolved commit");
+  assert.equal(H.isSha("abc123"), false, "a short sha is not a resolved, normalized commit");
   assert.equal(H.isSha("z".repeat(40)), false);
   assert.equal(H.isSha(undefined), false);
 });
 
-test("acceptVerification: the observed head is used, and is NEVER a fallback to the claim", () => {
-  const r = H.acceptVerification(good(), SHA_A, "npm test", [1]);
+test("acceptVerification: accepts a confirmed claim and returns the OBSERVED head", () => {
+  const r = H.acceptVerification(ok(), "npm test");
   assert.equal(r.ok, true);
   assert.equal(r.headSha, SHA_A);
-  // The D2-shaped trap: verifier confirms but reports no head. Advancing to the claim here
-  // would advance to precisely the value we do not trust.
-  const empty = H.acceptVerification(good({ headSha: "" }), SHA_A, "npm test", [1]);
-  assert.equal(empty.ok, false);
-  assert.equal(empty.headSha, "");
-});
-
-test("acceptVerification: rejects an unresolvable sha, a red suite, and an unconfirmable suite", () => {
-  assert.equal(H.acceptVerification(good({ shaExists: false }), SHA_A, "npm test", [1]).ok, false);
-  assert.equal(H.acceptVerification(good({ suite: "red" }), SHA_A, "npm test", [1]).ok, false);
-  // With a testCmd configured, "unknown" is not evidence of green.
-  assert.equal(H.acceptVerification(good({ suite: "unknown" }), SHA_A, "npm test", [1]).ok, false);
-  // Without one, it is all we can ask for.
-  assert.equal(H.acceptVerification(good({ suite: "unknown" }), SHA_A, "", [1]).ok, true);
 });
 
 test("acceptVerification: rejects a head that is not the claimed commit", () => {
-  const r = H.acceptVerification(good({ headSha: SHA_B, headMatchesClaim: false }), SHA_A, "npm test", [1]);
-  assert.equal(r.ok, false, "a merger must not name one commit while the branch head is another");
+  // The verifier resolved the claim to one commit and HEAD to another: the claimant named a
+  // commit that is not the branch head. We compare the SHAs ourselves — no agent boolean.
+  const r = H.acceptVerification(ok({ claimSha: SHA_A, headSha: SHA_B }), "npm test");
+  assert.equal(r.ok, false);
   assert.match(r.reason, /head/i);
 });
 
-test("acceptVerification: rejects a merge that dropped a task branch", () => {
-  const r = H.acceptVerification(good({ missingTaskTips: [2] }), SHA_A, "npm test", [1, 2]);
+test("acceptVerification: never falls back to the claim when no head was resolved", () => {
+  const r = H.acceptVerification(ok({ headSha: "" }), "npm test");
+  assert.equal(r.ok, false);
+  assert.equal(r.headSha, "", "advancing to the claimed sha here would advance to the untrusted value");
+});
+
+test("acceptVerification: rejects an unresolvable claim, a red suite, and an unconfirmable suite", () => {
+  assert.equal(H.acceptVerification(ok({ claimSha: "" }), "npm test").ok, false);
+  assert.equal(H.acceptVerification(ok({ suite: "red" }), "npm test").ok, false);
+  // With a testCmd configured, "unknown" is not evidence of green …
+  assert.equal(H.acceptVerification(ok({ suite: "unknown" }), "npm test").ok, false);
+  // … without one, it is all we can ask for.
+  assert.equal(H.acceptVerification(ok({ suite: "unknown" }), "").ok, true);
+});
+
+test("acceptVerification: rejects a head that does not contain a succeeded task's commit", () => {
+  const r = H.acceptVerification(ok({ missingCommits: [2] }), "npm test");
   assert.equal(r.ok, false, "a green head that does not contain task 2 is not a merged wave");
   assert.match(r.reason, /2/);
 });
 
 test("acceptVerification: a missing verifier result is rejected", () => {
-  assert.equal(H.acceptVerification(null, SHA_A, "npm test", [1]).ok, false);
+  assert.equal(H.acceptVerification(null, "npm test").ok, false);
 });
 ```
 
-In `sdd.orchestration.test.mjs`, append — these are the tests that actually catch the bug:
+In `sdd.orchestration.test.mjs`, append — these catch the actual bugs:
 
 ```js
-test("merge gate: base advances to the VERIFIER's head, not the merger's claim", async () => {
-  const MERGER_CLAIM = "c".repeat(40);
-  const REAL_HEAD = "d".repeat(40);
-  const { result, calls } = await runWorkflow({
-    args: baseArgs(),
-    respond: happyResponder({
-      "merge:w1": { headSha: MERGER_CLAIM, merged: [1], conflictsResolved: [], testSummary: "1 pass", suite: "green" },
-      "verify:w1": { shaExists: true, headSha: REAL_HEAD, headMatchesClaim: true, missingTaskTips: [], suite: "green", evidence: "294 pass" },
-    }),
-  });
+test("merge gate: base advances to the verifier's resolved head, and only after verification", async () => {
+  const { result, calls } = await runWorkflow({ args: waveArgs(), respond: happyResponder() });
   assert.equal(result.halted, null);
-  assert.equal(result.head, REAL_HEAD, "head must be what the verifier resolved");
+  assert.equal(result.head, MERGED);
   const order = calls.map((c) => c.label);
-  assert.ok(order.indexOf("merge:w1") < order.indexOf("verify:w1"), "verification follows the merge");
+  assert.ok(order.indexOf("merge:w0") < order.indexOf("verify:w0"), "verification follows the merge");
+  assert.equal(result.merges[0].verified, true);
 });
 
-test("merge gate: a claimed-green merge the verifier cannot confirm halts the run", async () => {
+test("merge gate: a claimed-green merge the verifier finds red halts the run", async () => {
   const { result } = await runWorkflow({
-    args: baseArgs(),
+    args: waveArgs(),
     respond: happyResponder({
-      "verify:w1": { shaExists: true, headSha: "b".repeat(40), headMatchesClaim: true, missingTaskTips: [], suite: "red", evidence: "3 failing" },
+      "verify:w0": { claimSha: MERGED, headSha: MERGED, missingCommits: [], suite: "red", evidence: "3 failing" },
     }),
   });
   assert.ok(result.halted, "an unverified merge must halt, not poison the next wave's base");
   assert.match(result.halted.reason, /unverified/i);
   assert.equal(result.tasks.length, 0, "an unverified wave's tasks are not recorded as done");
 });
+
+test("merge gate: a merger naming a commit that is not the branch head halts the run", async () => {
+  const { result } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({
+      "verify:w0": { claimSha: MERGED, headSha: SHA("f"), missingCommits: [], suite: "green", evidence: "ok" },
+    }),
+  });
+  assert.ok(result.halted);
+  assert.match(result.halted.reason, /head/i);
+});
+
+test("merge gate: the verifier is asked about EVERY succeeded task, not the merger's list", async () => {
+  // A merger that omits task 2 from `merged` must not shrink what gets checked.
+  const { prompts } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({
+      "merge:w0": { headSha: MERGED, merged: [1], conflictsResolved: [], testSummary: "1 pass", suite: "green" },
+    }),
+  });
+  assert.match(prompts["verify:w0"], /task 2/i, "task 2 succeeded, so the verifier must check it");
+});
+
+test("singleton wave: a linear task's claimed head is verified before base advances", async () => {
+  // The common case: a linear plan is all singleton waves, and they never touch the merge gate.
+  const { result, calls } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), missingCommits: [], suite: "green", evidence: "1 pass" },
+    }),
+  });
+  assert.equal(result.halted, null);
+  assert.equal(result.head, SHA("a"));
+  assert.ok(calls.some((c) => c.label === "verify:t1"), "a singleton task is verified too");
+});
+
+test("singleton wave: an unverifiable task halts instead of advancing base", async () => {
+  const { result } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), missingCommits: [], suite: "red", evidence: "1 failing" },
+    }),
+  });
+  assert.ok(result.halted);
+  assert.match(result.halted.reason, /unverified/i);
+});
 ```
 
 - [ ] **Step 2: Run them and verify they fail**
 
 Run: `node --test plugins/subagent-driven-development/workflows/sdd.test.mjs plugins/subagent-driven-development/workflows/sdd.orchestration.test.mjs`
-Expected: FAIL — `isSha` / `acceptVerification` are undefined, and the orchestration tests fail
-because no verifier is dispatched (`result.head` is the merger's claim).
+Expected: FAIL — `isSha`/`acceptVerification` are undefined, and no `verify:*` agent is dispatched,
+so the orchestration tests see an unverified `head` and no halts.
 
 - [ ] **Step 3: Add `isSha` and `acceptVerification` to the PURE block**
 
@@ -430,57 +511,38 @@ function isSha(s) {
 /**
  * Decide whether a verifier's observation supports an agent's claim.
  *
- * This is an INDEPENDENT CHECK, not proof: sdd.mjs runs in a sandbox with no child_process, so
- * the verifier is another agent, and its report is another claim. What it buys is a fresh,
- * read-only agent with no stake in the outcome and structural requirements a lazy report cannot
- * satisfy by accident. Never call the result "proven" — the controller's post-run re-run of git
- * and the suite is the gate that actually holds.
+ * An INDEPENDENT CHECK, not proof: sdd.mjs runs in a sandbox with no child_process, so the
+ * verifier is another agent and its report is another claim. What it buys is a fresh, read-only
+ * agent with no stake in the outcome, plus structural requirements a lazy report cannot satisfy by
+ * accident. The controller's post-run re-run of git and the suite is the gate that actually holds.
  *
- * `expectTasks` is the task numbers a merge claims to have integrated ([] for a non-merge check).
+ * We compare the two SHAs the verifier says git printed — never a boolean it could simply set.
  */
-function acceptVerification(v, claimedSha, testCmd, expectTasks = []) {
+function acceptVerification(v, testCmd) {
   const no = (reason) => ({ ok: false, reason, headSha: "" });
   if (!v) return no("verifier returned no result");
-  if (!v.shaExists) return no(`claimed head ${claimedSha} does not resolve to a commit`);
-  // Never fall back to claimedSha: that is the value we do not trust.
-  if (!isSha(v.headSha)) return no(`verifier reported no resolved head sha (got ${JSON.stringify(v.headSha)})`);
-  if (v.headMatchesClaim === false) {
-    return no(`claimed head ${claimedSha} is not the branch head ${v.headSha}`);
-  }
-  const missing = Array.isArray(v.missingTaskTips) ? v.missingTaskTips : [];
-  if (missing.length) {
-    return no(`head ${v.headSha} does not contain task tip(s) ${missing.join(", ")}`);
-  }
+  if (!isSha(v.claimSha)) return no("the claimed head did not resolve to a commit");
+  // Never fall back to the claimed sha: it is the value we do not trust.
+  if (!isSha(v.headSha)) return no(`verifier reported no resolved branch head (got ${JSON.stringify(v.headSha)})`);
+  if (v.claimSha !== v.headSha) return no(`claimed commit ${v.claimSha} is not the branch head ${v.headSha}`);
+  const missing = Array.isArray(v.missingCommits) ? v.missingCommits : [];
+  if (missing.length) return no(`head ${v.headSha} does not contain task(s) ${missing.join(", ")}`);
   if (testCmd && v.suite !== "green") return no(`suite is ${v.suite} at ${v.headSha}`);
   return { ok: true, reason: "", headSha: v.headSha };
 }
 ```
 
-Add both to the `return { … }` list at the end of the PURE block.
+Add both to the `return { … }` list at the end of the PURE block, or `sdd.test.mjs` cannot extract them.
 
 - [ ] **Step 4: Add `VERIFY_SCHEMA` and `verifyPrompt`**
 
-Beside `MERGE_SCHEMA` (~line 215):
+`VERIFY_SCHEMA` goes beside `MERGE_SCHEMA` (~line 215) — it is already written in this plan's
+"Interfaces" section above; use exactly that shape.
+
+`verifyPrompt` goes beside `mergePrompt` (~line 303, in the scope closing over `cfg`):
 
 ```js
-const VERIFY_SCHEMA = {
-  type: "object", additionalProperties: false,
-  required: ["shaExists", "headSha", "headMatchesClaim", "missingTaskTips", "suite", "evidence"],
-  properties: {
-    shaExists: { type: "boolean" },
-    headSha: { type: "string" },
-    headMatchesClaim: { type: "boolean" },
-    missingTaskTips: { type: "array", items: { type: "number" } },
-    suite: { type: "string", enum: ["green", "red", "unknown"] },
-    evidence: { type: "string" },
-  },
-};
-```
-
-Beside `mergePrompt` (~line 303, in the scope that closes over `cfg`):
-
-```js
-  const verifyPrompt = (claimedSha, claim, taskTips = []) => `You are a VERIFIER. Do not fix
+  const verifyPrompt = (claimedSha, claim, expectCommits = []) => `You are a VERIFIER. Do not fix
 anything, do not commit, do not write or edit any file. Observe, then report only what you saw.
 
 Working directory: ${cfg.workdir}
@@ -491,43 +553,73 @@ Claimed head SHA: ${claimedSha}
 Run exactly these and report what they actually print:
 
 1. \`git -C ${cfg.workdir} rev-parse --verify ${claimedSha}^{commit}\`
-   If it fails: shaExists=false, put the error text in evidence, stop.
+   Report the full 40-character SHA it prints as claimSha. If it fails, claimSha="", put the error
+   text in evidence, and stop.
 2. \`git -C ${cfg.workdir} rev-parse HEAD\`
-   Report the full 40-character SHA it prints as headSha. Do NOT echo back the claimed SHA —
-   report what git printed. Set headMatchesClaim=true only if step 1 and step 2 resolved to the
-   SAME commit.
-${taskTips.length
-  ? `3. For each task number below, check its branch tip is an ancestor of HEAD:
-${taskTips.map((n) => `   \`git -C ${cfg.workdir} merge-base --is-ancestor sdd/t${n} HEAD\` (exit 0 = contained)`).join("\n")}
-   Put every task number whose branch is NOT contained in HEAD into missingTaskTips.`
-  : `3. No task tips to check for this claim: missingTaskTips=[].`}
+   Report the full 40-character SHA it prints as headSha. Report what git printed — do not echo
+   back the claimed SHA.
+${expectCommits.length
+  ? `3. Each of these task commits must be contained in HEAD. For each, run:
+${expectCommits.map((c) => `   task ${c.n}: \`git -C ${cfg.workdir} merge-base --is-ancestor ${c.sha} HEAD\` (exit 0 = contained)`).join("\n")}
+   Put the task number of every commit NOT contained in HEAD into missingCommits.
+   (Check the commit SHAs, not sdd/t<N> branches — the merger deletes those branches.)`
+  : `3. No task commits to check for this claim: missingCommits=[].`}
 ${cfg.testCmd
   ? `4. Run the suite VERBATIM from ${cfg.workdir}:
    \`${cfg.testCmd}\`
-   Read its real output. suite="green" ONLY if it ran to completion with zero failures. Failures,
-   a crash, or a command that would not run are all "red". Quote the real pass/fail summary line
-   in evidence.`
-  : `4. No test command was configured for this run: suite="unknown", put the rev-parse output in
-   evidence.`}
+   Read its real output. suite="green" ONLY if it ran to completion with zero failures. Failures, a
+   crash, or a command that would not run are all "red". Quote the real pass/fail summary line in
+   evidence.`
+  : `4. No test command was configured for this run: suite="unknown", and put the rev-parse output
+   in evidence.`}
 
 Never report a result you did not observe. A claim you could not confirm is not confirmed.`;
 ```
 
-- [ ] **Step 5: Rewire the merge gate**
+- [ ] **Step 5: Rewire the singleton path**
 
-Replace the merge-result `else` branch (~lines 405-411):
+Replace the `if (wave.length === 1) { … }` block (~lines 384-391):
+
+```js
+    if (wave.length === 1) {
+      // Degenerate case: shared workdir, no merge — but the implementer's claimed head still has to
+      // be checked, or a linear plan (all singleton waves) advances entirely on unverified claims.
+      const r = await runTask(wave[0], base, cfg.workdir);
+      if (r.halt) { halted = { wave: w, reason: "task failure(s) in wave", failures: [r.halt] }; break; }
+      const verify = await agent(
+        verifyPrompt(r.task.headSha, `task ${wave[0].n} is complete and its commit is the branch head`),
+        { label: `verify:t${wave[0].n}`, phase: "Merge", model: "sonnet", schema: VERIFY_SCHEMA },
+      );
+      const acc = acceptVerification(verify, cfg.testCmd);
+      if (!acc.ok) {
+        halted = { wave: w, reason: `task ${wave[0].n} unverified: ${acc.reason}`, failures: [] };
+        break;
+      }
+      results.push(r.task);
+      base = acc.headSha;
+      continue;
+    }
+```
+
+- [ ] **Step 6: Rewire the merge gate**
+
+Replace the merge-result `else` branch (~lines 405-411). Note `expect` comes from the workflow's own
+`succeeded` list — **not** from `merge.merged`, which is the merger's own claim:
 
 ```js
       } else {
+        // The workflow's own record of what succeeded — a merger that omits a task from `merged`
+        // must not shrink what gets checked.
+        const expect = succeeded.map((t) => ({ n: t.task.n, sha: t.task.headSha }));
         const verify = await agent(
           verifyPrompt(
             merge.headSha,
-            `wave ${w} merged task(s) ${merge.merged.join(", ")} and left the suite ${merge.suite}`,
-            merge.merged,
+            `wave ${w} merged task(s) ${expect.map((e) => e.n).join(", ")} and left the suite ${merge.suite}`,
+            expect,
           ),
           { label: `verify:w${w}`, phase: "Merge", model: "sonnet", schema: VERIFY_SCHEMA },
         );
-        const acc = acceptVerification(verify, merge.headSha, cfg.testCmd, merge.merged);
+        const acc = acceptVerification(verify, cfg.testCmd);
         merges.push({
           wave: w, merged: merge.merged,
           headSha: acc.ok ? acc.headSha : merge.headSha,
@@ -548,30 +640,35 @@ Replace the merge-result `else` branch (~lines 405-411):
       }
 ```
 
-- [ ] **Step 6: Run the tests and verify they pass**
+**Check `succeeded`'s shape before writing this:** `partitionWaveResults` returns entries the code
+already pushes as `results.push(t)` and reads as `t.task.headSha` elsewhere. Confirm whether each
+entry is `{ task }` or the task itself, and use whichever `runTask`'s result actually provides — the
+existing `succeeded.forEach((t) => results.push(t))` and `r.task.headSha` in the singleton path are
+the two references to reconcile. If the shapes differ, adapt; do not guess.
+
+- [ ] **Step 7: Run the tests**
 
 Run: `node --test plugins/subagent-driven-development/workflows/sdd.test.mjs plugins/subagent-driven-development/workflows/sdd.orchestration.test.mjs plugins/subagent-driven-development/workflows/sdd.smoke.test.mjs`
 Expected: PASS — including the pre-existing smoke assertion that every `agent()` call sets an
-explicit model (the new `verify:w${w}` call sets `model: "sonnet"`).
+explicit model (both new `verify:*` calls set `model: "sonnet"`).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add plugins/subagent-driven-development/workflows/sdd.mjs \
         plugins/subagent-driven-development/workflows/sdd.test.mjs \
         plugins/subagent-driven-development/workflows/sdd.orchestration.test.mjs
-git commit -m "fix(sdd): independently check the merge gate's claim before advancing base (D2)
+git commit -m "fix(sdd): check every state advance against an independent verifier (D2)
 
-The wave merger returned headSha and suite:'green' as strings and the workflow believed them —
-nothing resolved the SHA against git, nothing ran testCmd, so one hallucinated 'green' poisoned
-the base of every subsequent wave. A fresh read-only sonnet verifier now re-resolves the SHA,
-confirms it IS the branch head, confirms every merged task's branch tip is an ancestor of it, and
-re-runs the suite. base advances to the SHA the verifier resolved — never to the claim, and never
-by falling back to it. An unconfirmable claim halts the run.
+Two places advanced base on an unchecked claim: the wave merge gate (headSha and suite:'green' were
+just strings the merger emitted) and — the common case — the singleton path, where a linear plan
+advanced straight from each implementer's self-reported head with no merge agent involved at all.
 
-This is an independent check, not proof: the workflow sandbox has no child_process, so the
-verifier is another agent. The controller's post-run re-run of git and the suite is the gate that
-actually holds.
+A fresh read-only sonnet verifier now re-resolves the claimed SHA, reports the SHA git printed for
+HEAD, confirms every SUCCEEDED task's commit is an ancestor of it (by commit, not branch name — the
+merger deletes sdd/t<N>), and re-runs the suite. The workflow compares the two SHAs itself rather
+than trusting a boolean. base advances only to the verifier's resolved head, never by falling back
+to the claim, and an unconfirmable claim halts the run.
 
 Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
 ```
@@ -581,46 +678,46 @@ Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
 ## Task 4: Capture and check the final fixer's work; halt on a missing final review (D1)
 
 **Files:**
-- Modify: `plugins/subagent-driven-development/workflows/sdd.mjs:420-440` (the `Final` phase and
-  the returned result object)
+- Modify: `plugins/subagent-driven-development/workflows/sdd.mjs:420-440` (the `Final` phase and the
+  returned result object)
 - Test: `plugins/subagent-driven-development/workflows/sdd.orchestration.test.mjs`
 - Test: `plugins/subagent-driven-development/workflows/sdd.smoke.test.mjs`
 
 **Interfaces:**
-- Consumes: `acceptVerification`, `verifyPrompt`, `VERIFY_SCHEMA` from Task 3.
-- Produces: `finalFix` on the return value — `{ headSha, fixed: string[], testSummary, verified: true } | null`.
+- Consumes `acceptVerification`, `verifyPrompt`, `VERIFY_SCHEMA` from Task 3.
+- Produces `finalFix` on the return value — `{ headSha, fixed, testSummary, verified: true } | null`.
 
 **Background:** at `sdd.mjs:425-428` the workflow dispatches the final fixer and **discards its
 return value**. `head` still points at the pre-fix commit, and neither the review nor the suite is
-re-run — so a final fix that breaks the branch is reported as an approved, green run. Observed
-live: `wf_e69a9e74-22e` returned `head: 6dfb959` while the fixer had committed `3949fdf` on top.
+re-run — so a final fix that breaks the branch is reported as an approved, green run. Observed live:
+`wf_e69a9e74-22e` returned `head: 6dfb959` while the fixer had committed `3949fdf` on top.
 
-A second gap (Codex review, round 1, P2): if `finalReview` comes back `null` — the agent died —
-the current code skips the whole final gate and returns `halted: null`, i.e. a *clean* run with no
-final review at all. That must halt: "the final review did not run" is not "the branch is fine".
+A second gap (Codex review, round 1, P2): if `finalReview` comes back `null` — the agent died — the
+current code skips the whole final gate and returns `halted: null`, i.e. a *clean* run with no final
+review at all. "The final review did not run" is not "the branch is fine".
 
-The fix pass is bounded on purpose: **check once, do not re-review.** Re-running the whole-branch
-Opus review after every fix turns a one-shot fix into an unbounded review→fix→review loop.
+Bounded on purpose: **check once, do not re-review.** Re-running the whole-branch Opus review after
+every fix turns a one-shot fix into an unbounded review→fix→review loop.
 
 - [ ] **Step 1: Write the failing tests**
 
 In `sdd.orchestration.test.mjs`, append:
 
 ```js
+const FIXED = SHA("e");
+
 test("final fix: head advances past the fixer's commit and finalFix is reported", async () => {
   // The live D1 bug: wf_e69a9e74-22e returned head 6dfb959 while the fixer had committed 3949fdf.
-  const MERGED = "b".repeat(40);
-  const FIXED = "e".repeat(40);
   const { result, calls } = await runWorkflow({
-    args: baseArgs(),
+    args: waveArgs(),
     respond: happyResponder({
       "final-review": { verdict: "approve", findings: [{ severity: "Minor", file: "a.mjs", line: "1", what: "x" }], ponytailDebt: [] },
       "final-fix": { headSha: FIXED, testSummary: "294 pass", fixed: ["x"] },
-      "verify:final-fix": { shaExists: true, headSha: FIXED, headMatchesClaim: true, missingTaskTips: [], suite: "green", evidence: "294 pass, 0 fail" },
+      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, missingCommits: [], suite: "green", evidence: "294 pass, 0 fail" },
     }),
   });
   assert.equal(result.halted, null);
-  assert.equal(result.head, FIXED, "head must point PAST the final fix, not at the pre-fix commit");
+  assert.equal(result.head, FIXED, "head must point PAST the final fix");
   assert.notEqual(result.head, MERGED, "this is the exact bug: head left at the pre-fix commit");
   assert.equal(result.finalFix.headSha, FIXED);
   assert.equal(result.meta.finalFixApplied, true);
@@ -629,11 +726,11 @@ test("final fix: head advances past the fixer's commit and finalFix is reported"
 
 test("final fix: a fix that leaves the suite red halts instead of reporting an approved run", async () => {
   const { result } = await runWorkflow({
-    args: baseArgs(),
+    args: waveArgs(),
     respond: happyResponder({
       "final-review": { verdict: "approve", findings: [{ severity: "Minor", file: "a.mjs", line: "1", what: "x" }], ponytailDebt: [] },
-      "final-fix": { headSha: "e".repeat(40), testSummary: "claims green", fixed: ["x"] },
-      "verify:final-fix": { shaExists: true, headSha: "e".repeat(40), headMatchesClaim: true, missingTaskTips: [], suite: "red", evidence: "2 failing" },
+      "final-fix": { headSha: FIXED, testSummary: "claims green", fixed: ["x"] },
+      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, missingCommits: [], suite: "red", evidence: "2 failing" },
     }),
   });
   assert.ok(result.halted, "a final fix that breaks the branch must not be reported as approved");
@@ -642,7 +739,7 @@ test("final fix: a fix that leaves the suite red halts instead of reporting an a
 
 test("final review: a missing final review halts rather than passing as a clean run", async () => {
   const { result } = await runWorkflow({
-    args: baseArgs(),
+    args: waveArgs(),
     respond: happyResponder({ "final-review": null }),
   });
   assert.ok(result.halted, "'the final review did not run' is not 'the branch is fine'");
@@ -662,9 +759,8 @@ test("the final fixer's result is captured, not discarded", () => {
 - [ ] **Step 2: Run them and verify they fail**
 
 Run: `node --test plugins/subagent-driven-development/workflows/sdd.orchestration.test.mjs plugins/subagent-driven-development/workflows/sdd.smoke.test.mjs`
-Expected: FAIL — `result.head` is the merged SHA (not the fixed one), `result.finalFix` is
-undefined, a null final review returns `halted: null`, and the source still has a bare
-`await agent(finalFixPrompt(`.
+Expected: FAIL — `result.head` is the merged SHA, `result.finalFix` is undefined, a null final
+review returns `halted: null`, and the source still has a bare `await agent(finalFixPrompt(`.
 
 - [ ] **Step 3: Capture, check, and advance**
 
@@ -697,7 +793,7 @@ Replace the `Final` phase block (~lines 420-430):
           ),
           { label: "verify:final-fix", phase: "Final", model: "sonnet", schema: VERIFY_SCHEMA },
         );
-        const acc = acceptVerification(verify, fix.headSha, cfg.testCmd);
+        const acc = acceptVerification(verify, cfg.testCmd);
         if (!acc.ok) {
           halted = { wave: "final", reason: `final fix unverified: ${acc.reason}`, failures: [] };
         } else {
@@ -712,7 +808,7 @@ Replace the `Final` phase block (~lines 420-430):
 
 - [ ] **Step 4: Return `finalFix`**
 
-In the returned object, add `finalFix` beside `finalReview` and `finalFixApplied` to `meta`:
+In the returned object, add `finalFix` beside `finalReview`, and `finalFixApplied` to `meta`:
 
 ```js
   return {
@@ -727,10 +823,10 @@ In the returned object, add `finalFix` beside `finalReview` and `finalFixApplied
   };
 ```
 
-`halted.wave` is now sometimes the string `"final"` rather than a wave number — intentional (a
-halt in the Final phase is not a wave); the controller only prints it.
+`halted.wave` is now sometimes the string `"final"` rather than a wave number — intentional (a halt
+in the Final phase is not a wave); the controller only prints it.
 
-- [ ] **Step 5: Run the whole plugin's tests**
+- [ ] **Step 5: Run the plugin's tests**
 
 Run: `node --test plugins/subagent-driven-development/workflows/sdd.test.mjs plugins/subagent-driven-development/workflows/sdd.orchestration.test.mjs plugins/subagent-driven-development/workflows/sdd.smoke.test.mjs`
 Expected: PASS, all of them.
@@ -745,8 +841,8 @@ git commit -m "fix(sdd): capture and check the final fixer's work; halt on a mis
 
 The final fixer ran and its result was discarded: head stayed at the pre-fix commit and the suite
 was never re-run, so a final fix that broke the branch was reported as an approved, green run.
-Observed live in wf_e69a9e74-22e, which returned head 6dfb959 while the fixer had already
-committed 3949fdf on top of it. A null final review also passed as a clean run; it now halts.
+Observed live in wf_e69a9e74-22e, which returned head 6dfb959 while the fixer had already committed
+3949fdf on top of it. A null final review also passed as a clean run; it now halts.
 
 The fix is checked once (rev-parse + suite), head advances to the SHA the verifier resolved, an
 unconfirmable fix halts the run, and the result reports finalFix.
@@ -760,23 +856,33 @@ Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
 
 **Files:**
 - Modify: `plugins/subagent-driven-development/skills/subagent-driven-development/SKILL.md`
-  (section "### 7. On return: present, adjudicate, finish")
+  (section "### 7. On return: present, adjudicate, finish", and the `testCmd` line in section 6)
 - Modify: `plugins/subagent-driven-development/README.md`
 - Modify: `plugins/subagent-driven-development/.claude-plugin/plugin.json` (→ `0.3.0`)
 - Modify: `.claude-plugin/marketplace.json` (`subagent-driven-development` entry → `0.3.0`)
 - Test: `scripts/repo-consistency.test.mjs` and the plugin's `skill.test.mjs` must keep passing.
 
-**Interfaces:** none.
-
 **Background:** the in-workflow verifier is an agent checking an agent — a confidence check, not
 proof (Codex review, round 1, P1). The layer that actually holds is the **controller**, which has
-real Bash. It must re-run the checks itself before doing anything irreversible, and the skill must
-say so, or the new `verified: true` flags will be read as guarantees they are not.
+real Bash. It must re-run the checks itself, and the skill must say so, or `verified: true` will be
+read as a guarantee it is not.
 
-- [ ] **Step 1: Add the trusted-verification step to SKILL.md**
+- [ ] **Step 1: Make `testCmd` effectively required, and say what happens without it**
 
-In "### 7. On return: present, adjudicate, finish", add this as the FIRST thing the controller does
-on return, before presenting anything:
+In section 6 (the `Workflow({...})` invocation), change the `testCmd` line from "recommended" to:
+
+> `testCmd` — **strongly recommended; pass it whenever the repo has a canonical suite command.**
+> Without it, every verifier reports `suite: "unknown"` and the workflow can only check that the
+> claimed commit resolves and is the branch head — it cannot check that anything still passes. If
+> you omit it, say so explicitly when you present results; do not imply the branch is green.
+
+(Codex review, round 2, P2: the controller instruction below is undefined when `testCmd` is empty,
+so define it here rather than leaving the controller to improvise.)
+
+- [ ] **Step 2: Add the trusted-verification step to SKILL.md**
+
+In "### 7. On return: present, adjudicate, finish", add this as the FIRST thing the controller does,
+before presenting anything:
 
 > **Verify the returned head yourself before presenting or finishing.** The workflow's
 > `verified: true` flags come from a verifier *agent* — an independent check, not proof (the
@@ -789,9 +895,12 @@ on return, before presenting anything:
 > <testCmd>                                                    # …and the suite is actually green
 > ```
 >
-> Quote the real pass/fail line back to the user. If any of the three disagrees with the workflow's
-> report, say so plainly and stop — a run that reports `halted: null` while the suite is red is
-> exactly the failure this gate exists to catch.
+> If no `testCmd` was passed, determine the repo's canonical suite command and run that. If the repo
+> has none, say so plainly — "the suite was not run" — rather than presenting the run as green.
+>
+> Quote the real pass/fail line back to the user. If any check disagrees with the workflow's report,
+> say so and stop: a run that reports `halted: null` while the suite is red is exactly what this
+> gate exists to catch.
 
 Then add `finalFix` to the returned-keys list and note the new halt reasons:
 
@@ -799,31 +908,34 @@ Then add `finalFix` to the returned-keys list and note the new halt reasons:
   re-checked against git and the suite. `head` points past it. `null` when the final review found
   nothing to fix.
 - Under `halted`: a halt can now come from the **Final** phase (`wave: "final"`) — a missing final
-  review, a missing final fixer result, or a final fix that could not be confirmed — and from a
-  merge gate whose claimed green the verifier could not confirm (`merge gate unverified: …`).
+  review, a missing fixer result, or a final fix that could not be confirmed — from a **merge gate**
+  whose claimed green the verifier could not confirm, and from a **singleton task** whose claimed
+  head could not be confirmed.
 
-- [ ] **Step 2: Same in the plugin README**
+- [ ] **Step 3: Same in the plugin README**
 
-Add two or three sentences where the merge gate and final review are described: the workflow now
-independently re-checks each merge and the final fix (SHA resolves, IS the branch head, contains
-every merged task tip, suite green) and advances only to the SHA the verifier resolved; and the
-controller re-runs git and the suite itself before finishing, because an agent checking an agent
+Two or three sentences where the merge gate and final review are described: every state advance —
+each singleton task, each wave merge, and the final fix — is now re-checked by an independent
+verifier (the claimed commit resolves, it IS the branch head, it contains every succeeded task's
+commit, and the suite is green), and the workflow advances only to the SHA the verifier resolved.
+The controller re-runs git and the suite itself before finishing, because an agent checking an agent
 is a confidence check, not proof. Do not restructure the README.
 
-- [ ] **Step 3: Bump the version in both registries**
+- [ ] **Step 4: Bump the version in both registries**
 
 `plugins/subagent-driven-development/.claude-plugin/plugin.json`: `"version": "0.2.2"` → `"0.3.0"`.
 `.claude-plugin/marketplace.json`, `subagent-driven-development` entry: same bump.
 
-Minor, not patch: an unverifiable merge or final fix now **halts** a run that previously completed.
+Minor, not patch: runs that previously completed on an unverifiable claim now halt, and every task
+now costs one extra `sonnet` verifier call.
 
-- [ ] **Step 4: Run the full suite**
+- [ ] **Step 5: Run the full suite**
 
 Run: `bash scripts/run-node-tests.sh`
 Expected: PASS, 0 fail — including `scripts/repo-consistency.test.mjs`'s
 plugin.json↔marketplace.json version match (fails if only one bump landed).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add plugins/subagent-driven-development/skills/subagent-driven-development/SKILL.md \
@@ -833,11 +945,11 @@ git add plugins/subagent-driven-development/skills/subagent-driven-development/S
 git commit -m "docs(sdd): controller-level trusted verification, evidence gates, bump to 0.3.0
 
 The in-workflow verifier is an agent checking an agent — an independent check, not proof, because
-the Workflow sandbox has no child_process. The controller has real Bash, so it now re-runs
-rev-parse and the suite against the returned head before presenting or finishing, and the skill
-says so rather than letting 'verified: true' read as a guarantee. Documents finalFix and the new
-Final-phase halt reasons. Minor bump: runs that previously completed on an unverifiable claim now
-halt.
+the Workflow sandbox has no child_process. The controller has real Bash, so it now re-runs rev-parse
+and the suite against the returned head before presenting or finishing, and the skill says so rather
+than letting 'verified: true' read as a guarantee. Also defines what happens when no testCmd is
+passed (suite: unknown everywhere — say so, do not imply green). Documents finalFix and the new halt
+reasons. Minor bump: runs that previously completed on an unverifiable claim now halt.
 
 Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
 ```
@@ -847,7 +959,7 @@ Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
 ## Out of scope
 
 - Batch C (`deep-dive`: schema-valid junk, silently dropped angles) — separate branch.
-- Batch B2 (handoff statusline guard redesign) and B3 (handoff provenance/injection).
+- Batch B2 (handoff statusline redesign) and B3 (handoff provenance/injection).
 - The `adversarial-agents` README/SKILL contradiction (A3).
 - Re-running the whole-branch review after a final fix. Deliberately excluded: it turns a bounded
   one-shot fix into an unbounded review→fix→review loop. One check is the contract.
