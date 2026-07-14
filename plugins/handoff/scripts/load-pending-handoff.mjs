@@ -98,8 +98,14 @@ try {
 //
 // Handoffs are gitignored by design, so anything git TRACKS was shipped by the repo, not written here —
 // and a fresh clone cannot produce an untracked-but-present ignored file. Tracked => refuse. We check
-// the marker too: a committed .pending is the same trick with one more step.
-if (gitTracksFile(cwd, handoffPath) || gitTracksFile(cwd, pendingFile)) {
+// the marker too: a committed .pending aimed at a handoff you legitimately wrote is the same trick with
+// one more step (it force-replays stale instructions).
+//
+// Both checks resolve git from `handoffsDir`, NOT from `cwd`. Asking the project root only consults the
+// outermost repo, and a hostile parent can ship `.claude/handoffs/` as a SUBMODULE — the parent then
+// tracks only a gitlink, so a cwd-rooted `ls-files` sees nothing while `clone --recurse-submodules`
+// populates the payload for real.
+if (gitTracksFile(handoffsDir, handoffPath) || gitTracksFile(handoffsDir, pendingFile)) {
   // Deliberately emits NO handoff content and NO filename — both are attacker-controlled, and the whole
   // point is to keep them out of the model's context. Tell the human what happened and let them decide.
   emitAdditionalContext(

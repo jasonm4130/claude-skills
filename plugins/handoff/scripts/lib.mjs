@@ -331,13 +331,20 @@ export function dirContainedIn(rootDir, dir) {
  * no repo-supplied hazard, and refusing a legitimate handoff is a worse failure than the bug. Never
  * throws and always bounded: this runs on SessionStart and must not wedge startup.
  *
- * @param {string} cwd       repository working directory
+ * ASK GIT FROM THE FILE'S OWN DIRECTORY, not from the project root. Running `git -C <projectRoot>` only
+ * ever consults the OUTERMOST repo, and a hostile parent can make `.claude/handoffs/` a SUBMODULE: the
+ * parent then tracks nothing but a gitlink, `ls-files` reports the payload as untracked, and the whole
+ * guard waves it through — while `clone --recurse-submodules` populates it for real. Running git from
+ * the containing directory resolves the INNERMOST repo that actually governs the file, which is the one
+ * whose answer matters. It is also correct in the ordinary case: git walks up to the project repo.
+ *
+ * @param {string} dir       directory to resolve the repository from — pass the file's own directory
  * @param {string} filePath  absolute path to test
  * @returns {boolean}        true only if git positively reports the file as tracked
  */
-export function gitTracksFile(cwd, filePath) {
+export function gitTracksFile(dir, filePath) {
   try {
-    const r = spawnSync("git", ["-C", cwd, "ls-files", "--error-unmatch", "--", filePath], {
+    const r = spawnSync("git", ["-C", dir, "ls-files", "--error-unmatch", "--", filePath], {
       encoding: "utf8",
       timeout: 5000,
       stdio: ["ignore", "pipe", "pipe"],
