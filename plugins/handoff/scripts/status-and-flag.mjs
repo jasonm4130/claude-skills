@@ -3,7 +3,7 @@
 // statusLine command — renders context-fill bar, writes flag on first crossing.
 // Reads JSON from stdin and outputs a single line of status text to stdout.
 
-import { readFileSync, writeFileSync, existsSync, statSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import {
@@ -15,6 +15,7 @@ import {
   claimBand,
   resetBands,
   bandMarkerPath,
+  acquireInflightLock,
 } from "./lib.mjs";
 
 /**
@@ -56,18 +57,27 @@ import {
 /** Path of the in-flight lock once this run has acquired it. @type {string | null} */
 let heldLockPath = null;
 
+/** Release the in-flight lock, but only if it is still ours — a replacement's lock is not ours to
+ * delete. Not race-free, and it does not need to be: the nudge is idempotent, so the worst case is
+ * one duplicate render. */
+function releaseLock() {
+  if (heldLockPath === null) return;
+  try {
+    if (readFileSync(heldLockPath, "utf8").trim() === String(process.pid)) {
+      rmSync(heldLockPath, { force: true });
+    }
+  } catch {
+    // already gone, or unreadable — nothing to do
+  }
+  heldLockPath = null;
+}
+
 /**
  * @param {string} [prefix]
  * @returns {never}
  */
 function bail(prefix = "") {
-  if (heldLockPath !== null) {
-    try {
-      rmSync(heldLockPath, { force: true });
-    } catch {
-      // best-effort; a stuck lock goes stale after LOCK_FRESH_MS anyway
-    }
-  }
+  releaseLock();
   process.stdout.write(`${prefix}?\n`);
   process.exit(0);
 }
@@ -97,39 +107,33 @@ const locPrefix = locParts.length > 0 ? `\x1b[2m${locParts.join(" ")}\x1b[0m ` :
 const sid = resolveSessionId(parsed);
 const dataDir = resolveDataDir("handoff-data");
 
-// --- Overlap guard (ccusage#459 lesson): Claude Code can fire the next
-// statusline invocation before the previous one finished (e.g. slow JSONL
-// fallback). A concurrent run must not double-fire flags or interleave the
-// read-modify-write on last-context-pct — replay the previous render instead.
-// Best-effort, not a mutex: a torn race costs one duplicate render, and a
-// lock orphaned by a crashed run goes stale after LOCK_FRESH_MS.
-const LOCK_FRESH_MS = 2000;
+// --- Overlap guard. ccusage#459 shows statusline invocations DO pile up in production (34 concurrent
+// node processes, 300% CPU) despite the docs' cancel-and-replace claim, so a guard is warranted.
+//
+// This is a PERFORMANCE guard, not a mutex, and it does not need to be a correct one: the nudge is
+// idempotent (claimBand), so a torn race costs one duplicate render, which is invisible — Claude Code
+// displays one status line. Do not reintroduce lock ceremony here: four attempts at a "correct" lock
+// each produced a new race, and none of them needed to exist.
+const LOCK_STALE_MS = 2000;
 const inflightLockFile = path.join(dataDir, `statusline-inflight-${sid}.lock`);
 const renderCacheFile = path.join(dataDir, `last-render-${sid}.txt`);
-try {
-  if (Date.now() - statSync(inflightLockFile).mtimeMs < LOCK_FRESH_MS) {
-    /** @type {string | null} */
-    let cached = null;
-    try {
-      cached = readFileSync(renderCacheFile, "utf8");
-    } catch {
-      cached = null;
-    }
-    if (cached !== null && cached.length > 0) {
-      process.stdout.write(cached);
-      process.exit(0);
-    }
-    bail(locPrefix);
+
+if (!acquireInflightLock(inflightLockFile, LOCK_STALE_MS)) {
+  // Someone else is in flight (or we lost a cold-start race). Replay rather than recompute.
+  /** @type {string | null} */
+  let cached = null;
+  try {
+    cached = readFileSync(renderCacheFile, "utf8");
+  } catch {
+    cached = null;
   }
-} catch {
-  // no lock (or unreadable) — not in flight
+  if (cached !== null && cached.length > 0) {
+    process.stdout.write(cached);
+    process.exit(0);
+  }
+  bail(locPrefix);
 }
-try {
-  writeFileSync(inflightLockFile, String(process.pid));
-  heldLockPath = inflightLockFile;
-} catch {
-  // couldn't take the lock; render anyway — worst case is pre-guard behavior
-}
+heldLockPath = inflightLockFile;
 
 const cw = parsed && parsed.context_window ? parsed.context_window : undefined;
 const pctRaw = cw ? cw.used_percentage : undefined;
@@ -271,11 +275,5 @@ try {
 } catch {
   // cache is an optimization; replay falls back to "?" without it
 }
-if (heldLockPath !== null) {
-  try {
-    rmSync(heldLockPath, { force: true });
-  } catch {
-    // best-effort; goes stale after LOCK_FRESH_MS
-  }
-}
+releaseLock();
 process.stdout.write(renderLine);

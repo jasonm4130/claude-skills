@@ -1006,3 +1006,79 @@ test("a failed nudge write exits 0 AND releases the claim, so the nudge is not l
   await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 75 } }), env);
   assert.equal(existsSync(flagPath), true, "the band can still fire once the write can succeed");
 });
+
+// --- Overlap guard as a performance guard, not a mutex (Task 4) ---
+
+test("overlap guard: a concurrent run replays the cached render instead of recomputing", async (t) => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), "handoff-guard-"));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const sid = "guard-sid";
+  writeFileSync(path.join(dataDir, `last-render-${sid}.txt`), "CACHED-RENDER");
+  // A LIVE holder (this test process), with a lock far past the lease. 0.5.1 would have stolen it on
+  // age alone — and a slow transcript read really can outlive a 2s lease, because there is no
+  // statusLine timeout.
+  const lock = path.join(dataDir, `statusline-inflight-${sid}.lock`);
+  writeFileSync(lock, String(process.pid));
+  const old = new Date(Date.now() - 30_000);
+  utimesSync(lock, old, old);
+
+  const { code, stdout } = await run(
+    JSON.stringify({ session_id: sid, context_window: { used_percentage: 75 } }),
+    { CLAUDE_PLUGIN_DATA: dataDir },
+  );
+
+  assert.equal(code, 0);
+  assert.equal(stdout, "CACHED-RENDER", "a concurrent run replays the last render");
+  assert.equal(readFileSync(lock, "utf8"), String(process.pid), "a LIVE holder's lock survives");
+});
+
+test("overlap guard: a DEAD holder's stale lock is broken so the bar cannot freeze forever", async (t) => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), "handoff-guard2-"));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const sid = "dead-sid";
+  const lock = path.join(dataDir, `statusline-inflight-${sid}.lock`);
+  writeFileSync(lock, "2147483646"); // a pid that cannot exist
+  const old = new Date(Date.now() - 30_000);
+  utimesSync(lock, old, old);
+
+  const { code, stdout } = await run(
+    JSON.stringify({ session_id: sid, context_window: { used_percentage: 42 } }),
+    { CLAUDE_PLUGIN_DATA: dataDir },
+  );
+
+  assert.equal(code, 0);
+  assert.match(stdout, /42%/, "a dead holder's lock must not freeze the bar forever");
+});
+
+test("overlap guard: the lock is released on the normal path", async (t) => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), "handoff-rel-"));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const sid = "rel-sid";
+
+  await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 42 } }),
+    { CLAUDE_PLUGIN_DATA: dataDir });
+
+  assert.equal(
+    existsSync(path.join(dataDir, `statusline-inflight-${sid}.lock`)), false,
+    "a completed run leaves no lock behind",
+  );
+});
+
+test("overlap guard: a stale lock is broken, taken, and released — the bar recovers", async (t) => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), "handoff-own-"));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const sid = "own-sid";
+  const lock = path.join(dataDir, `statusline-inflight-${sid}.lock`);
+  writeFileSync(lock, "2147483646"); // dead holder
+  const old = new Date(Date.now() - 30_000);
+  utimesSync(lock, old, old);
+
+  const { code, stdout } = await run(
+    JSON.stringify({ session_id: sid, context_window: { used_percentage: 42 } }),
+    { CLAUDE_PLUGIN_DATA: dataDir },
+  );
+
+  assert.equal(code, 0);
+  assert.match(stdout, /42%/, "the run breaks the dead holder's lock and renders");
+  assert.equal(existsSync(lock), false, "and releases its own lock on the way out");
+});
