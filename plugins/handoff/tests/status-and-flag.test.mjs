@@ -6,12 +6,22 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, utimesSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  utimesSync,
+  mkdirSync,
+  readdirSync,
+} from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { bandMarkerPath } from "../scripts/lib.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const script = path.join(here, "..", "scripts", "status-and-flag.mjs");
@@ -895,4 +905,104 @@ test("effective_max NOT set + current_usage missing: preserves existing behavior
 
   assert.equal(result.code, 0);
   assert.match(result.stdout, /47%/);
+});
+
+// --- Idempotent band firing under concurrency (Task 2) ---
+
+test("a band already claimed does not re-fire, even after the nudge flag is consumed", async (t) => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), "handoff-claimed-"));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const sid = "claimed-sid";
+  const env = { CLAUDE_PLUGIN_DATA: dataDir, HANDOFF_THRESHOLD_PCT: "70" };
+  const flagFile = path.join(dataDir, `handoff-nudge-${sid}.flag`);
+  // Simulate the winner of a race having already claimed band 0, while last-context-pct is still
+  // stale (the loser's view). The gate passes; the claim must not.
+  writeFileSync(path.join(dataDir, `last-context-pct-${sid}.txt`), "65");
+  writeFileSync(path.join(dataDir, `handoff-fired-${sid}-t70-b0`), "");
+
+  await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 75 } }), env);
+
+  assert.equal(existsSync(flagFile), false, "the band was already claimed — the loser must not nudge");
+});
+
+test("a /compact drop below the threshold resets the ladder, so a later climb re-fires", async (t) => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), "handoff-compact-"));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const sid = "compact-sid";
+  const env = { CLAUDE_PLUGIN_DATA: dataDir, HANDOFF_THRESHOLD_PCT: "70" };
+  const flagFile = path.join(dataDir, `handoff-nudge-${sid}.flag`);
+  const at = (pct) => run(JSON.stringify({ session_id: sid, context_window: { used_percentage: pct } }), env);
+
+  await at(85); // enters band 1 — fires
+  assert.equal(existsSync(flagFile), true, "the first climb fires");
+  rmSync(flagFile); // check-handoff-flag.mjs consumes it on UserPromptSubmit
+
+  await at(40); // /compact — the climb is over
+  assert.deepEqual(
+    readdirSync(dataDir).filter((f) => f.startsWith(`handoff-fired-${sid}-`)), [],
+    "dropping below the threshold clears the ladder",
+  );
+
+  await at(85); // a FRESH entry into band 1
+  assert.equal(existsSync(flagFile), true, "a post-compact climb must re-nudge; a permanent marker would suppress it forever");
+});
+
+test("moving WITHIN a band does not re-fire (the transition gate still governs)", async (t) => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), "handoff-within-"));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const sid = "within-sid";
+  const env = { CLAUDE_PLUGIN_DATA: dataDir, HANDOFF_THRESHOLD_PCT: "70" };
+  const flagFile = path.join(dataDir, `handoff-nudge-${sid}.flag`);
+
+  await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 72 } }), env);
+  assert.equal(existsSync(flagFile), true, "crossing into band 0 fires");
+  rmSync(flagFile);
+
+  await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 78 } }), env);
+  assert.equal(existsSync(flagFile), false, "72% → 78% stays in band 0 — no re-fire");
+});
+
+test("climbing into a HIGHER band fires again", async (t) => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), "handoff-escalate-"));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const sid = "esc-sid";
+  const env = { CLAUDE_PLUGIN_DATA: dataDir, HANDOFF_THRESHOLD_PCT: "70" };
+  const flagFile = path.join(dataDir, `handoff-nudge-${sid}.flag`);
+
+  await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 75 } }), env);
+  rmSync(flagFile);
+  await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 85 } }), env);
+
+  assert.equal(existsSync(flagFile), true, "85% is band 1 — a new band");
+  assert.deepEqual(
+    readdirSync(dataDir).filter((f) => f.startsWith(`handoff-fired-${sid}-`)).sort(),
+    [`handoff-fired-${sid}-t70-b0`, `handoff-fired-${sid}-t70-b1`],
+  );
+});
+
+test("a failed nudge write exits 0 AND releases the claim, so the nudge is not lost forever", async (t) => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), "handoff-wfail-"));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const sid = "wfail-sid";
+  const env = { CLAUDE_PLUGIN_DATA: dataDir, HANDOFF_THRESHOLD_PCT: "70" };
+  const flagPath = path.join(dataDir, `handoff-nudge-${sid}.flag`);
+  // A directory where the nudge flag should go: every write to it throws EISDIR.
+  mkdirSync(flagPath);
+
+  const { code } = await run(
+    JSON.stringify({ session_id: sid, context_window: { used_percentage: 75 } }), env);
+
+  assert.equal(code, 0, "a failed state write must never take the statusline down");
+  // The claim means "a nudge was DELIVERED". Nothing was delivered, so the claim must be given back —
+  // otherwise this band is burned for the rest of the session and the nudge is lost permanently.
+  assert.equal(
+    existsSync(bandMarkerPath(dataDir, sid, 70, 0)), false,
+    "an undelivered nudge must not leave the band claimed",
+  );
+
+  // Prove the retry actually works: remove the obstruction, and the same band fires.
+  rmSync(flagPath, { recursive: true });
+  writeFileSync(path.join(dataDir, `last-context-pct-${sid}.txt`), "65"); // re-arm the transition gate
+  await run(JSON.stringify({ session_id: sid, context_window: { used_percentage: 75 } }), env);
+  assert.equal(existsSync(flagPath), true, "the band can still fire once the write can succeed");
 });

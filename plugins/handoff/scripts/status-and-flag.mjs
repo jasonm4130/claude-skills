@@ -6,7 +6,16 @@
 import { readFileSync, writeFileSync, existsSync, statSync, rmSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { readStdin, safeJsonParse, resolveSessionId, resolveDataDir, lastAssistantUsageFromTranscript } from "./lib.mjs";
+import {
+  readStdin,
+  safeJsonParse,
+  resolveSessionId,
+  resolveDataDir,
+  lastAssistantUsageFromTranscript,
+  claimBand,
+  resetBands,
+  bandMarkerPath,
+} from "./lib.mjs";
 
 /**
  * @typedef {Object} CurrentUsage
@@ -190,21 +199,57 @@ if (existsSync(lastPctFile)) {
   }
 }
 
-// Escalating nudges: fire on every 10%-point band entered at/above the
-// threshold (threshold → threshold+10 → threshold+20 → ...), not just the
-// first threshold crossing. Bands are computed relative to the configured
-// threshold (not absolute deciles), so a non-decile threshold (e.g. 75) still
-// fires its first nudge as soon as pct crosses it, rather than waiting for
-// the next absolute decile boundary.
+// Escalating nudges: fire on every 10%-point band ENTERED at/above the threshold. Bands are relative
+// to the configured threshold, so a non-decile threshold (e.g. 75) still fires as soon as pct crosses
+// it.
+//
+// The invariant is a TRANSITION, not a level: `band > lastBand` fires on entry from below. That is
+// what keeps 72% → 78% silent, and what lets a post-/compact climb back to 85% nudge again instead of
+// staying silent forever.
+//
+// But the gate is a read-modify-write on last-context-pct: two overlapping invocations both read the
+// stale lastPct, both pass, and both fire. So the GATE decides whether a band is being entered, and
+// claimBand() — an atomic exclusive create — decides WHO acts on it. Correctness therefore does not
+// depend on the overlap guard at all.
+//
+// Do NOT "simplify" this to a claim-only check: a level-keyed marker has no memory of where the
+// session came from, so it can express neither behavior above.
 const band = currentPct >= threshold ? Math.floor((currentPct - threshold) / 10) : -1;
 const lastBand = lastPct >= threshold ? Math.floor((lastPct - threshold) / 10) : -1;
-if (currentPct >= threshold && band > lastBand) {
-  const flagFile = path.join(dataDir, `handoff-nudge-${sid}.flag`);
-  writeFileSync(flagFile, `context at ${Math.trunc(currentPct)}% (threshold ${threshold}%)`);
+
+if (band < 0) {
+  // Below the threshold: the climb is over (a fresh session, or a /compact). Clear the ladder so a
+  // later climb can re-fire. This also self-heals the resolveSessionId "unknown" fallback — a new
+  // no-ID session starts low, so it clears the previous one's markers rather than inheriting
+  // permanent suppression.
+  resetBands(dataDir, sid);
+} else if (band > lastBand && claimBand(dataDir, sid, threshold, band)) {
+  try {
+    writeFileSync(
+      path.join(dataDir, `handoff-nudge-${sid}.flag`),
+      `context at ${Math.trunc(currentPct)}% (threshold ${threshold}%)`,
+    );
+  } catch {
+    // The claim is only meaningful as "a nudge was DELIVERED". If the flag write failed, nothing was
+    // delivered — so give the claim back, or this band is burned for the rest of the session and the
+    // nudge is lost permanently. A failed write must never take the bar down either (see Global
+    // Constraints), so both the write and the release are swallowed.
+    try {
+      rmSync(bandMarkerPath(dataDir, sid, threshold, band), { force: true });
+    } catch {
+      // nothing left to do — the next band will still fire
+    }
+  }
 }
 
-// Always update last percentage
-writeFileSync(lastPctFile, String(currentPct));
+// Update last percentage. Write it EARLY relative to the expensive render (see below): a slow
+// invocation that writes stale state after a fresher one has already written is how a post-/compact
+// reset gets clobbered.
+try {
+  writeFileSync(lastPctFile, String(currentPct));
+} catch {
+  // best-effort
+}
 
 // --- Render 10-char block bar ---
 const pctInt = Math.trunc(currentPct);
