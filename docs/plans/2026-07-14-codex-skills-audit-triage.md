@@ -100,15 +100,32 @@ which a checked-out repo cannot write. That is a design decision about where han
 live, and it interacts with the SKILL's agent-authored write step (there is no trusted
 writer today to stamp provenance). Needs its own spec.
 
-### B4. Same double-breaker bug in `codex-review`'s `acquireLock` — P3 (NEW, found while fixing B2)
+### B4. Same double-breaker bug in `codex-review`'s `acquireLock` — P3 — ⚠️ MITIGATED, NOT ELIMINATED (PR pending, codex-review 0.2.1)
+
+**Resolved-as-far-as-it-can-be 2026-07-14.** Plan:
+`docs/superpowers/plans/2026-07-14-batch-c-integrity.md` (Task 3).
+
+**What the fix buys:** a break now requires the lease **and** a provably-dead holder (the token already
+carries the pid, so a merely-slow holder no longer gets its lock stolen on age alone), and the break is
+**fenced on the lock's identity** — if the file we renamed away is not the one we judged, it is restored
+and our own acquire aborts rather than proceeding on top of a fresh holder.
+
+**What it does NOT buy — and must not be recorded as fixed.** A three-way interleaving on a genuinely
+dead victim can still leave two believers: between the losing breaker's `renameSync` and its restore the
+lock file *does not exist*, so a third process can create it, and the restore then overwrites that third
+holder's lock while it still believes it owns it. **Node has no compare-and-unlink, so the check→break
+window cannot be closed in userspace.** That is the same conclusion four Codex rounds forced on the
+handoff statusline lock (B2), where the residual is likewise accepted and documented.
+
+Blast radius stays bounded — the chain log's post-append order verification is the real guard, and a
+lost race self-aborts. That is why this was P3, and why shrinking the window and *saying so* is the
+right stopping point rather than a fifth layer of ceremony.
+
+**Original finding (2026-07-14):**
 `plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs:127-152`: two
 breakers observing the same stale lock can cascade — the first breaks it and
 re-acquires, the second's unconditional `renameSync(lockPath, …)` then moves the
 winner's *fresh* lock away and deletes it, leaving two holders.
-**Blast radius is bounded** (this is why it is P3, not P2): the chain log's
-post-append order verification is the real guard there, and the lock is documented as a
-contention reducer only — a lost race self-aborts. Fix when convenient: adopt B2's
-rename-verify-restore, or accept and document.
 
 ## Batch D — sdd.mjs correctness (second)
 
@@ -142,35 +159,68 @@ be an `agent()` call.
 **Fix:** `validateArgs` rejects non-positive-integer or duplicate `n`. Trivial +
 unit test.
 
-## Batch C — deep-dive result integrity (third)
+## Batch C — deep-dive result integrity — ✅ SHIPPED (deep-dive 0.4.0)
 
-### C1. Schema-valid junk accepted as research — P2
-`plugins/deep-dive/workflows/fanout.mjs:101`: shape-only validation lets
-placeholder claims / `example.com` URLs / empty verifier flags pass (this is the
-live incident from 2026-07-14's deep dive).
-**Fix:** semantic guard: reject angle results with zero findings, placeholder
-URL patterns (`example.com`, `example.org`, `localhost`, `test.`), or
-placeholder-claim heuristics; failed guard → re-dispatch once, then mark angle
-failed (feeds C2's reporting).
+**Resolved 2026-07-14.** Plan: `docs/superpowers/plans/2026-07-14-batch-c-integrity.md`
+(3 Codex rounds + audit, 16 unique findings). C1 and C2 shipped as **one commit** — they cannot be two:
+C1 makes `runAngle` return truthy failure records, and the pre-C2 runner treats every truthy result as a
+success and dereferences `r.research`. 394 tests pass.
 
-### C2. Failed angles dropped silently; wave-2 ignores deps — P2
-`fanout.mjs:170`: `filter(Boolean)` erases crashed workers; wave-2 dispatches even
-when a declared dep never completed. **Impact:** a deep dive looks finished while
-missing a core angle.
-**Fix:** carry failures into `meta.failedAngles`; skip wave-2 angles whose deps
-failed and mark them `skipped: dep-failed`; orchestrator SKILL.md told to surface
-both.
+### C1. Schema-valid junk accepted as research — P2 — ✅ SHIPPED
+`plugins/deep-dive/workflows/fanout.mjs`: shape-only validation let placeholder claims / `example.com`
+URLs / empty findings pass (the live 2026-07-14 incident). `researchProblems()` now rejects zero
+findings, an unusable **summary**, placeholder URL hosts, non-http sources, and placeholder/stub claims;
+an unusable angle is retried once with the rejection reason, then failed.
 
-## Batch A — doc-only fixes (fold into any convenient branch)
+Two things the review surfaced that the original finding missed:
+- **The summary had to be validated too, and it is load-bearing.** The wave-2 digest is built *entirely*
+  from `research.summary`, and dep satisfaction keys off `!failed`. A root with three real findings and a
+  blank summary was "successful", satisfied its dependents' deps, and dispatched them with a heading and
+  nothing under it — a blank premise they answered anyway.
+- **Every agent result is now bound to the angle it was dispatched for.** `reports[]` emits
+  `research.angleId` while deps and meta key off the dispatched `angle.id`, so a foreign `angleId`
+  misattributed coverage: one angle appeared answered twice while another was never answered.
 
-- **A1 (P3):** handoff SKILL.md:132 names `load-pending-handoff.sh`; shipped hook
-  runs the `.mjs` (`hooks/hooks.json:19`). Correct the filename.
-- **A2 (P3):** deep-dive README:29 says recall angles default to Haiku; code +
-  SKILL.md default to Sonnet (deliberate, post-experiment). Fix README.
-- **A3 (P3):** adversarial-agents README:25 promises auto-fit prose/model-output
-  panels; SKILL.md:50 says those need user personas, and `--personas a,b` syntax
-  can't carry inline prompt bodies. Align README with SKILL.md and document how
-  custom personas are actually supplied.
+**Scope, stated honestly:** this is a placeholder/junk filter, **not provenance verification**. It cannot
+prove a URL was fetched — a live, non-placeholder URL with a long-enough invented claim still passes. The
+workflow sandbox cannot see the worker's tool-call log. It ends the class of failure that happened; it
+does not make results verified.
+
+### C2. Failed angles dropped silently; wave-2 ignores deps — P2 — ✅ SHIPPED
+`filter(Boolean)` erased crashed workers; wave-2 dispatched even when a declared dep never completed.
+Failures now flow to a top-level **`failedAngles`** (`meta` carries counts only — never a second copy of
+the list), core failures are called out, and SKILL.md requires the orchestrator to surface them in the
+synthesis. `tallyMeta` counts on the explicit `failed` flag: a failure record is a *truthy object*, so
+the old truthiness count reported `anglesFailed: 0` while `failedAngles` listed failures — a meta block
+that contradicted itself.
+
+### C3. Tier-2 escalation has NEVER fired — P1 — ✅ SHIPPED (NEW: found by Codex reviewing the C1/C2 plan, not in the audit)
+`shouldEscalate` read `verification.reliability`; `VERIFY_SCHEMA` requires and returns
+`overallReliability`. `rank[undefined]` is `undefined`, the `typeof r === "number"` guard fails, and the
+function returned `false` for **every input** — including a verifier that explicitly reported `low`.
+Proven at the console. **The entire low-reliability re-check was dead code**; `escalations: 0` in every
+meta block was a dead branch, not a quiet one.
+
+Also: `validateArgs` now rejects dependency graphs the two-wave runner cannot honour — duplicate ids,
+self-deps, deps on angles that do not exist, and **deps on non-root angles**. That last one matters:
+`partitionWaves` puts every angle with deps into wave 2 and `okIds` holds wave-1 successes only, so an
+ordinary-looking `a → b → c` chain reported `c` as `dep-failed: b` **even when `b` succeeded perfectly**.
+A confident lie is worse than a validation error.
+
+## Batch A — doc-only fixes
+
+- **A1 (P3):** ❌ **STALE — already fixed, nothing shipped.** `handoff/skills/handoff/SKILL.md:132`
+  already names `load-pending-handoff.mjs`, matching `hooks.json`. The audit finding was wrong. No
+  handoff bump.
+- **A2 (P3):** ✅ **SHIPPED.** deep-dive README said recall angles default to Haiku; code + SKILL.md
+  default to Sonnet. The README now says so *and states why* (an in-repo experiment found Haiku workers
+  missed a load-bearing cross-source contradiction Sonnet caught), so nobody "optimizes" it back.
+- **A3 (P3):** ✅ **SHIPPED.** adversarial-agents README merged prose and model-output into one table row
+  reading "Hidden Assumptions + artefact-fit picks", implying built-in personas the skill does not have;
+  SKILL.md is clear both panels require user-supplied `--personas`. Split the rows and showed the
+  invocation that works. **The audit's stated *reason* was wrong** and was not carried over:
+  `--personas a,b` entries *are* treated as inline prompt strings (SKILL.md:55), so the syntax **can**
+  carry a custom persona. The defect was purely the over-promise.
 
 ---
 
@@ -183,12 +233,35 @@ both.
   cached-replay promise holds: sdd.mjs derives all state through `agent()`
   calls (no `Date.now`/exec), so the replay prefix is deterministic.
 
-## Sequencing
+## Status (2026-07-14)
 
-1. Ship `codex-review` (in flight, SDD run on `feat/codex-review`).
-2. **Batch B** (security P1 first) → **Batch D** (correctness P1) → **Batch C**.
-3. **Batch A** rides along with whichever batch touches that plugin, else its own
-   quick branch.
-4. Per size-ceremony rule: B, C, D are each "small plan + plain subagents with
-   tests" scale — full SDD ceremony not required; write a short `# Task N` plan
-   per batch, Codex-review it, execute with tiered subagents.
+| Batch | State |
+|---|---|
+| `codex-review` (the reviewer itself) | ✅ shipped, then escalated to **diff mode** (0.2.0) |
+| **B1** path traversal | ✅ shipped |
+| **B2** statusline race | ✅ shipped (handoff 0.6.0) |
+| **B3** handoff injection | 🔴 **OPEN — needs its own spec, not a plan** |
+| **B4** codex-review lock | ⚠️ mitigated, residual documented (0.2.1) |
+| **C1 / C2 / C3** deep-dive integrity | ✅ shipped (deep-dive 0.4.0) |
+| **D1 / D2 / D3** sdd.mjs correctness | 🔴 **OPEN** |
+| **A1** | ❌ stale — was already fixed |
+| **A2 / A3** | ✅ shipped |
+
+**What is left: Batch D, and a spec for B3.** D1 is a live P1 (the final fixer's result is discarded;
+observed on a real run) and is the highest-value remaining item.
+
+### Notes for whoever picks up Batch D
+
+Per the size-ceremony rule, D is "small plan + plain subagents with tests" scale — write a short
+`# Task N` plan, Codex-review it, execute with tiered subagents. Two things this batch's experience
+says to do differently:
+
+- **Have Codex review the plan, not just the code.** Across B2, diff mode and C, the plan reviews caught
+  more than the code reviews did — including designs that were fatally wrong before a line was written.
+  The C plan alone took 16 unique findings across 3 rounds + audit, and the audit (a fresh reviewer
+  reading the folded plan cold) found 3 P1s that three review rounds had missed.
+- **Check whether your tasks can actually be separate commits.** C1 and C2 were planned as two tasks;
+  the audit caught that committing C1 alone leaves the tree crashing on the exact input C1 was written
+  to catch. Ask of every task boundary: *is the tree green between these two commits?*
+- **The docs-sync guard counts only `plugins/<p>/README.md` and `CLAUDE.md`.** `SKILL.md` does not.
+  Every one of this batch's deep-dive commits would have been denied; the audit caught that too.
