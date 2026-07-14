@@ -87,18 +87,52 @@ in it; that is the role `last-context-pct` plays today and the marker replaces. 
 render-cache write is then unprotected, which is harmless (concurrent invocations
 write near-identical renders).
 
-### B3. Handoff injection — a repo can plant its own handoff — P2 (NEW, from the Codex audit)
-B1 closes *exfiltration* (a `.pending` marker reading files outside `.claude/handoffs/`).
-It does **not** close *injection*: a hostile repo can commit an ordinary in-tree
-`.claude/handoffs/evil.md` plus a `.pending` naming it, and the loader emits its
-contents as `additionalContext` — attacker-authored text entering the next session as
-trusted context.
-**Why it is not a patch:** the loader cannot tell whether a handoff was written by
-*this machine's* handoff skill or committed by the repo. Fixing it needs a provenance
-boundary — e.g. handoffs (or an index of them) in the plugin's user-level data dir,
-which a checked-out repo cannot write. That is a design decision about where handoffs
-live, and it interacts with the SKILL's agent-authored write step (there is no trusted
-writer today to stamp provenance). Needs its own spec.
+### B3. Handoff injection — a repo can plant its own handoff — P2 — ✅ SHIPPED (handoff 0.7.0)
+
+**Resolved 2026-07-14 — and it did NOT need the spec this doc originally demanded.**
+
+**The finding:** B1 closed *exfiltration* (a `.pending` marker reading outside `.claude/handoffs/`). It
+did nothing about *injection*: a hostile repo can commit an ordinary in-tree `.claude/handoffs/evil.md`
+plus a `.pending` naming it. The loader then emitted the contents announced as *"Loading pending handoff
+from previous session"* — and **that framing is the exploit**. It invites the agent to treat
+attacker-authored text as its own notes rather than as untrusted repo data, on a channel nobody reviews.
+
+**Why the original scoping was wrong.** This doc (and I, at length) claimed the loader "cannot tell
+whether a handoff was written by this machine or committed by the repo", and therefore needed a
+provenance boundary — moving handoffs to a user-level data dir, plus a trusted writer to stamp them.
+That was over-scoped. **The gitignore convention already supplies the invariant:**
+
+- handoffs are gitignored **by design** (`SKILL.md` tells you to add `/.claude/handoffs/`), so a handoff
+  this machine wrote is **untracked, always**; and
+- a fresh clone **cannot** produce an untracked-but-present ignored file — git will not create one.
+
+So for the realistic attack (clone a hostile repo), *"git tracks it"* is an **exact** test for
+*"the repo shipped it"* — no allowlist, no hash index, no new state, no user friction.
+
+**As built:** `gitTracksFile()` in `lib.mjs`; the loader refuses a tracked handoff **or** a tracked
+`.pending`, emits **neither the contents nor the filename** (both attacker-controlled), and tells the
+human what it skipped. It **fails open** — no git, or no repo, means no repo-supplied hazard — because
+refusing a legitimate handoff is a worse failure than the bug. Both legitimate paths
+(untracked-in-a-repo, no-repo-at-all) are pinned by their own tests.
+
+**Severity, calibrated.** This is **not a novel capability**: a hostile repo can already put injection in
+`CLAUDE.md`, which Claude Code loads **as instructions**, by design, gated only by the folder-trust
+prompt — a strictly more powerful channel. B3 is a *credibility escalation* (self-authored framing) on an
+*invisible* channel. Worth closing cheaply. Not worth an architecture.
+
+**Known trade, documented in the README:** if you commit your own handoffs, they stop auto-loading. The
+loader cannot distinguish your committed handoff from a hostile one, and guessing wrong in that
+direction *is* the vulnerability.
+
+> **Prior art, for the next time this shape comes up.** The field converged on one principle: *the trust
+> record must live outside the artifact being trusted.* **direnv** is canonical — `.envrc` is
+> repo-controlled, so it requires an explicit `direnv allow` that stores a **content hash** in a
+> machine-local dir, and any edit re-locks it; **mise** copied it (`mise trust`). **git** learned it the
+> hard way (`safe.directory`, post-CVE-2022-24765, plus a standing refusal to honor certain repo-local
+> config keys at all). **VS Code Workspace Trust** and Claude Code's own folder-trust prompt are the
+> coarse version. A direnv-style hash allowlist *would* have been best-in-class here — but it is the
+> wrong trade for handoffs, because the agent writes them mid-session, so you would be approving a hash
+> on every `/handoff`. The gitignore invariant buys the same guarantee for free.
 
 ### B4. Same double-breaker bug in `codex-review`'s `acquireLock` — P3 — ⚠️ MITIGATED, NOT ELIMINATED (PR pending, codex-review 0.2.1)
 
@@ -233,21 +267,14 @@ A confident lie is worse than a validation error.
 | `codex-review` (the reviewer itself) | ✅ shipped, then escalated to **diff mode** (0.2.0) |
 | **B1** path traversal | ✅ shipped |
 | **B2** statusline race | ✅ shipped (handoff 0.6.0) |
-| **B3** handoff injection | 🔴 **OPEN — needs its own spec, not a plan** |
+| **B3** handoff injection | ✅ shipped (handoff 0.7.0) — and it did **not** need the spec this doc demanded |
 | **B4** codex-review lock | ⚠️ mitigated, residual documented (0.2.1) |
 | **C1 / C2 / C3** deep-dive integrity | ✅ shipped (deep-dive 0.4.0) |
 | **D1 / D2 / D3** sdd.mjs correctness | ✅ shipped — **and was already shipped when this table first claimed otherwise** |
 | **A1** | ❌ stale — was already fixed |
 | **A2 / A3** | ✅ shipped |
 
-**What is left: a spec for B3. That is all.** The audit is otherwise closed.
-
-**B3** cannot be a patch: a hostile repo can commit its own `.claude/handoffs/evil.md` plus a `.pending`
-naming it, and the loader has no way to tell it from one this machine wrote. Closing it needs a
-*provenance boundary* — probably moving handoffs (or an index of them) into the plugin's user-level data
-dir, which a checked-out repo cannot write. That is a design decision about where handoffs live, and it
-collides with the SKILL's agent-authored write step (there is no trusted writer today to stamp
-provenance). Brainstorm → spec → plan, not a fix.
+**Nothing is left. The audit is CLOSED**, with one accepted residual (B4's lock, documented above).
 
 ### What this audit taught, for the next one
 
@@ -255,6 +282,13 @@ provenance). Brainstorm → spec → plan, not a fix.
   D3, and in fact all of Batch D) were already fixed by the time anyone planned work on them — and a
   status table in this very doc asserted D was open without checking. Re-verify every finding against
   the current code before planning against it. It costs one `grep`.
+- **Scope the fix from the invariants you already have, not from the threat's worst framing.** B3 was
+  scoped here as needing a provenance architecture and its own spec. It needed neither: handoffs are
+  already gitignored, so `git ls-files` was an exact provenance test sitting in plain sight. Ask "what
+  does the system already guarantee?" before designing new machinery to guarantee it.
+- **Calibrate severity against the baseline, not against zero.** A hostile repo can already inject via
+  `CLAUDE.md`, which is loaded *as instructions* by design. B3 was a credibility escalation on an
+  invisible channel — real, cheap to close, and not the emergency the raw finding implied.
 - **Have Codex review the *plan*, not just the code.** Across B2, diff mode and C, the plan reviews
   caught more than the code reviews did — including designs that were fatally wrong before a line was
   written. The C plan took 16 unique findings across 3 rounds + an audit, and the audit (a fresh reviewer
