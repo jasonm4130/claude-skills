@@ -7,10 +7,11 @@ export const meta = {
   description:
     "Args-driven SDD loop: deps-driven waves — per-task implement -> review (spec + quality + ponytail) -> bounded fix loop run concurrently per wave in sibling worktrees (sequential = singleton waves), a per-wave merge gate with bounded repair, deterministic BLOCKED escalation and oscillation halt, then an Opus whole-branch final review. Returns task results + merges + plan-conflicts + final review.",
   phases: [
-    { title: "Implement", detail: "per-task implementer (tiered), TDD + ponytail ladder" },
-    { title: "Review", detail: "spec + quality + over-engineering lens, bounded fix loop" },
+    { title: "Implement", detail: "per-task implementer (tiered), TDD + ponytail ladder; claimed head verified" },
+    { title: "Review", detail: "spec + quality + over-engineering lens" },
+    { title: "Fix", detail: "bounded per-task repair — the round count is a plan-quality signal, so it gets its own box" },
     { title: "Merge", detail: "per-wave integration: ordered merges, full suite, bounded repair" },
-    { title: "Final", detail: "whole-branch review on Opus", model: "opus" },
+    { title: "Final", detail: "whole-branch review on Opus, then one bounded fix + re-review", model: "opus" },
   ],
 };
 
@@ -378,7 +379,11 @@ Return per schema: headSha, merged, conflictsResolved, testSummary, suite ("gree
   // Single entry point for every verification, so the injection guard cannot be forgotten at one
   // call site. Fails closed WITHOUT dispatching an agent when a sha is malformed — these strings
   // come from other agents and are interpolated into shell commands the verifier runs.
-  const runVerify = async (claimedSha, claim, expectCommits, label, baseSha) => {
+  // `phase` is passed IN, not inferred. It used to be derived as
+  //   label === "verify:final-fix" ? "Final" : "Merge"
+  // — a string match on the agent's own label standing in for a fact the caller already knows. It also
+  // mis-grouped the singleton-wave verifier (`verify:t1`) under "Merge", where nothing was merged.
+  const runVerify = async (claimedSha, claim, expectCommits, label, baseSha, phaseName) => {
     if (!isShaish(claimedSha)) {
       return { ok: false, reason: `claimed head is not a sha: ${JSON.stringify(claimedSha)}`, headSha: "" };
     }
@@ -390,8 +395,7 @@ Return per schema: headSha, merged, conflictsResolved, testSummary, suite ("gree
       return { ok: false, reason: `task ${bad.n} reported a head that is not a sha: ${JSON.stringify(bad.sha)}`, headSha: "" };
     }
     const v = await agent(verifyPrompt(claimedSha, claim, expectCommits, baseSha), {
-      // phase is derived from the label so the final-fix check groups under Final, not Merge.
-      label, phase: label === "verify:final-fix" ? "Final" : "Merge", model: "sonnet", schema: VERIFY_SCHEMA,
+      label, phase: phaseName, model: "sonnet", schema: VERIFY_SCHEMA,
     });
     return acceptVerification(v, cfg.testCmd);
   };
@@ -488,7 +492,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
       }
       rounds++;
       const fix = await agent(fixPrompt(task, actionable, wd), {
-        label: `fix:t${task.n}.${rounds}`, phase: "Review", model: "sonnet", schema: FIX_SCHEMA,
+        label: `fix:t${task.n}.${rounds}`, phase: "Fix", model: "sonnet", schema: FIX_SCHEMA,
       });
       if (!fix) return { halt: { taskN: task.n, reason: "fixer returned no result", reportPath: impl.reportPath } };
       head = fix.headSha || head;
@@ -513,6 +517,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
         [],
         `verify:t${wave[0].n}`,
         base, // continuity: the task's head must descend from where this wave started
+        "Implement", // a singleton wave never merges; this checks the implementer's claim
       );
       if (!acc.ok) {
         halted = { wave: w, reason: `task ${wave[0].n} unverified: ${acc.reason}`, failures: [] };
@@ -545,6 +550,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
           expect,
           `verify:w${w}`,
           waveBase, // continuity: the merge must build on the base this wave was dispatched from
+          "Merge",
         );
         merges.push({
           wave: w, merged: merge.merged,
@@ -600,6 +606,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
           [],
           "verify:final-fix",
           base, // continuity: the fix must build on the reviewed head, not replace it
+          "Final", // the final fix is one bounded step of the whole-branch gate, not the per-task loop
         );
         if (!acc.ok) {
           halted = { wave: "final", reason: `final fix unverified: ${acc.reason}`, failures: [] };

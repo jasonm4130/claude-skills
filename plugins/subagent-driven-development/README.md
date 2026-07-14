@@ -61,6 +61,25 @@ stale tree whenever the branch is ahead of the merge-base — always pass it.
 **return:**
 `{ tasks, planConflicts, halted, finalReview, finalFix, mergeBase, head, merges, ledgerPath, meta }`
 
+### Progress phases
+
+Every agent the workflow dispatches declares a phase, and the live progress tree (`/workflows`) groups
+by it:
+
+| Phase | What runs there |
+|---|---|
+| **Implement** | the tiered implementer, plus the verifier that checks its claimed head on a singleton wave |
+| **Review** | the spec + quality + over-engineering reviewer |
+| **Fix** | the bounded per-task repair loop |
+| **Merge** | the per-wave merge agent and its verifier |
+| **Final** | the whole-branch Opus review, the one bounded final fix, its verifier, and the re-review |
+
+**Fix is its own phase (since 0.4.0), and that is deliberate.** Fixers used to be tagged `Review`, so
+repairs rendered inside the box that *found* the problems — which hid the number that matters most.
+**Fix-round count is a plan-quality signal:** a task that needed two rounds is telling you the plan was
+underspecified, and you should be able to see that at a glance rather than reconstruct it from a
+transcript.
+
 ### Model tiering
 
 Implementer = controller-assigned `task.tier` (`sonnet` floor); reviewer = `opus`

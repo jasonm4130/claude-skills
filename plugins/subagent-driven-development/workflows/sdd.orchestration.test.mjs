@@ -19,17 +19,19 @@ const SHA = (c) => c.repeat(40);
 
 /**
  * @param {{args: any, respond: (label: string, prompt: string) => any}} opts
- * @returns {Promise<{result: any, calls: {label: string, model: string}[], prompts: Record<string,string>}>}
+ * @returns {Promise<{result: any, calls: {label: string, model: string, phase: string}[], prompts: Record<string,string>}>}
  */
 async function runWorkflow({ args, respond }) {
-  /** @type {{label: string, model: string}[]} */
+  /** @type {{label: string, model: string, phase: string}[]} */
   const calls = [];
   /** @type {Record<string,string>} */
   const prompts = {};
   const agent = async (prompt, opts = {}) => {
     const label = opts.label || "(unlabeled)";
     assert.ok(opts.model, `agent(${label}) must set an explicit model`);
-    calls.push({ label, model: opts.model });
+    // phase is what the progress tree groups by; a mis-grouped agent is invisible to the human
+    // watching the run, which is the whole point of the tree.
+    calls.push({ label, model: opts.model, phase: opts.phase || "(none)" });
     prompts[label] = prompt;
     return respond(label, prompt);
   };
@@ -226,4 +228,67 @@ test("final review: a missing final review halts rather than passing as a clean 
   });
   assert.ok(result.halted, "'the final review did not run' is not 'the branch is fine'");
   assert.match(result.halted.reason, /final review/i);
+});
+
+// ---------------------------------------------------------------------------
+// Phases. The progress tree groups agents by `phase`, and that grouping is the only view a human has
+// of a long run. Fix agents used to be tagged "Review" — so repairs rendered inside the box that
+// FOUND the problems, and the signal that matters most was invisible: fix rounds are a plan-quality
+// smell. A task that needed two rounds is telling you the plan was underspecified, and you could not
+// see that at a glance.
+// ---------------------------------------------------------------------------
+
+/** @param {{label:string,phase:string}[]} calls @param {string} label */
+const phaseOf = (calls, label) => calls.find((c) => c.label === label)?.phase;
+
+test("phases: a per-task fix runs in its OWN phase, not inside Review", async () => {
+  // One review round finds something, the fixer fixes it, the second round passes.
+  let reviewed = 0;
+  const respond = happyResponder({});
+  const { result, calls } = await runWorkflow({
+    args: soloArgs(),
+    respond: (label, prompt) => {
+      if (label === "review:t1") {
+        reviewed++;
+        return reviewed === 1
+          ? { spec: "fail", quality: "meh", cannotVerify: [], ponytail: { net: 0, items: [] },
+              findings: [{ severity: "Important", class: "correctness", file: "a.ts", line: 1, what: "off-by-one", planMandated: false }] }
+          : { spec: "pass", findings: [], cannotVerify: [], quality: "fine", ponytail: { net: 0, items: [] } };
+      }
+      if (label === "fix:t1.1") return { headSha: SHA("f"), testSummary: "1 pass", fixed: ["off-by-one"] };
+      if (label.startsWith("verify:")) {
+        return { claimSha: SHA("f"), headSha: SHA("f"), baseContained: true, missingCommits: [], suite: "green", evidence: "1 pass, 0 fail" };
+      }
+      return respond(label, prompt);
+    },
+  });
+
+  assert.equal(result.halted, null, JSON.stringify(result.halted));
+  assert.equal(phaseOf(calls, "review:t1"), "Review", "the reviewer stays in Review");
+  assert.equal(phaseOf(calls, "fix:t1.1"), "Fix",
+    "a fixer is not a reviewer — burying repairs in the Review box hides the fix-round count");
+  assert.equal(result.tasks[0].fixRounds, 1);
+});
+
+test("phases: every agent declares a phase, and the verifier's is passed in — not string-matched from its own label", async () => {
+  // sdd.mjs used to derive the verifier's phase with `label === "verify:final-fix" ? "Final" : "Merge"`.
+  // That is a string match on the agent's own label standing in for a fact the CALLER already knows,
+  // and it silently mis-groups any verify: label added later (e.g. the singleton-wave verify:t1, which
+  // is not a merge at all).
+  const { result, calls } = await runWorkflow({ args: waveArgs(), respond: happyResponder() });
+  assert.equal(result.halted, null);
+
+  for (const c of calls) {
+    assert.notEqual(c.phase, "(none)", `agent ${c.label} must declare a phase`);
+  }
+  assert.equal(phaseOf(calls, "merge:w0"), "Merge");
+  assert.equal(phaseOf(calls, "verify:w0"), "Merge", "a merge's verifier belongs with the merge");
+  assert.equal(phaseOf(calls, "final-review"), "Final");
+});
+
+test("phases: a SINGLETON wave's verifier is not mislabelled as a Merge — there is no merge", async () => {
+  const { result, calls } = await runWorkflow({ args: soloArgs(), respond: happyResponder() });
+  assert.equal(result.halted, null);
+  assert.equal(phaseOf(calls, "verify:t1"), "Implement",
+    "a singleton wave never merges; its verifier checks the implementer's claim, so it belongs with Implement");
 });
