@@ -175,6 +175,43 @@ function partitionWaveResults(wave, results) {
   });
   return { succeeded, failures };
 }
+
+function isSha(s) {
+  return typeof s === "string" && /^[0-9a-f]{40}$/.test(s);
+}
+
+// Gate for interpolating an agent-supplied sha into a shell command the verifier will RUN.
+// Hex-only, so it cannot carry a shell metacharacter; 7-40 chars, so an implementer reporting a
+// short sha is not spuriously halted. Anything else fails closed without dispatching an agent.
+function isShaish(s) {
+  return typeof s === "string" && /^[0-9a-f]{7,40}$/.test(s);
+}
+
+/**
+ * Decide whether a verifier's observation supports an agent's claim.
+ *
+ * An INDEPENDENT CHECK, not proof: sdd.mjs runs in a sandbox with no child_process, so the
+ * verifier is another agent and its report is another claim. What it buys is a fresh, read-only
+ * agent with no stake in the outcome, plus structural requirements a lazy report cannot satisfy by
+ * accident. The controller's post-run re-run of git and the suite is the gate that actually holds.
+ *
+ * We compare the two SHAs the verifier says git printed — never a boolean it could simply set.
+ */
+function acceptVerification(v, testCmd) {
+  const no = (reason) => ({ ok: false, reason, headSha: "" });
+  if (!v) return no("verifier returned no result");
+  if (!isSha(v.claimSha)) return no("the claimed head did not resolve to a commit");
+  // Never fall back to the claimed sha: it is the value we do not trust.
+  if (!isSha(v.headSha)) return no(`verifier reported no resolved branch head (got ${JSON.stringify(v.headSha)})`);
+  if (v.claimSha !== v.headSha) return no(`claimed commit ${v.claimSha} is not the branch head ${v.headSha}`);
+  // Continuity: a head that does not descend from the base we started at has discarded earlier work,
+  // however green it is.
+  if (v.baseContained !== true) return no(`head ${v.headSha} does not build on the base this run started from`);
+  const missing = Array.isArray(v.missingCommits) ? v.missingCommits : [];
+  if (missing.length) return no(`head ${v.headSha} does not contain task(s) ${missing.join(", ")}`);
+  if (testCmd && v.suite !== "green") return no(`suite is ${v.suite} at ${v.headSha}`);
+  return { ok: true, reason: "", headSha: v.headSha };
+}
 // <<< PURE
 
 const IMPL_SCHEMA = {
@@ -232,6 +269,21 @@ const MERGE_SCHEMA = {
     conflictsResolved: { type: "array", items: { type: "string" } },
     testSummary: { type: "string" },
     suite: { type: "string", enum: ["green", "red"] },
+  },
+};
+
+const VERIFY_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["claimSha", "headSha", "baseContained", "missingCommits", "suite", "evidence"],
+  properties: {
+    // The two SHAs git actually printed. The workflow compares them itself — a boolean like
+    // `headMatchesClaim` would just be another string the agent could set (Codex review, round 2).
+    claimSha: { type: "string" },  // what `rev-parse --verify <claim>^{commit}` printed; "" on failure
+    headSha: { type: "string" },   // what `rev-parse HEAD` printed
+    baseContained: { type: "boolean" }, // is the pre-transition base an ancestor of HEAD?
+    missingCommits: { type: "array", items: { type: "number" } },
+    suite: { type: "string", enum: ["green", "red", "unknown"] },
+    evidence: { type: "string" },
   },
 };
 
@@ -323,6 +375,64 @@ ${cfg.testCmd ? `Suite command: ${cfg.testCmd}` : "No suite command given — us
 Global constraints:\n${gc}
 Return per schema: headSha, merged, conflictsResolved, testSummary, suite ("green"/"red").`;
 
+  // Single entry point for every verification, so the injection guard cannot be forgotten at one
+  // call site. Fails closed WITHOUT dispatching an agent when a sha is malformed — these strings
+  // come from other agents and are interpolated into shell commands the verifier runs.
+  const runVerify = async (claimedSha, claim, expectCommits, label, baseSha) => {
+    if (!isShaish(claimedSha)) {
+      return { ok: false, reason: `claimed head is not a sha: ${JSON.stringify(claimedSha)}`, headSha: "" };
+    }
+    if (!isShaish(baseSha)) {
+      return { ok: false, reason: `base is not a sha: ${JSON.stringify(baseSha)}`, headSha: "" };
+    }
+    const bad = expectCommits.find((c) => !isShaish(c.sha));
+    if (bad) {
+      return { ok: false, reason: `task ${bad.n} reported a head that is not a sha: ${JSON.stringify(bad.sha)}`, headSha: "" };
+    }
+    const v = await agent(verifyPrompt(claimedSha, claim, expectCommits, baseSha), {
+      // phase is derived from the label so the final-fix check groups under Final, not Merge.
+      label, phase: label === "verify:final-fix" ? "Final" : "Merge", model: "sonnet", schema: VERIFY_SCHEMA,
+    });
+    return acceptVerification(v, cfg.testCmd);
+  };
+
+  const verifyPrompt = (claimedSha, claim, expectCommits = [], baseSha = "") => `You are a VERIFIER. Do not fix
+anything, do not commit, do not write or edit any file. Observe, then report only what you saw.
+
+Working directory: ${cfg.workdir}
+
+Another agent claims: ${claim}
+Claimed head SHA: ${claimedSha}
+
+Run exactly these and report what they actually print:
+
+1. \`git -C ${cfg.workdir} rev-parse --verify ${claimedSha}^{commit}\`
+   Report the full 40-character SHA it prints as claimSha. If it fails, claimSha="", put the error
+   text in evidence, and stop.
+2. \`git -C ${cfg.workdir} rev-parse HEAD\`
+   Report the full 40-character SHA it prints as headSha. Report what git printed — do not echo
+   back the claimed SHA.
+3. The branch must still BUILD ON where this run started — an agent that reset to some unrelated
+   commit would otherwise pass every other check while discarding all earlier work:
+   \`git -C ${cfg.workdir} merge-base --is-ancestor ${baseSha} HEAD\` (exit 0 = contained)
+   Report baseContained=true only if that exits 0.
+${expectCommits.length
+  ? `4. Each of these task commits must be contained in HEAD. For each, run:
+${expectCommits.map((c) => `   task ${c.n}: \`git -C ${cfg.workdir} merge-base --is-ancestor ${c.sha} HEAD\` (exit 0 = contained)`).join("\n")}
+   Put the task number of every commit NOT contained in HEAD into missingCommits.
+   (Check the commit SHAs, not sdd/t<N> branches — the merger deletes those branches.)`
+  : `4. No task commits to check for this claim: missingCommits=[].`}
+${cfg.testCmd
+  ? `5. Run the suite VERBATIM from ${cfg.workdir}:
+   \`${cfg.testCmd}\`
+   Read its real output. suite="green" ONLY if it ran to completion with zero failures. Failures, a
+   crash, or a command that would not run are all "red". Quote the real pass/fail summary line in
+   evidence.`
+  : `5. No test command was configured for this run: suite="unknown", and put the rev-parse output
+   in evidence.`}
+
+Never report a result you did not observe. A claim you could not confirm is not confirmed.`;
+
   const finalPrompt = (mergeBase, head) =>
     `You are the whole-branch FINAL reviewer (most capable model). Work in ${cfg.workdir}; READ-ONLY.
 Read your full operating instructions first: ${P}/prompts/final-reviewer.md — follow them exactly.
@@ -393,11 +503,23 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     const wave = waves[w];
 
     if (wave.length === 1) {
-      // Degenerate case: exactly the pre-wave behavior — shared workdir, no merge.
+      // Degenerate case: shared workdir, no merge — but the implementer's claimed head still has to
+      // be checked, or a linear plan (all singleton waves) advances entirely on unverified claims.
       const r = await runTask(wave[0], base, cfg.workdir);
       if (r.halt) { halted = { wave: w, reason: "task failure(s) in wave", failures: [r.halt] }; break; }
+      const acc = await runVerify(
+        r.task.headSha,
+        `task ${wave[0].n} is complete and its commit is the branch head`,
+        [],
+        `verify:t${wave[0].n}`,
+        base, // continuity: the task's head must descend from where this wave started
+      );
+      if (!acc.ok) {
+        halted = { wave: w, reason: `task ${wave[0].n} unverified: ${acc.reason}`, failures: [] };
+        break;
+      }
       results.push(r.task);
-      base = r.task.headSha;
+      base = acc.headSha;
       continue;
     }
 
@@ -413,11 +535,32 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
       if (!merge) {
         halted = { wave: w, reason: "merge agent returned no result", failures };
       } else {
-        merges.push({ wave: w, merged: merge.merged, headSha: merge.headSha, testSummary: merge.testSummary });
+        // The workflow's own record of what succeeded — a merger that omits a task from `merged`
+        // must not shrink what gets checked. partitionWaveResults pushes `r.task`, so these ARE the
+        // task objects ({ n, status, headSha, ... }) — not { task } wrappers (Codex review, round 3).
+        const expect = succeeded.map((t) => ({ n: t.n, sha: t.headSha }));
+        const acc = await runVerify(
+          merge.headSha,
+          `wave ${w} merged task(s) ${expect.map((e) => e.n).join(", ")} and left the suite ${merge.suite}`,
+          expect,
+          `verify:w${w}`,
+          waveBase, // continuity: the merge must build on the base this wave was dispatched from
+        );
+        merges.push({
+          wave: w, merged: merge.merged,
+          headSha: acc.ok ? acc.headSha : merge.headSha,
+          testSummary: merge.testSummary,
+          verified: acc.ok,
+          reason: acc.reason,
+        });
         if (merge.suite === "red") {
           halted = { wave: w, reason: "merge gate red after repair", failures };
+        } else if (!acc.ok) {
+          // The merger claimed green; an independent check could not confirm it. Do not let an
+          // unverified base poison every wave after this one.
+          halted = { wave: w, reason: `merge gate unverified: ${acc.reason}`, failures };
         } else {
-          base = merge.headSha;
+          base = acc.headSha;
           succeeded.forEach((t) => results.push(t));
         }
       }

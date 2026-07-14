@@ -88,7 +88,7 @@ function happyResponder(overrides = {}) {
     }
     if (label.startsWith("verify:")) {
       // Default: the verifier confirms whatever was claimed. Tests override to inject disagreement.
-      return { claimSha: MERGED, headSha: MERGED, missingCommits: [], suite: "green", evidence: "2 pass, 0 fail" };
+      return { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], suite: "green", evidence: "2 pass, 0 fail" };
     }
     if (label === "final-review") return { verdict: "approve", findings: [], ponytailDebt: [] };
     throw new Error(`unscripted agent label: ${label}`);
@@ -102,4 +102,86 @@ test("harness: a two-task wave runs implement -> review -> merge and completes",
   const labels = calls.map((c) => c.label);
   assert.ok(labels.includes("impl:t1") && labels.includes("impl:t2"), "both tasks implemented");
   assert.ok(labels.includes("merge:w0"), "a two-task wave reaches the merge gate (indices start at 0)");
+});
+
+test("merge gate: base advances to the verifier's resolved head, and only after verification", async () => {
+  const { result, calls } = await runWorkflow({ args: waveArgs(), respond: happyResponder() });
+  assert.equal(result.halted, null);
+  assert.equal(result.head, MERGED);
+  const order = calls.map((c) => c.label);
+  assert.ok(order.indexOf("merge:w0") < order.indexOf("verify:w0"), "verification follows the merge");
+  assert.equal(result.merges[0].verified, true);
+});
+
+test("merge gate: a claimed-green merge the verifier finds red halts the run", async () => {
+  const { result } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({
+      "verify:w0": { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], suite: "red", evidence: "3 failing" },
+    }),
+  });
+  assert.ok(result.halted, "an unverified merge must halt, not poison the next wave's base");
+  assert.match(result.halted.reason, /unverified/i);
+  assert.equal(result.tasks.length, 0, "an unverified wave's tasks are not recorded as done");
+});
+
+test("merge gate: a merger naming a commit that is not the branch head halts the run", async () => {
+  const { result } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({
+      "verify:w0": { claimSha: MERGED, headSha: SHA("f"), missingCommits: [], suite: "green", evidence: "ok" },
+    }),
+  });
+  assert.ok(result.halted);
+  assert.match(result.halted.reason, /head/i);
+});
+
+test("merge gate: the verifier is asked about EVERY succeeded task, not the merger's list", async () => {
+  // A merger that omits task 2 from `merged` must not shrink what gets checked.
+  const { prompts } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({
+      "merge:w0": { headSha: MERGED, merged: [1], conflictsResolved: [], testSummary: "1 pass", suite: "green" },
+    }),
+  });
+  assert.match(prompts["verify:w0"], /task 2/i, "task 2 succeeded, so the verifier must check it");
+});
+
+test("singleton wave: a linear task's claimed head is verified before base advances", async () => {
+  // The common case: a linear plan is all singleton waves, and they never touch the merge gate.
+  const { result, calls } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), baseContained: true, missingCommits: [], suite: "green", evidence: "1 pass" },
+    }),
+  });
+  assert.equal(result.halted, null);
+  assert.equal(result.head, SHA("a"));
+  assert.ok(calls.some((c) => c.label === "verify:t1"), "a singleton task is verified too");
+});
+
+test("injection: a malformed claimed sha fails closed WITHOUT dispatching a verifier", async () => {
+  // The verifier's prompt interpolates this string into git commands it will run.
+  const { result, calls } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "impl:t1": { status: "DONE", headSha: "abc123; rm -rf ~ #", testSummary: "1 pass", concerns: "", reportPath: "/w/r.md" },
+    }),
+  });
+  assert.ok(result.halted, "a non-sha head must halt");
+  assert.ok(
+    !calls.some((c) => c.label.startsWith("verify:")),
+    "fail closed: no agent may be dispatched with an unvalidated sha in its prompt",
+  );
+});
+
+test("singleton wave: an unverifiable task halts instead of advancing base", async () => {
+  const { result } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), baseContained: true, missingCommits: [], suite: "red", evidence: "1 failing" },
+    }),
+  });
+  assert.ok(result.halted);
+  assert.match(result.halted.reason, /unverified/i);
 });
