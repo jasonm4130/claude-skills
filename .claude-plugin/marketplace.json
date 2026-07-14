@@ -33,7 +33,7 @@
       "name": "adversarial-agents",
       "source": "./plugins/adversarial-agents",
       "description": "Configurable adversarial panel review for any artefact — plans, code, design docs, prose, model outputs.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "Jason Matthew"
       },
@@ -51,7 +51,7 @@
       "name": "codex-review",
       "source": "./plugins/codex-review",
       "description": "Cross-provider adversarial plan/design-doc review via OpenAI Codex (GPT-5.6 Terra): verdict-loop protocol, atomic chain guard, cross-repo decision-gate log.",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "author": {
         "name": "Jason Matthew"
       },
@@ -63,7 +63,7 @@
       "name": "deep-dive",
       "source": "./plugins/deep-dive",
       "description": "Model-tiered, adversarially-verified multi-source research via parallel sub-agents and synthesis with citations. Cheaper alternative to the built-in all-Opus deep-research.",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "author": {
         "name": "Jason Matthew"
       },

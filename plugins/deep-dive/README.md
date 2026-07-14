@@ -26,7 +26,7 @@ For one-shot factual questions ("what does this return", "syntax for X"), the sk
 ## How it works
 
 1. **Plan angles as a DAG.** Root angles run in parallel; dependent angles run in a second wave only if a root's output makes them worth asking. Shown to you for go-ahead before dispatch.
-2. **Dispatch in parallel.** One sub-agent per angle, all in a single message. Recall-style angles default to Haiku for cost; synthesis-heavy angles use Sonnet. Each agent reads 2–4 sources deeply, not 10 shallowly.
+2. **Dispatch in parallel.** One sub-agent per angle, all in a single message. **Workers default to Sonnet** — deliberately, not for lack of trying to save money: an in-repo orchestration experiment found Haiku workers missed a load-bearing cross-source contradiction that Sonnet caught. Reserve Haiku for pure enumeration (gathering lists or URLs), where that risk is acceptable. Each agent reads 2–4 sources deeply, not 10 shallowly.
 3. **Critic → citation-judge → final-judge passes.** Distinct roles, in order. Critic finds holes; citation-judge verifies every URL resolves and supports the claim; final-judge ships or sends back.
 4. **Cite explicitly.** Every claim has a URL + title + date. Single-domain runs get a "single-perspective" warning.
 
