@@ -28,7 +28,7 @@ export function parseEventStream(stdoutText) {
 }
 
 export function parseVerdict(text, mode) {
-  const re = mode === "audit" ? /AUDIT:\s*(PASS|CONCERNS)/g : /VERDICT:\s*(APPROVED|REVISE)/g;
+  const re = isAuditMode(mode) ? /AUDIT:\s*(PASS|CONCERNS)/g : /VERDICT:\s*(APPROVED|REVISE)/g;
   let last = null;
   for (const m of (text ?? "").matchAll(re)) last = m[1];
   return last ?? "UNPARSEABLE";
@@ -62,9 +62,65 @@ export function buildAuditPrompt(relPath) {
 }
 
 export function buildRetryPrompt(mode) {
-  return mode === "audit"
+  return isAuditMode(mode)
     ? "Your previous message was missing the audit line — end with AUDIT: PASS or AUDIT: CONCERNS."
     : "Your previous message was missing the verdict line — end with VERDICT: APPROVED or VERDICT: REVISE.";
+}
+
+/** @param {string} mode */
+export function isAuditMode(mode) { return mode === "audit" || mode === "diff-audit"; }
+/** @param {string} mode */
+export function isDiffMode(mode) { return mode === "diff" || mode === "diff-audit"; }
+
+/**
+ * The EXACT command the reviewer is told to run. It must carry --no-textconv/--no-ext-diff, or Codex
+ * re-runs an unprotected `git diff` inside its sandbox and a repo-configured driver executes anyway —
+ * making our own protection in resolveDiff() pointless. It also guarantees the reviewer sees the same
+ * bytes we hashed.
+ * @param {string} pinnedRange
+ */
+const DIFF_CMD = (pinnedRange) => `git diff --no-textconv --no-ext-diff ${pinnedRange} --`;
+
+/** Files git will not diff must be NAMED, never silently absent — silence reads as "nothing to see". */
+const undiffableNote = (undiffable) =>
+  undiffable.length === 0
+    ? ""
+    : `\n\nNOT SHOWN in the diff (git will not render them — binary, or marked \`-diff\` in .gitattributes). Their contents changed but you cannot see how. Read them directly if they matter, and treat an unreviewable source file as suspicious in itself:\n${undiffable.map((f) => `- ${f}`).join("\n")}`;
+
+const DIFF_BODY = (range, files, undiffable) => `You are an adversarial code reviewer. Review the changes in \`${range}\` in this repository.
+
+Run \`${DIFF_CMD(range)}\` to see them, and read the surrounding files for context — a diff read in isolation hides most real bugs. Files changed:
+${files.map((f) => `- ${f}`).join("\n")}${undiffableNote(undiffable)}
+
+Default to skepticism: your job is to find what is BROKEN, not to validate the change. Assume it is wrong until the code says otherwise. Hunt for: logic errors, off-by-one and boundary bugs, race conditions and TOCTOU, unhandled errors and swallowed exceptions, resource leaks, injection and path traversal, incorrect edge-case handling, and tests that assert nothing or cannot fail.
+
+For each finding give the file and line, state concretely what input or interleaving triggers it, and what breaks. A finding I cannot reproduce from your description is not a finding.
+
+Report as a bullet list, each tagged [P1] (a real bug — must fix), [P2] (should fix), or [P3] (nit). Severity must be proportionate: this is small local tooling, not a distributed system. Do not restate the diff. Do not rubber-stamp.
+
+End your final message with exactly one line: VERDICT: APPROVED or VERDICT: REVISE (REVISE if any P1 or P2 finding exists).`;
+
+/** @param {string} pinnedRange @param {string[]} files @param {string[]} undiffable @returns {string} */
+export function buildDiffPrompt(pinnedRange, files, undiffable = []) {
+  return DIFF_BODY(pinnedRange, files, undiffable);
+}
+
+/** @param {string} pinnedRange @param {string[]} undiffable @returns {string} */
+export function buildDiffResumePrompt(pinnedRange, undiffable = []) {
+  // Deliberately NEUTRAL. Saying "the code has changed in response to your findings" is exactly the
+  // implementer framing the Global Constraints forbid — it invites the reviewer to confirm the fixes
+  // rather than attack them. Framing degraded findings 3-4x in testing; that rule has no exception for
+  // resume rounds.
+  return `The code has changed. The new range is \`${pinnedRange}\`. Run \`${DIFF_CMD(pinnedRange)}\` and review it again from scratch: check whether each issue you raised earlier is actually gone from the code (not merely moved, renamed, or commented), and hunt for new problems the changes introduced. Same reporting format and severity rubric.${undiffableNote(undiffable)}
+
+End your final message with exactly one line: VERDICT: APPROVED or VERDICT: REVISE.`;
+}
+
+/** @param {string} pinnedRange @param {string[]} undiffable @returns {string} */
+export function buildDiffAuditPrompt(pinnedRange, undiffable = []) {
+  return `You are performing a final holistic audit of the change \`${pinnedRange}\`. A separate detailed review has already gone through it hunk by hunk; your job is NOT another line-by-line pass. Run \`${DIFF_CMD(pinnedRange)}\` and assess the change AS A WHOLE: does it hang together, does it do what its code implies consistently across every file it touches, are there systemic risks or incoherences that only appear when reading it end to end, and is anything load-bearing missing entirely (an error path, a test, a caller not updated)? Report at most 5 findings, whole-change in scope, same [P1]/[P2]/[P3] tagging.${undiffableNote(undiffable)}
+
+End your final message with exactly one line: AUDIT: PASS or AUDIT: CONCERNS.`;
 }
 
 const DEFAULT_TIMEOUT_S = 300;
@@ -429,10 +485,11 @@ export function appendNote(logPath, { chainId, unique, outcome, comment }) {
     // sole success metric can be corrupted by a bookkeeping slip. "aborted" is
     // the always-allowed escape hatch.
     if (outcome !== "aborted") {
-      const has = (m, v) => lines.some((l) => l.chainId === chainId && l.mode === m && l.verdict === v);
-      const ok = outcome === "audit-pass" ? has("audit", "PASS")
-        : outcome === "cap-revise" ? has("review", "REVISE")
-        : has("audit", "CONCERNS"); // both audit-concerns-* classes
+      const hasAudit = (v) => lines.some((l) => l.chainId === chainId && isAuditMode(l.mode) && l.verdict === v);
+      const hasReview = (v) => lines.some((l) => l.chainId === chainId && (l.mode === "review" || l.mode === "diff") && l.verdict === v);
+      const ok = outcome === "audit-pass" ? hasAudit("PASS")
+        : outcome === "cap-revise" ? hasReview("REVISE")
+        : hasAudit("CONCERNS"); // both audit-concerns-* classes
       if (!ok) {
         throw err("LIFECYCLE_MISMATCH",
           `outcome ${outcome} does not match recorded events for chain ${chainId}; if a best-effort result append was lost, repair ${logPath} manually`);
@@ -499,19 +556,50 @@ export function runCodex(args, { cwd, timeoutMs }) {
 
 function die(msg, code = 1) { process.stderr.write(msg + "\n"); process.exit(code); }
 
-async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, model, effort, timeoutS }) {
+async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, model, effort, timeoutS, maxLines }) {
   const logPath = logPathDefault();
-  const abs = resolvePath(file);
-  let fileStat;
-  try { fileStat = statSync(abs); } catch { die(`artifact not found: ${abs}`); }
-  if (!fileStat.isFile()) die(`artifact must be a regular file: ${abs}`);
-  const repoRoot = resolveRepoRoot(abs);
-  const relPath = relativePath(repoRoot, abs) || abs;
+
+  let repoRoot, relPath, hash, diffFiles = [], diffUndiffable = [], pinnedRange = "";
+  if (isDiffMode(mode)) {
+    repoRoot = repoRootOfDir(process.cwd()); // NOT resolveRepoRoot — that dirname()s its argument
+    let d;
+    try {
+      d = resolveDiff(repoRoot, file, { maxLines, maxBytes: MAX_DIFF_BYTES }); // `file` carries the range
+    } catch (e) {
+      die(`refused: ${e.message}`, e.code === "DIFF_TOO_LARGE" ? 7 : 2);
+    }
+    pinnedRange = d.pinnedRange;
+    // The chain's identity is the SYMBOLIC range — stable across rounds, exactly as a plan's file path
+    // is. It must NOT be the pinned SHAs: runRound validates a resume with an exact artifact match, so
+    // a pinned artifact would stop matching the moment a fix commit moved <head>, and --resume would
+    // be rejected before Codex ever ran. The 3-round protocol would be impossible.
+    relPath = `diff:${file}`;
+    // The per-round content hash — the analogue of a plan file's bytes. Hash a MANIFEST, not just the
+    // rendered diff text: a change confined to binary or `-diff`-marked files produces identical diff
+    // text, so hashing the text alone would report "already reviewed" for a genuinely new change. The
+    // pinned SHAs and the undiffable paths are part of what was reviewed, so they are part of its
+    // identity.
+    hash = contentHashOf(Buffer.from(JSON.stringify({
+      pinnedRange: d.pinnedRange,
+      files: d.files,
+      undiffable: d.undiffable,
+      text: d.text,
+    }), "utf8"));
+    diffFiles = d.files;
+    diffUndiffable = d.undiffable;
+  } else {
+    const abs = resolvePath(file);
+    let fileStat;
+    try { fileStat = statSync(abs); } catch { die(`artifact not found: ${abs}`); }
+    if (!fileStat.isFile()) die(`artifact must be a regular file: ${abs}`);
+    repoRoot = resolveRepoRoot(abs);
+    relPath = relativePath(repoRoot, abs) || abs;
+    hash = contentHashOf(readFileSync(abs));
+  }
   const repo = repoRoot.split("/").at(-1);
-  const hash = contentHashOf(readFileSync(abs)); // recorded per round — artifact changes between rounds
   let chainId = chain, trigger;
 
-  if (!resume && mode === "review") {
+  if (!resume && (mode === "review" || mode === "diff")) {
     if (auto === force) die("exactly one of --auto or --force is required to open a chain");
     trigger = auto ? "auto" : "forced";
     try {
@@ -537,7 +625,7 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
           .filter((l) => l.chainId === chainId && l.mode === mode && l.sessionId)
           .map((l) => l.sessionId);
       } catch { /* log unreadable — validated at reservation; handled below */ }
-      if (mode === "audit") {
+      if (isAuditMode(mode)) {
         // audit --resume exists ONLY to retry that audit's own UNPARSEABLE session —
         // strict on all three counts, or the one-audit boundary is bypassable.
         if (!retryVerdict) die("audit --resume is only valid with --retry-verdict", 6);
@@ -545,7 +633,7 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
         let latestAudit;
         try {
           latestAudit = readLogLines(logPath)
-            .filter((l) => l.chainId === chainId && l.mode === "audit" && l.verdict).at(-1);
+            .filter((l) => l.chainId === chainId && isAuditMode(l.mode) && l.verdict).at(-1);
         } catch { /* validated strict at getChainState already */ }
         if (latestAudit?.verdict !== "UNPARSEABLE") {
           die(`audit --resume is only for an UNPARSEABLE audit; recorded verdict: ${latestAudit?.verdict ?? "none"}`, 6);
@@ -563,16 +651,52 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
     }
   }
 
+  if (isAuditMode(mode)) {
+    // --retry-verdict exists ONLY to re-ask an UNPARSEABLE audit for its verdict line, within its own
+    // session. Without this, it is a bypass: a fresh (non-resumed) retry would skip the guard below
+    // and spend quota on a second real audit after a PASS.
+    if (retryVerdict && !resume) {
+      die("audit --retry-verdict is only valid with --resume (it re-asks an unparseable audit for its verdict)", 6);
+    }
+    if (!retryVerdict) {
+      const priorAudits = readLogLines(logPath).filter(
+        (l) => l.chainId === chainId && isAuditMode(l.mode) && l.verdict && l.verdict !== "UNPARSEABLE",
+      );
+      if (priorAudits.length > 0) {
+        die(`chain ${chainId} already has an audit (${priorAudits.at(-1).verdict}); the audit is run once`, 6);
+      }
+    }
+  }
+
   let round;
-  if (mode === "review") {
+  if (mode === "review" || mode === "diff") {
     try {
-      round = 1 + readLogLines(logPath).filter((l) => l.chainId === chainId && l.mode === "review").length;
+      // l.mode === mode, not a hardcoded "review": a diff chain's rounds are logged with mode:"diff",
+      // and counting only "review" lines would leave round stuck at 1 forever for diff chains — the
+      // round cap below would then never trigger.
+      round = 1 + readLogLines(logPath).filter((l) => l.chainId === chainId && l.mode === mode).length;
     } catch { round = undefined; } // result logging is best-effort; never block the round on this
   }
 
+  // The protocol is 3 rounds + 1 audit, and until now NOTHING enforced it — round was recorded and
+  // never checked, so a caller could burn unlimited paid rounds. Enforce BEFORE runCodex is spawned:
+  // refusing after spending the quota would defeat the point.
+  const MAX_REVIEW_ROUNDS = 3;
+  if ((mode === "review" || mode === "diff") && round > MAX_REVIEW_ROUNDS) {
+    die(
+      `chain ${chainId} has already used ${MAX_REVIEW_ROUNDS} review rounds — the protocol is ` +
+        `${MAX_REVIEW_ROUNDS} rounds + 1 audit. Run the audit, or close the chain with ` +
+        `\`note --outcome cap-revise\`.`,
+      6,
+    );
+  }
+
   const prompt = retryVerdict ? buildRetryPrompt(mode)
+    : resume && mode === "diff" ? buildDiffResumePrompt(pinnedRange, diffUndiffable)
     : resume && mode === "review" ? buildResumePrompt(relPath)
+    : mode === "diff-audit" ? buildDiffAuditPrompt(pinnedRange, diffUndiffable)
     : mode === "audit" ? buildAuditPrompt(relPath)
+    : mode === "diff" ? buildDiffPrompt(pinnedRange, diffFiles, diffUndiffable)
     : buildReviewPrompt(relPath);
   const modelArgs = ["-m", model, "-c", `model_reasoning_effort=${effort}`];
   const args = resume
@@ -598,7 +722,7 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
     durationMs: Date.now() - t0, pendingNoteChainId: chainId,
   };
   appendResult(logPath, {
-    chainId, repo, artifact: relPath, contentHash: hash, mode, round,
+    chainId, repo, artifact: relPath, contentHash: hash, mode, round, pinnedRange,
     verdict, findings, sessionId: stream.sessionId, model, effort,
     usage: stream.usage, durationMs: result.durationMs,
   });
@@ -606,7 +730,7 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
   if (!result.ok) process.exit(4);
 }
 
-const USAGE = "usage: codex-review.mjs <review|audit|note|stats> …";
+const USAGE = "usage: codex-review.mjs <review|diff|audit|diff-audit|note|stats> …";
 
 export async function main(argv) {
   const [cmd, ...rest] = argv;
@@ -621,22 +745,27 @@ export async function main(argv) {
         model: { type: "string", default: "gpt-5.6-terra" },
         effort: { type: "string", default: "high" },
         timeout: { type: "string", default: "300" },
+        "max-lines": { type: "string", default: "4000" },
         unique: { type: "string" }, outcome: { type: "string" }, comment: { type: "string" },
       },
     }));
   } catch (e) {
     die(`${e.message}\n${USAGE}`);
   }
-  if ((cmd === "review" || cmd === "audit") && !positionals[0]) {
+  if ((cmd === "review" || cmd === "audit" || cmd === "diff" || cmd === "diff-audit") && !positionals[0]) {
     die(`${cmd} requires a <file> argument\n${USAGE}`);
   }
+  let maxLines;
+  try { maxLines = parseMaxLines(values["max-lines"]); } catch (e) { die(`${e.message}\n${USAGE}`); }
   const common = {
     file: positionals[0], resume: values.resume, chain: values.chain,
     retryVerdict: values["retry-verdict"], auto: !!values.auto, force: !!values.force,
-    model: values.model, effort: values.effort, timeoutS: parseTimeoutS(values.timeout),
+    model: values.model, effort: values.effort, timeoutS: parseTimeoutS(values.timeout), maxLines,
   };
   if (cmd === "review") return runRound({ ...common, mode: "review" });
   if (cmd === "audit") return runRound({ ...common, mode: "audit" });
+  if (cmd === "diff") return runRound({ ...common, mode: "diff" });
+  if (cmd === "diff-audit") return runRound({ ...common, mode: "diff-audit" });
   if (cmd === "note") {
     if (!values.chain || values.unique === undefined || !values.outcome) die("note requires --chain, --unique, --outcome");
     try {
@@ -649,7 +778,7 @@ export async function main(argv) {
     process.stdout.write(JSON.stringify(computeStats(logPathDefault()), null, 1) + "\n");
     return;
   }
-  die("usage: codex-review.mjs <review|audit|note|stats> …");
+  die(USAGE);
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {

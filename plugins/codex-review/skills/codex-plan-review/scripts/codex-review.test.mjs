@@ -13,6 +13,7 @@ import {
   contentHashOf, mintChainId, resolveRepoRoot, parseTimeoutS,
   readLogLines, acquireLock, releaseLock, reserveChain, appendResult, appendNote, computeStats, getChainState, OUTCOMES,
   repoRootOfDir, isSafeGitRange, parseMaxLines, resolveDiff,
+  isAuditMode, isDiffMode, buildDiffPrompt, buildDiffResumePrompt, buildDiffAuditPrompt,
 } from "./codex-review.mjs";
 
 // Real stream captured from codex-cli 0.144.3 on 2026-07-14.
@@ -246,13 +247,18 @@ if (mode === "fail") {
   chmodSync(join(dir, "codex"), 0o755);
   return {
     env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, SHIM_DIR: dir, SHIM_MODE: mode },
-    argv: () => JSON.parse(readFileSync(join(dir, "argv.json"), "utf8")),
+    // null (not a throw) when codex was never invoked — a refused-before-spawn test asserts exactly
+    // that absence.
+    argv: () => {
+      try { return JSON.parse(readFileSync(join(dir, "argv.json"), "utf8")); }
+      catch (e) { if (e.code === "ENOENT") return null; throw e; }
+    },
   };
 }
 
-function runCli(args, env, logPath) {
+function runCli(args, env, logPath, { cwd } = {}) {
   return spawnSync("node", [SCRIPT, ...args], {
-    env: { ...env, CODEX_REVIEW_LOG: logPath }, encoding: "utf8", timeout: 30_000,
+    env: { ...env, CODEX_REVIEW_LOG: logPath }, encoding: "utf8", timeout: 30_000, ...(cwd ? { cwd } : {}),
   });
 }
 
@@ -637,4 +643,148 @@ test("resolveDiff: does not run a repo-configured textconv program", (t) => {
 
   resolveDiff(repo, "HEAD~1..HEAD", LIMITS);
   assert.equal(existsSync(marker), false, "textconv must not execute: --no-textconv is load-bearing");
+});
+
+test("isAuditMode / isDiffMode classify every mode", () => {
+  assert.equal(isAuditMode("audit"), true);
+  assert.equal(isAuditMode("diff-audit"), true);
+  assert.equal(isAuditMode("review"), false);
+  assert.equal(isAuditMode("diff"), false);
+  assert.equal(isDiffMode("diff"), true);
+  assert.equal(isDiffMode("diff-audit"), true);
+  assert.equal(isDiffMode("review"), false);
+  assert.equal(isDiffMode("audit"), false);
+});
+
+test("parseVerdict: diff uses the VERDICT contract, diff-audit uses the AUDIT contract", () => {
+  assert.equal(parseVerdict("x\nVERDICT: REVISE", "diff"), "REVISE");
+  assert.equal(parseVerdict("x\nVERDICT: APPROVED", "diff"), "APPROVED");
+  assert.equal(parseVerdict("x\nAUDIT: CONCERNS", "diff-audit"), "CONCERNS");
+  assert.equal(parseVerdict("x\nAUDIT: PASS", "diff-audit"), "PASS");
+  assert.equal(parseVerdict("no verdict", "diff"), "UNPARSEABLE");
+});
+
+test("buildDiffPrompt: instructs a CODE review of the PINNED range and names the files", () => {
+  const p = buildDiffPrompt("aaa111..bbb222", ["src/a.mjs", "src/b.mjs"]);
+  assert.match(p, /aaa111\.\.bbb222/);
+  assert.match(p, /src\/a\.mjs/);
+  assert.match(p, /src\/b\.mjs/);
+  assert.match(p, /VERDICT: APPROVED or VERDICT: REVISE/);
+  assert.match(p, /\[P1\]/);
+});
+
+test("buildDiffAuditPrompt: uses the AUDIT verdict line and the pinned range", () => {
+  const p = buildDiffAuditPrompt("aaa111..bbb222");
+  assert.match(p, /aaa111\.\.bbb222/);
+  assert.match(p, /AUDIT: PASS or AUDIT: CONCERNS/);
+  assert.doesNotMatch(p, /design\/plan document/, "a diff audit must not describe a plan document");
+});
+
+test("buildDiffResumePrompt: re-reviews CODE, not a revised document", () => {
+  const p = buildDiffResumePrompt("aaa111..bbb222");
+  assert.match(p, /aaa111\.\.bbb222/);
+  assert.match(p, /VERDICT: APPROVED or VERDICT: REVISE/);
+  assert.doesNotMatch(p, /document/i, "the plan-mode resume prompt would say 'the artifact ... has been revised'");
+});
+
+test("diff prompts do NOT smuggle in intent, a plan, or a self-assessment", () => {
+  // Framing degraded findings 3-4x in testing. The diff must stand on its own merits.
+  for (const p of [buildDiffPrompt("a..b", ["x.mjs"]), buildDiffResumePrompt("a..b"), buildDiffAuditPrompt("a..b")]) {
+    assert.doesNotMatch(p, /the (author|implementer) (says|claims|believes)/i);
+    assert.doesNotMatch(p, /is intended to|is meant to|aims to/i);
+    assert.doesNotMatch(p, /\bplan\b|\bspec\b/i);
+  }
+});
+
+test("CLI e2e: a diff chain opens, RESUMES after a fix commit, audits once, and closes", (t) => {
+  const repo = fixtureRepo(t);
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-cli-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const logPath = path.join(dir, "log.jsonl");
+  const shim = makeShim(dir, "ok");
+  const git = (...a) => execFileSync("git", ["-C", repo, ...a], { stdio: ["ignore", "pipe", "ignore"] });
+  const cli = (argv) => runCli(argv, { ...shim.env }, logPath, { cwd: repo });
+
+  // A feature branch, so the range `main...HEAD` is STABLE as fix commits land. This is the whole
+  // usage convention: a fixed base against a moving tip. A range like `HEAD~1..HEAD` would name a
+  // different artifact every round and could not be resumed at all.
+  git("checkout", "-q", "-b", "feature");
+  writeFileSync(path.join(repo, "a.txt"), "one\ntwo\nthree\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "feature work");
+  const RANGE = "main...HEAD";
+
+  const r1 = JSON.parse(cli(["diff", RANGE, "--force"]).stdout);
+  assert.equal(r1.mode, "diff");
+  assert.ok(r1.chainId);
+
+  // A fix commit moves HEAD. The SAME symbolic range still names this branch's changes — which is
+  // exactly why the chain's artifact must be the symbolic range and not the SHA-pinned one. Pinned,
+  // the artifact would stop matching here and the resume would be refused.
+  writeFileSync(path.join(repo, "a.txt"), "one\ntwo\nfixed\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "fix");
+
+  const r2 = JSON.parse(cli(["diff", RANGE, "--chain", r1.chainId, "--resume", r1.sessionId]).stdout);
+  assert.equal(r2.chainId, r1.chainId, "the resumed round stays on the SAME chain");
+
+  // The "ok" shim mode always emits VERDICT: REVISE text regardless of which CLI mode invoked it
+  // (it only reads SHIM_MODE, not argv) — so the audit round needs "auditpass" to produce an
+  // AUDIT: line, exactly as the existing plan-mode "review -> audit" e2e test does.
+  const a1 = JSON.parse(runCli(["diff-audit", RANGE, "--chain", r1.chainId], { ...shim.env, SHIM_MODE: "auditpass" }, logPath, { cwd: repo }).stdout);
+  assert.equal(a1.mode, "diff-audit");
+  assert.ok(["PASS", "CONCERNS"].includes(a1.verdict));
+
+  const a2 = cli(["diff-audit", RANGE, "--chain", r1.chainId]);
+  assert.notEqual(a2.status, 0, "a SECOND audit must be refused — the audit is run once");
+  assert.match(a2.stderr, /already has an audit/i);
+
+  // --retry-verdict must not be a bypass for that guard.
+  const a3 = cli(["diff-audit", RANGE, "--chain", r1.chainId, "--retry-verdict"]);
+  assert.notEqual(a3.status, 0, "--retry-verdict without --resume must not start a fresh second audit");
+
+  // And the chain can actually be closed. appendNote hard-codes mode names; without the widening,
+  // every non-aborted diff outcome throws LIFECYCLE_MISMATCH and the chain jams open forever.
+  const note = cli(["note", "--chain", r1.chainId, "--unique", "2",
+                    "--outcome", a1.verdict === "PASS" ? "audit-pass" : "audit-concerns-user-approved"]);
+  assert.equal(note.status, 0, `note must close a diff chain: ${note.stderr}`);
+});
+
+test("CLI e2e: a 4th review round is refused BEFORE spending quota", (t) => {
+  const repo = fixtureRepo(t);
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-cap-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const logPath = path.join(dir, "log.jsonl");
+  const shim = makeShim(dir, "ok");
+  const git = (...a) => execFileSync("git", ["-C", repo, ...a], { stdio: ["ignore", "pipe", "ignore"] });
+  const cli = (argv) => runCli(argv, { ...shim.env }, logPath, { cwd: repo });
+
+  git("checkout", "-q", "-b", "feature");
+  writeFileSync(path.join(repo, "a.txt"), "one\ntwo\nthree\n");
+  git("add", "a.txt");
+  git("commit", "-q", "-m", "work");
+  const RANGE = "main...HEAD";
+
+  const r1 = JSON.parse(cli(["diff", RANGE, "--force"]).stdout);
+  cli(["diff", RANGE, "--chain", r1.chainId, "--resume", r1.sessionId]); // round 2
+  cli(["diff", RANGE, "--chain", r1.chainId, "--resume", r1.sessionId]); // round 3
+
+  // The protocol is 3 rounds + 1 audit, and until now NOTHING enforced it — round was recorded and
+  // never checked, so a caller could burn unlimited paid rounds.
+  const r4 = cli(["diff", RANGE, "--chain", r1.chainId, "--resume", r1.sessionId]);
+  assert.notEqual(r4.status, 0, "a 4th review round must be refused");
+  assert.match(r4.stderr, /3 review rounds|rounds \+ 1 audit/i);
+});
+
+test("CLI e2e: an oversized diff is refused before any codex call", (t) => {
+  const repo = fixtureRepo(t);
+  const dir = mkdtempSync(path.join(os.tmpdir(), "codex-cli2-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const shim = makeShim(dir, "ok");
+  const r = runCli(["diff", "HEAD~1..HEAD", "--force", "--max-lines", "1"],
+    { ...shim.env }, path.join(dir, "log.jsonl"), { cwd: repo });
+
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /too large|narrow/i);
+  assert.equal(shim.argv(), null, "codex must never be invoked for a refused diff — no quota spent");
 });
