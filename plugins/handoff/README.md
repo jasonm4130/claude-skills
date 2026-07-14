@@ -147,6 +147,29 @@ This is a workaround for upstream
    > "[handoff] Loading pending handoff from previous session: ..."
 8. The agent resumes in context.
 
+### Why a handoff must never be committed (and what happens if one is)
+
+**Keep `/.claude/handoffs/` gitignored.** The skill tells you to, and since 0.7.0 the loader depends
+on it.
+
+A handoff is injected into the next session announced as *"from your previous session"* — which is
+exactly the framing that makes an agent treat text as its own notes rather than as untrusted input. So
+a repository that **commits** its own `.claude/handoffs/evil.md` plus a `.pending` naming it could hand
+attacker-authored instructions to your agent under your own byline, the moment you opened the repo.
+Nobody reviews `.claude/handoffs/`, which is what made it worth closing.
+
+The gitignore convention is what makes this cheap to close, with no allowlist and no friction: **a
+handoff this machine wrote is untracked, always, and a fresh clone cannot produce an untracked-but-
+present ignored file.** So anything git *tracks* was shipped by the repo, not written here.
+
+Since 0.7.0 the loader refuses to auto-load a handoff (or a `.pending`) that git tracks. It emits
+neither the contents nor the filename — both are attacker-controlled — and instead tells you plainly
+that a committed handoff was found and skipped. If you trust the repo, read the file yourself.
+
+The consequence, stated plainly: **if you commit your own handoffs, they will stop auto-loading.**
+That is the intended trade — the loader cannot distinguish your committed handoff from a hostile one,
+and guessing wrong in that direction is the whole vulnerability.
+
 ### Nudge wording tiers
 
 | Context % | Wording |
