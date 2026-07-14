@@ -3,13 +3,15 @@
 // SessionStart handler — auto-loads pending handoff from previous session.
 // Reads JSON from stdin (.cwd). Consumes .pending (one-shot, 24h staleness).
 
-import { readFileSync, existsSync, unlinkSync, statSync } from "node:fs";
+import { existsSync, unlinkSync, statSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import {
   readStdin,
   safeJsonParse,
   emitAdditionalContext,
+  readContainedFile,
+  dirContainedIn,
 } from "./lib.mjs";
 
 /**
@@ -26,6 +28,12 @@ const cwd =
 
 const handoffsDir = path.join(cwd, ".claude", "handoffs");
 const pendingFile = path.join(handoffsDir, ".pending");
+
+// An attacker who can symlink .claude/handoffs -> /etc would exfiltrate with a perfectly
+// innocent bare filename, so the directory itself must be contained.
+if (!dirContainedIn(cwd, handoffsDir)) {
+  process.exit(0);
+}
 
 if (!existsSync(pendingFile)) {
   process.exit(0);
@@ -47,10 +55,8 @@ try {
   process.exit(0);
 }
 
-let pendingContent = "";
-try {
-  pendingContent = readFileSync(pendingFile, "utf8");
-} catch {
+const pendingContent = readContainedFile(handoffsDir, ".pending");
+if (pendingContent === null) {
   process.exit(0);
 }
 
@@ -64,21 +70,16 @@ if (handoffFilename.length === 0) {
   process.exit(0);
 }
 
-const handoffPath = path.join(handoffsDir, handoffFilename);
+const handoffContent = readContainedFile(handoffsDir, handoffFilename);
 
-if (!existsSync(handoffPath)) {
+if (handoffContent === null) {
+  // Missing, non-bare, symlinked out of handoffs/, or not a regular file. Consume the
+  // marker so a poisoned one cannot retry on every future session.
   try {
     unlinkSync(pendingFile);
   } catch {
     // best-effort
   }
-  process.exit(0);
-}
-
-let handoffContent = "";
-try {
-  handoffContent = readFileSync(handoffPath, "utf8");
-} catch {
   process.exit(0);
 }
 

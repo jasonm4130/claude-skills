@@ -101,7 +101,7 @@
       "name": "handoff",
       "source": "./plugins/handoff",
       "description": "Context-fill-triggered handoff skill — writes a structured resume doc when context fills, auto-loads it on next session.",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "author": {
         "name": "Jason Matthew"
       },
