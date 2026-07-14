@@ -129,6 +129,6 @@ Tell the user:
 > start a fresh session within 24 hours, the next session will auto-load it
 > via the SessionStart hook."
 
-Note: if the user has the `handoff` plugin installed and its `load-pending-handoff.sh`
+Note: if the user has the `handoff` plugin installed and its `load-pending-handoff.mjs`
 SessionStart hook is active, the handoff will inject automatically. If not,
 the user can manually `cat .claude/handoffs/<filename>` to prime the next session.

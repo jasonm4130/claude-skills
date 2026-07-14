@@ -25,6 +25,14 @@ when your context window fills up, and auto-loads it in the next session.
    The SessionStart hook reads it and injects the handoff as context so the next
    session resumes seamlessly. The marker expires after 24 hours.
 
+   The marker may only name a **bare filename** inside `.claude/handoffs/`, and the
+   file is opened with `O_NOFOLLOW | O_NONBLOCK` — so a marker naming `../../.env`, a
+   symlink, or a FIFO is refused and the marker consumed. This stops a checked-out repo
+   from making the loader read files *outside* the handoffs directory. It does not
+   verify who *wrote* a handoff: a repo that commits its own handoff file can still get
+   that text into your context, so treat handoffs in an untrusted checkout with the same
+   suspicion as any other file in it.
+
 ## Prerequisites
 
 - **Node.js 18+** on `PATH`. The Claude Code installer does not bring Node — install
