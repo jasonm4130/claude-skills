@@ -102,22 +102,54 @@ function tallyMeta(mode, wavesRun, settled) {
 }
 
 const PLACEHOLDER_HOSTS = ["example.com", "example.org", "example.net", "example.edu",
-                           "localhost", "127.0.0.1", "test.com", "foo.com", "yoursite.com"];
-const PLACEHOLDER_CLAIMS = ["todo", "tbd", "lorem ipsum", "placeholder", "example claim", "n/a"];
+                           "localhost", "test.com", "foo.com", "yoursite.com"];
+/** RFC 2606 / 6761 reserve these: they can NEVER resolve to a real site, so a citation using one is fabricated by construction. */
+const RESERVED_TLDS = ["invalid", "test", "example", "local", "localhost"];
+/** Unambiguous — safe to match ANYWHERE in a claim. "This is a placeholder claim" is one. */
+const PLACEHOLDER_MARKERS = ["lorem ipsum", "placeholder", "example claim"];
+/** Ambiguous as substrings (a real claim may discuss TODOs), so these only count as a PREFIX. */
+const PLACEHOLDER_PREFIXES = ["todo", "tbd", "n/a"];
 
 /**
- * Is this a placeholder host? Exact match OR any subdomain of one.
+ * Is this host unusable as a research citation?
  *
- * `PLACEHOLDER_HOSTS.includes(host)` is not enough. `https://sub.example.com/x` and
- * `https://docs.example.org/y` are the same fabricated citation with a label bolted on, and both slip
- * through an equality check. (The caller strips the FQDN trailing dot, so `example.com.` is
- * canonicalized before it gets here.)
+ * Three ways to be unusable, and the first two were both walked straight past by the original
+ * equality-check-against-a-blocklist:
+ *
+ * 1. A bare IP literal. A real source is a NAMED website; a finding citing an IP is fabricated, or is
+ *    aiming somewhere it has no business going — and the tier-1 verifier is INSTRUCTED to fetch these
+ *    URLs. `169.254.169.254` is the cloud instance-metadata endpoint. Rejecting every IP literal is
+ *    both simpler and stricter than CIDR arithmetic, and costs nothing real: research does not cite IPs.
+ * 2. A reserved TLD (RFC 2606/6761). `example.invalid` cannot resolve, ever.
+ * 3. A placeholder domain — exact match OR any subdomain. `sub.example.com` is the same fabricated
+ *    citation with a label bolted on. (The caller strips the FQDN trailing dot, so `example.com.` is
+ *    canonicalized before it gets here.)
  *
  * @param {string} host  lowercase, trailing dot stripped
  * @returns {boolean}
  */
 function isPlaceholderHost(host) {
+  // IPv6 arrives bracketed from URL.hostname ("[::1]"); IPv4 is all-digits-and-dots.
+  if (host.startsWith("[") || /^[\d.]+$/.test(host)) return true;
+  const tld = host.split(".").pop();
+  if (RESERVED_TLDS.includes(tld)) return true;
   return PLACEHOLDER_HOSTS.some((p) => host === p || host.endsWith(`.${p}`));
+}
+
+/**
+ * Is this claim placeholder text? Unambiguous markers match anywhere; ambiguous ones only as a prefix.
+ *
+ * `startsWith()` alone only catches a marker at position 0, so "This is a placeholder claim which must
+ * not be synthesized." was accepted as usable research. But a blanket `includes()` would reject the
+ * legitimate claim "the codebase carries 42 TODO comments" — so the short, ambiguous tokens stay
+ * prefix-only.
+ *
+ * @param {string} lower  the claim, lowercased and trimmed
+ * @returns {boolean}
+ */
+function isPlaceholderClaim(lower) {
+  if (PLACEHOLDER_MARKERS.some((p) => lower.includes(p))) return true;
+  return PLACEHOLDER_PREFIXES.some((p) => lower === p || lower.startsWith(`${p} `) || lower.startsWith(`${p}:`));
 }
 
 /**
@@ -161,7 +193,7 @@ function researchProblems(research, angle) {
   const summaryLower = summary.toLowerCase();
   if (summary.length < 40) {
     problems.push(`summary is too short to brief a dependent angle (${JSON.stringify(summary.slice(0, 40))})`);
-  } else if (PLACEHOLDER_CLAIMS.some((p) => summaryLower.startsWith(p) || summaryLower === p)) {
+  } else if (isPlaceholderClaim(summaryLower)) {
     problems.push(`summary is a placeholder (${JSON.stringify(summary.slice(0, 40))})`);
   }
 
@@ -199,9 +231,17 @@ function researchProblems(research, angle) {
     const lower = claim.toLowerCase();
     if (claim.length < 20) {
       problems.push(`finding ${n}: claim is too short to be load-bearing (${JSON.stringify(claim)})`);
-    } else if (PLACEHOLDER_CLAIMS.some((p) => lower.startsWith(p) || lower === p)) {
+    } else if (isPlaceholderClaim(lower)) {
       problems.push(`finding ${n}: placeholder claim (${JSON.stringify(claim.slice(0, 40))})`);
     }
+
+    // The schema types these as strings, and "" is a string. But the workflow's contract is that every
+    // claim carries a URL *and* a title *and* a date — the synthesis renders all three — so an empty one
+    // is a broken citation, not a complete one.
+    const title = typeof f?.sourceTitle === "string" ? f.sourceTitle.trim() : "";
+    const date = typeof f?.sourceDate === "string" ? f.sourceDate.trim() : "";
+    if (title === "") problems.push(`finding ${n}: sourceTitle is empty — an incomplete citation`);
+    if (date === "") problems.push(`finding ${n}: sourceDate is empty — an incomplete citation`);
   });
 
   return problems;

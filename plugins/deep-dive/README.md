@@ -43,10 +43,23 @@ For one-shot factual questions ("what does this return", "syntax for X"), the sk
 - `meta` — **counts only** (`anglesCompleted`, `anglesFailed`, `failedCore`, `escalations`), never a
   second copy of `failedAngles`.
 
-An angle's research is validated semantically, not just against a JSON schema: zero findings, an
-unusable summary, placeholder/non-http source URLs, and placeholder claims all fail the angle (retried
-once, then reported in `failedAngles` rather than silently passed through as evidence). This is a
-placeholder/junk filter, not provenance verification — it cannot prove a URL was actually fetched.
+An angle's research is validated semantically, not just against a JSON schema. A finding is rejected —
+failing the angle, which is retried once and then reported in `failedAngles` rather than silently passed
+through as evidence — when any of these hold:
+
+| Rejected | Why |
+|---|---|
+| Zero findings, or an unusable/placeholder summary | The wave-2 digest is built entirely from the summary; a blank one briefs a dependent angle on nothing. |
+| A non-`http(s)` source URL | It was never fetched. |
+| A **bare IP address** (v4 or v6) | Research cites named websites. The tier-1 verifier is *instructed to fetch* these URLs — `169.254.169.254` is the cloud instance-metadata endpoint. |
+| A **reserved TLD** — `.invalid`, `.test`, `.example`, `.local`, `.localhost` | RFC 2606/6761 guarantee these can never resolve, so the citation is fabricated by construction. |
+| A placeholder host (`example.com` and friends), including subdomains and FQDN forms | `sub.example.com` and `example.com.` are the same fabricated citation with a label bolted on. |
+| A placeholder claim — `placeholder`, `lorem ipsum`, `example claim` anywhere; `TODO`/`TBD`/`n/a` as a prefix | The short tokens are prefix-only on purpose: "pricing is TBD as of 2025" is a real finding. |
+| An empty `sourceTitle` or `sourceDate` | Every claim is contracted to carry a URL *and* a title *and* a date; the synthesis renders all three. |
+
+**This is a placeholder/junk filter, not provenance verification.** It cannot prove a URL was actually
+fetched: a live, non-placeholder URL paired with a long-enough invented claim still passes. It ends the
+class of failure that actually happened; it does not make results verified.
 
 ## DAG rules (exactly two waves)
 

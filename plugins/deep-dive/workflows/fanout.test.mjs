@@ -189,10 +189,63 @@ test("researchProblems: DNS variants of a placeholder host are the same fabricat
   }
 });
 
+test("researchProblems: a bare IP address is never a research citation", () => {
+  // A real source is a named website. A finding citing an IP literal is either fabricated or pointing
+  // the verifier somewhere it has no business going — and the verifier is INSTRUCTED to fetch these.
+  // 169.254.169.254 is the cloud instance-metadata endpoint; the old blocklist covered only 127.0.0.1,
+  // so an angle could aim the verifier's WebFetch straight at it.
+  for (const url of ["http://169.254.169.254/latest/meta-data/", "http://[::1]/", "http://192.168.1.1/x",
+                     "http://10.0.0.1/x", "http://172.16.0.1/x", "https://93.184.216.34/x"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.ok(researchProblems(r).some((p) => /url|host/i.test(p)), `${url} must be rejected`);
+  }
+});
+
+test("researchProblems: reserved TLDs are guaranteed-unresolvable, so guaranteed-fabricated", () => {
+  // RFC 2606 / 6761 reserve these so they can NEVER resolve to a real site. `example.invalid` sailed
+  // past a blocklist that only knew about `example.com`.
+  for (const url of ["https://example.invalid/fake", "https://anything.test/x", "https://foo.local/x",
+                     "https://bar.localhost/x", "https://baz.example/x"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.ok(researchProblems(r).some((p) => /url|host/i.test(p)), `${url} must be rejected`);
+  }
+});
+
 test("researchProblems: placeholder and stub claims are rejected", () => {
   for (const claim of ["TODO", "TBD", "placeholder", "Lorem ipsum dolor sit", "Example claim here", "short"]) {
     const r = { ...good, findings: [{ ...good.findings[0], claim }] };
     assert.ok(researchProblems(r).length > 0, `claim ${JSON.stringify(claim)} must be rejected`);
+  }
+});
+
+test("researchProblems: a placeholder marker is a placeholder wherever it appears in the claim", () => {
+  // startsWith() only catches a marker at position 0. The unambiguous markers must match anywhere —
+  // "This is a placeholder claim which must not be synthesized." was accepted as usable research.
+  for (const claim of ["This is a placeholder claim which must not be synthesized.",
+                       "The finding here is lorem ipsum dolor sit amet, consectetur.",
+                       "Some example claim goes here, to be replaced with the real one."]) {
+    const r = { ...good, findings: [{ ...good.findings[0], claim }] };
+    assert.ok(researchProblems(r).length > 0, `claim ${JSON.stringify(claim)} must be rejected`);
+  }
+  // …but the SHORT tokens (todo/tbd/n-a) stay prefix-only, deliberately. Matched anywhere they would
+  // reject perfectly good findings — "the vendor has not announced pricing; it is TBD" IS a research
+  // result, and a claim about TODO comments is a claim. Over-rejecting real research to catch a
+  // placeholder is the worse trade: the retry burns a model call and then FAILS the angle.
+  for (const claim of ["Rust's todo!() macro panics at runtime rather than failing to compile.",
+                       "The codebase carries 42 TODO comments, mostly in the parser module.",
+                       "Cloudflare has not announced pricing for the tier; it remains TBD as of 2025."]) {
+    const r = { ...good, findings: [{ ...good.findings[0], claim }] };
+    assert.deepEqual(researchProblems(r), [], `claim ${JSON.stringify(claim)} is legitimate`);
+  }
+});
+
+test("researchProblems: a citation needs a title and a date, not just a URL", () => {
+  // RESEARCH_SCHEMA types these as strings; "" is a string. The workflow contract promises every claim
+  // carries a URL + title + date, and the synthesis renders them — so an empty one is a broken citation.
+  for (const over of [{ sourceTitle: "" }, { sourceDate: "" }, { sourceTitle: "   " }]) {
+    const r = { ...good, findings: [{ ...good.findings[0], ...over }] };
+    assert.ok(researchProblems(r).some((p) => /title|date/i.test(p)),
+      `${JSON.stringify(over)} must be rejected`);
   }
 });
 
