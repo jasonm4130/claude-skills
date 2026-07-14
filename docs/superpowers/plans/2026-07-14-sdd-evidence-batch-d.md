@@ -344,12 +344,13 @@ Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
 ```js
 const VERIFY_SCHEMA = {
   type: "object", additionalProperties: false,
-  required: ["claimSha", "headSha", "missingCommits", "suite", "evidence"],
+  required: ["claimSha", "headSha", "baseContained", "missingCommits", "suite", "evidence"],
   properties: {
     // The two SHAs git actually printed. The workflow compares them itself — a boolean like
     // `headMatchesClaim` would just be another string the agent could set (Codex review, round 2).
     claimSha: { type: "string" },  // what `rev-parse --verify <claim>^{commit}` printed; "" on failure
     headSha: { type: "string" },   // what `rev-parse HEAD` printed
+    baseContained: { type: "boolean" }, // is the pre-transition base an ancestor of HEAD?
     missingCommits: { type: "array", items: { type: "number" } },
     suite: { type: "string", enum: ["green", "red", "unknown"] },
     evidence: { type: "string" },
@@ -381,7 +382,12 @@ confidence:
    could omit task 2 from `merged` and the verifier would never look for it).
 4. **`suite: "unknown"` is legitimate only when no `testCmd` was configured.** With one, an
    unconfirmable suite is not evidence of green.
-5. **Never interpolate an unvalidated agent SHA into a shell command** (Codex review, round 3, P1).
+5. **The head must DESCEND from the base we started at** (Codex audit, P1). Every check so far is
+   satisfied by a head that resolves, is the branch tip, and is green — *including an unrelated
+   commit an agent reset to*, which would silently discard every earlier task's work. So each
+   verification also passes the pre-transition `base` and requires it to be an **ancestor of HEAD**
+   (`baseContained`). Continuity is the property that makes the other checks mean anything.
+6. **Never interpolate an unvalidated agent SHA into a shell command** (Codex review, round 3, P1).
    `verifyPrompt` embeds `claimedSha` and each expected commit SHA into `git` commands that the
    verifier agent will *run*. Those strings come from other agents. A value like
    `abc; rm -rf ~ #` would turn the read-only verifier into a command-injection vehicle. Every SHA
@@ -589,6 +595,9 @@ function acceptVerification(v, testCmd) {
   // Never fall back to the claimed sha: it is the value we do not trust.
   if (!isSha(v.headSha)) return no(`verifier reported no resolved branch head (got ${JSON.stringify(v.headSha)})`);
   if (v.claimSha !== v.headSha) return no(`claimed commit ${v.claimSha} is not the branch head ${v.headSha}`);
+  // Continuity: a head that does not descend from the base we started at has discarded earlier work,
+  // however green it is.
+  if (v.baseContained !== true) return no(`head ${v.headSha} does not build on the base this run started from`);
   const missing = Array.isArray(v.missingCommits) ? v.missingCommits : [];
   if (missing.length) return no(`head ${v.headSha} does not contain task(s) ${missing.join(", ")}`);
   if (testCmd && v.suite !== "green") return no(`suite is ${v.suite} at ${v.headSha}`);
@@ -610,22 +619,25 @@ Then add the `runVerify` helper and `verifyPrompt` beside `mergePrompt` (~line 3
   // Single entry point for every verification, so the injection guard cannot be forgotten at one
   // call site. Fails closed WITHOUT dispatching an agent when a sha is malformed — these strings
   // come from other agents and are interpolated into shell commands the verifier runs.
-  const runVerify = async (claimedSha, claim, expectCommits, label) => {
+  const runVerify = async (claimedSha, claim, expectCommits, label, baseSha) => {
     if (!isShaish(claimedSha)) {
       return { ok: false, reason: `claimed head is not a sha: ${JSON.stringify(claimedSha)}`, headSha: "" };
+    }
+    if (!isShaish(baseSha)) {
+      return { ok: false, reason: `base is not a sha: ${JSON.stringify(baseSha)}`, headSha: "" };
     }
     const bad = expectCommits.find((c) => !isShaish(c.sha));
     if (bad) {
       return { ok: false, reason: `task ${bad.n} reported a head that is not a sha: ${JSON.stringify(bad.sha)}`, headSha: "" };
     }
-    const v = await agent(verifyPrompt(claimedSha, claim, expectCommits), {
+    const v = await agent(verifyPrompt(claimedSha, claim, expectCommits, baseSha), {
       // phase is derived from the label so the final-fix check groups under Final, not Merge.
       label, phase: label === "verify:final-fix" ? "Final" : "Merge", model: "sonnet", schema: VERIFY_SCHEMA,
     });
     return acceptVerification(v, cfg.testCmd);
   };
 
-  const verifyPrompt = (claimedSha, claim, expectCommits = []) => `You are a VERIFIER. Do not fix
+  const verifyPrompt = (claimedSha, claim, expectCommits = [], baseSha = "") => `You are a VERIFIER. Do not fix
 anything, do not commit, do not write or edit any file. Observe, then report only what you saw.
 
 Working directory: ${cfg.workdir}
@@ -641,19 +653,23 @@ Run exactly these and report what they actually print:
 2. \`git -C ${cfg.workdir} rev-parse HEAD\`
    Report the full 40-character SHA it prints as headSha. Report what git printed — do not echo
    back the claimed SHA.
+3. The branch must still BUILD ON where this run started — an agent that reset to some unrelated
+   commit would otherwise pass every other check while discarding all earlier work:
+   \`git -C ${cfg.workdir} merge-base --is-ancestor ${baseSha} HEAD\` (exit 0 = contained)
+   Report baseContained=true only if that exits 0.
 ${expectCommits.length
-  ? `3. Each of these task commits must be contained in HEAD. For each, run:
+  ? `4. Each of these task commits must be contained in HEAD. For each, run:
 ${expectCommits.map((c) => `   task ${c.n}: \`git -C ${cfg.workdir} merge-base --is-ancestor ${c.sha} HEAD\` (exit 0 = contained)`).join("\n")}
    Put the task number of every commit NOT contained in HEAD into missingCommits.
    (Check the commit SHAs, not sdd/t<N> branches — the merger deletes those branches.)`
-  : `3. No task commits to check for this claim: missingCommits=[].`}
+  : `4. No task commits to check for this claim: missingCommits=[].`}
 ${cfg.testCmd
-  ? `4. Run the suite VERBATIM from ${cfg.workdir}:
+  ? `5. Run the suite VERBATIM from ${cfg.workdir}:
    \`${cfg.testCmd}\`
    Read its real output. suite="green" ONLY if it ran to completion with zero failures. Failures, a
    crash, or a command that would not run are all "red". Quote the real pass/fail summary line in
    evidence.`
-  : `4. No test command was configured for this run: suite="unknown", and put the rev-parse output
+  : `5. No test command was configured for this run: suite="unknown", and put the rev-parse output
    in evidence.`}
 
 Never report a result you did not observe. A claim you could not confirm is not confirmed.`;
@@ -674,6 +690,7 @@ Replace the `if (wave.length === 1) { … }` block (~lines 384-391):
         `task ${wave[0].n} is complete and its commit is the branch head`,
         [],
         `verify:t${wave[0].n}`,
+        base, // continuity: the task's head must descend from where this wave started
       );
       if (!acc.ok) {
         halted = { wave: w, reason: `task ${wave[0].n} unverified: ${acc.reason}`, failures: [] };
@@ -701,6 +718,7 @@ Replace the merge-result `else` branch (~lines 405-411). Note `expect` comes fro
           `wave ${w} merged task(s) ${expect.map((e) => e.n).join(", ")} and left the suite ${merge.suite}`,
           expect,
           `verify:w${w}`,
+          waveBase, // continuity: the merge must build on the base this wave was dispatched from
         );
         merges.push({
           wave: w, merged: merge.merged,
@@ -856,11 +874,16 @@ Replace the `Final` phase block (~lines 420-430):
     finalReview = await agent(finalPrompt(cfg.mergeBase, base), {
       label: "final-review", phase: "Final", model: "opus", schema: FINAL_SCHEMA,
     });
+    const findings = finalReview ? (finalReview.findings || []) : [];
     if (!finalReview) {
       // "The final review did not run" is not "the branch is fine".
       halted = { wave: "final", reason: "final review returned no result", failures: [] };
-    } else if ((finalReview.findings || []).length) {
-      const fix = await agent(finalFixPrompt(finalReview.findings), {
+    } else if (finalReview.verdict === "changes" && !findings.length) {
+      // The reviewer's contract (prompts/final-reviewer.md) is that "changes" means findings must be
+      // addressed. "changes" with nothing to act on is a broken report, not an approval.
+      halted = { wave: "final", reason: "final review returned verdict 'changes' with no findings to act on", failures: [] };
+    } else if (findings.length) {
+      const fix = await agent(finalFixPrompt(findings), {
         label: "final-fix", phase: "Final", model: "sonnet", schema: FIX_SCHEMA,
       });
       if (!fix) {
@@ -870,16 +893,27 @@ Replace the `Final` phase block (~lines 420-430):
         // one-shot fix into an unbounded review -> fix -> review loop.
         const acc = await runVerify(
           fix.headSha,
-          `the final fixer addressed ${finalReview.findings.length} finding(s) and left the suite: ${fix.testSummary}`,
+          `the final fixer addressed ${findings.length} finding(s) and left the suite: ${fix.testSummary}`,
           [],
           "verify:final-fix",
+          base, // continuity: the fix must build on the reviewed head, not replace it
         );
         if (!acc.ok) {
           halted = { wave: "final", reason: `final fix unverified: ${acc.reason}`, failures: [] };
         } else {
           // head must point PAST the fix — the old code left it at the pre-fix commit.
           base = acc.headSha;
-          finalFix = { headSha: acc.headSha, fixed: fix.fixed, testSummary: fix.testSummary, verified: true };
+          // finalReview described the PRE-fix head. Review the post-fix head once, report-only: the
+          // returned head must not be unreviewed. Report-only keeps it bounded — findings here go to
+          // the controller to adjudicate, they do NOT trigger another fix (that is the unbounded loop).
+          const postFix = await agent(finalPrompt(cfg.mergeBase, base), {
+            label: "final-review-2", phase: "Final", model: "opus", schema: FINAL_SCHEMA,
+          });
+          finalFix = {
+            headSha: acc.headSha, fixed: fix.fixed, testSummary: fix.testSummary, verified: true,
+            postFixReview: postFix || null,
+            postFixFindings: postFix ? (postFix.findings || []) : [],
+          };
         }
       }
     }
