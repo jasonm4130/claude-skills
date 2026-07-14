@@ -21,11 +21,25 @@ Trigger phrases the skill recognises: "review my plan", "grill this", "red team"
 
 | Artefact | Personas |
 |---|---|
-| Plan / design doc | YAGNI, Premortem, Hidden Assumptions |
+| Plan / design / spec | YAGNI, Premortem, Hidden Assumptions |
 | Code | Saboteur, New Hire, Security Auditor |
-| Prose / model output | Hidden Assumptions + artefact-fit picks |
+| Prose | *none built in* — you supply them with `--personas` |
+| Model output | *none built in* — you supply them with `--personas` |
 
-Personas live in `skills/adversarial-agents/personas/` — edit or add to taste.
+Personas live in `skills/adversarial-agents/personas/` — edit or add to taste. The built-ins are
+`yagni`, `premortem`, `hidden_assumptions`, `saboteur`, `new_hire`, `security_auditor`.
+
+**The prose and model-output panels have no default personas.** The skill will not pick them for you —
+a critique of writing or of a model's answer depends too much on what you are actually worried about.
+Supply your own:
+
+```
+adversarial-agents --panel prose --personas "You are a hostile copy editor: cut every sentence that does not earn its place","You are the reader this was NOT written for: say where you get lost"
+```
+
+Each `--personas` entry is used as a one-off inline prompt string — there is no registry lookup, so you
+can write the persona inline rather than adding a file. (Naming a built-in there does not work; use the
+panels above for those.)
 
 ## How it differs from a vanilla review
 

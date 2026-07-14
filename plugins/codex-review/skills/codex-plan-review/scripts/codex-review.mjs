@@ -346,6 +346,57 @@ export function readLogLines(logPath, { strict = false } = {}) {
   return out;
 }
 
+/**
+ * EXTRA grace for an unparseable lock, ON TOP of the lease — not a competing absolute.
+ *
+ * A bare `age > EMPTY_LOCK_GRACE_MS` reads as "a far longer grace" but is not one: with a 120s lease
+ * and a 60s constant, an empty lock becomes breakable at 120s — the same instant a pid-bearing one
+ * does. The grace has silently evaporated at exactly the lease lengths where a mid-write window is
+ * most likely. Adding it to staleMs makes it strictly longer for every lease.
+ */
+const EMPTY_LOCK_GRACE_MS = 60_000;
+
+/** @param {number} pid */
+function holderAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return Boolean(e) && /** @type {NodeJS.ErrnoException} */ (e).code === "EPERM";
+  }
+}
+
+/**
+ * Is this lock breakable? Past its lease AND its holder provably gone.
+ *
+ * Age alone is NOT enough. Two breakers who both judge the same lock stale on age will cascade: the
+ * first breaks it and re-acquires; the second then renames away the FIRST's fresh lock and acquires
+ * too, leaving two holders. The rename is atomic; the DECISION to break was made against a lock that
+ * no longer exists.
+ *
+ * An unparseable pid is not proof of death either — an empty file is exactly what a lock looks like
+ * between openSync("wx") and writeSync(). But it cannot be immortal, or a crash in that window wedges
+ * the log forever; so give it the lease PLUS an extra grace (see EMPTY_LOCK_GRACE_MS: a bare
+ * `age > EMPTY_LOCK_GRACE_MS` is not a longer grace at all once staleMs exceeds the constant).
+ *
+ * @param {string} lockPath
+ * @param {number} staleMs
+ * @returns {boolean}
+ */
+function lockIsBreakable(lockPath, staleMs) {
+  try {
+    const age = Date.now() - statSync(lockPath).mtimeMs;
+    if (age <= staleMs) return false;
+    const pid = Number.parseInt(String(readFileSync(lockPath, "utf8")).trim().split("-")[0], 10);
+    // Mid-write, or a corpse. Strictly more grace than a pid-bearing lock gets, at ANY lease length.
+    if (!Number.isInteger(pid) || pid <= 0) return age > staleMs + EMPTY_LOCK_GRACE_MS;
+    return !holderAlive(pid);
+  } catch {
+    return false; // vanished or unreadable — nothing to break
+  }
+}
+
 export function acquireLock(lockPath, staleMs = 30_000) {
   const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -356,15 +407,25 @@ export function acquireLock(lockPath, staleMs = 30_000) {
       return token;
     } catch (e) {
       if (e.code !== "EEXIST") throw err("RESERVE_FAILED", `lock create failed: ${e.message}`);
-      let age = 0;
-      try { age = Date.now() - statSync(lockPath).mtimeMs; } catch { continue; } // vanished — retry
-      if (age > staleMs) {
-        // Atomic stale-break: rename first — exactly one breaker wins the rename,
-        // so a losing breaker can never delete a replacement holder's fresh lock.
+      // Capture WHICH lock we are judging. Without this, a break decided against the old lock can be
+      // executed against a replacement's fresh one — the double-breaker bug.
+      let victim = "";
+      try { victim = String(readFileSync(lockPath, "utf8")); } catch { continue; } // vanished — retry
+
+      if (lockIsBreakable(lockPath, staleMs)) {
+        const tmp = `${lockPath}.stale-${token}`;
         try {
-          renameSync(lockPath, `${lockPath}.stale-${token}`);
-          unlinkSync(`${lockPath}.stale-${token}`);
-        } catch { /* another breaker won — fall through and retry acquire */ }
+          renameSync(lockPath, tmp);
+          if (String(readFileSync(tmp, "utf8")) === victim) {
+            unlinkSync(tmp);          // it really was the lock we judged — break it
+          } else {
+            renameSync(tmp, lockPath); // NOT ours to break: a fresh holder replaced it. Put it back…
+            throw err("LOCK_HELD", `lock held: ${lockPath}`); // …and abort, rather than acquire on top.
+          }
+        } catch (e) {
+          if (e && e.code === "LOCK_HELD") throw e;
+          // another breaker won the rename — fall through and retry the acquire
+        }
         continue;
       }
       throw err("LOCK_HELD", `lock held: ${lockPath}`);

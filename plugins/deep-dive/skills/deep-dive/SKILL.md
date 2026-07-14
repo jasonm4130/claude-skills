@@ -94,7 +94,8 @@ Common mistakes) — those inherit the session model.
 
 The workflow runs wave-1, then any wave-2 (dependent) angles built on wave-1 findings, runs a
 factored tier-1 verifier per angle (blind to the draft, re-fetches sources), escalates to a
-tier-2 cross-check only on low-reliability angles, and returns `{ reports, verification, meta }`.
+tier-2 cross-check only on low-reliability angles, and returns
+`{ reports, verification, failedAngles, meta }` (see README for the full contract).
 
 ### 3. Waves are handled by the workflow
 
@@ -117,6 +118,13 @@ Three roles, distinct system prompts, in order. Conflating roles causes deadlock
   (supported/partial/unsupported/unreachable).
 - In your synthesis, DOWNWEIGHT or explicitly flag any claim marked partial/unsupported/
   unreachable, and warn on any `reliability: "low"` angle. Do not silently drop them.
+
+**Before synthesizing, read `failedAngles`.** The workflow no longer silently drops angles that
+crashed, returned unusable research, or were skipped because a dep failed. If `failedAngles` is
+non-empty you MUST tell the user which angles are missing and why, in the synthesis itself — not
+just in passing. **If any failed angle is `kind: "core"`, say so first and state plainly that the
+research does not answer the question as asked**; offer to re-run those angles. A synthesis that
+reads as complete while a core angle is missing is the failure this reporting exists to prevent.
 
 **Final-judge pass (1 pass):**
 - Read the critiqued, citation-checked synthesis.
