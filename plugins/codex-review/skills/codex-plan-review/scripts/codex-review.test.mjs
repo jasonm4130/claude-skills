@@ -78,6 +78,20 @@ test("prompts reference the path only, never inline content; retry prompts are m
   assert.ok(!buildRetryPrompt("audit").includes("VERDICT:"));
 });
 
+test("review and diff prompts grant a respected clean pass and gate findings on reproducibility", () => {
+  // Counters the documented LLM-reviewer over-rejection bias: an adversarial reviewer with no
+  // legitimate "nothing to fix" state, tuned to always find something, systematically rejects
+  // correct code. See docs/plans/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md.
+  const review = buildReviewPrompt("docs/plan.md");
+  const diff = buildDiffPrompt("aaa111..bbb222", ["src/x.mjs"]);
+  for (const p of [review, diff]) {
+    assert.match(p, /zero findings/i, "an APPROVED-with-no-findings result must be legitimized, not treated as a miss");
+  }
+  // Reproducibility gate: a finding whose triggering input cannot be named is not reportable.
+  assert.match(diff, /do not report it/i, "diff mode must gate findings on a named triggering input");
+  assert.match(review, /is not a finding/i, "plan mode must tie each finding to a concrete failure scenario");
+});
+
 test("contentHashOf and mintChainId are deterministic short hashes", () => {
   const h = contentHashOf(Buffer.from("hello"));
   assert.match(h, /^[0-9a-f]{16}$/);

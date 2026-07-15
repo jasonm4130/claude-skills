@@ -47,14 +47,14 @@ const REVIEW_BODY = (relPath) => `You are an adversarial design reviewer. Review
 
 Default to skepticism: your job is to break confidence in this artifact, not to validate it. Assume it can fail until the evidence says otherwise. Hunt for: hidden assumptions, failure modes, missing error handling, underspecified interfaces, internal contradictions, and scope creep. Where the document makes claims about code, files, or tools in this repository, check them (read-only).
 
-Report findings as a bullet list, each tagged [P1] (must fix before implementation), [P2] (should fix), or [P3] (nit). Severity must be proportionate to the artifact's scope — do not demand enterprise patterns from small local tooling. Do not rubber-stamp; do not restate the document.
+Report findings as a bullet list, each tagged [P1] (must fix before implementation), [P2] (should fix), or [P3] (nit). For each finding, name the concrete scenario in which the design fails — a finding you cannot tie to a specific failure is not a finding. Severity must be proportionate to the artifact's scope — do not demand enterprise patterns from small local tooling. Do not rubber-stamp; equally, do not manufacture findings — if the design is sound, an APPROVED verdict with zero findings is the correct and expected result, not a failure to look hard enough.
 
 End your final message with exactly one line: VERDICT: APPROVED or VERDICT: REVISE (REVISE if any P1 or P2 finding exists).`;
 
 export function buildReviewPrompt(relPath) { return REVIEW_BODY(relPath); }
 
 export function buildResumePrompt(relPath) {
-  return `The artifact at \`${relPath}\` has been revised in response to your findings. Re-review: verify each prior finding is addressed, flag any that are not, and check the revisions did not introduce new problems. Same reporting format. End your final message with exactly one line: VERDICT: APPROVED or VERDICT: REVISE.`;
+  return `The artifact at \`${relPath}\` has been revised in response to your findings. Re-review: verify each prior finding is addressed, flag any that are not, and check the revisions did not introduce new problems. Same reporting format. If every prior finding is resolved and you find no new ones, an APPROVED verdict is the correct result — do not hold the artifact open for polish. End your final message with exactly one line: VERDICT: APPROVED or VERDICT: REVISE.`;
 }
 
 export function buildAuditPrompt(relPath) {
@@ -94,9 +94,9 @@ ${files.map((f) => `- ${f}`).join("\n")}${undiffableNote(undiffable)}
 
 Default to skepticism: your job is to find what is BROKEN, not to validate the change. Assume it is wrong until the code says otherwise. Hunt for: logic errors, off-by-one and boundary bugs, race conditions and TOCTOU, unhandled errors and swallowed exceptions, resource leaks, injection and path traversal, incorrect edge-case handling, and tests that assert nothing or cannot fail.
 
-For each finding give the file and line, state concretely what input or interleaving triggers it, and what breaks. A finding I cannot reproduce from your description is not a finding.
+For each finding give the file and line, and name the concrete input or interleaving that triggers it and what breaks. Treat this as a gate, not a formality: if you cannot name the input that makes it fail, do not report it — not even as a nit. A finding I cannot reproduce from your description is not a finding.
 
-Report as a bullet list, each tagged [P1] (a real bug — must fix), [P2] (should fix), or [P3] (nit). Severity must be proportionate: this is small local tooling, not a distributed system. Do not restate the diff. Do not rubber-stamp.
+Report as a bullet list, each tagged [P1] (a real bug — must fix), [P2] (should fix), or [P3] (nit). Severity must be proportionate: this is small local tooling, not a distributed system, and it tracks what actually breaks, not how hard you looked. Do not restate the diff, and do not rubber-stamp — but skepticism is about the code, not a quota of findings. If the change is sound, an APPROVED verdict with zero findings is the correct and expected result; do not manufacture or inflate findings to prove you reviewed.
 
 End your final message with exactly one line: VERDICT: APPROVED or VERDICT: REVISE (REVISE if any P1 or P2 finding exists).`;
 
@@ -112,6 +112,8 @@ export function buildDiffResumePrompt(pinnedRange, undiffable = []) {
   // rather than attack them. Framing degraded findings 3-4x in testing; that rule has no exception for
   // resume rounds.
   return `The code has changed. The new range is \`${pinnedRange}\`. Run \`${DIFF_CMD(pinnedRange)}\` and review it again from scratch: check whether each issue you raised earlier is actually gone from the code (not merely moved, renamed, or commented), and hunt for new problems the changes introduced. Same reporting format and severity rubric.${undiffableNote(undiffable)}
+
+If your earlier issues are genuinely gone and no new ones survive the reproducibility gate, an APPROVED verdict is the correct result — do not keep the change open for polish.
 
 End your final message with exactly one line: VERDICT: APPROVED or VERDICT: REVISE.`;
 }
