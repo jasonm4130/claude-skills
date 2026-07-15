@@ -82,8 +82,12 @@ The trial required ≥1 unique finding per 5 eligible chains (`uniquePer5 >= 1`)
 in at **37.5 per 5 — about 37× the bar** — and diff mode has since cleared its own open question (above).
 
 The skill is **kept**. `stats` is now a health check, not a survival test: if `uniquePer5` collapses
-toward 1, revisit. Remaining escalation paths (SDD hook, adversarial persona) live in the plugin README
-and are still ungated — do not wire this into an automated gate without a fresh trial.
+toward 1, revisit. But `uniquePer5` is a **floor, not a target** — a review that produces zero findings
+on genuinely-clean work is a success, not a miss, and the reviewer must never be tuned toward producing
+findings to keep the number up (LLM reviewers already over-reject correct code; see
+`docs/plans/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md`). Remaining escalation paths
+(SDD hook, adversarial persona) live in the plugin README and are still ungated — do not wire this into
+an automated gate without a fresh trial.
 
 ## Common mistakes
 

@@ -61,7 +61,10 @@ node plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs diff
 
 The trial required **≥1 confirmed unique finding per ~5 eligible chains** by ~2026-07-28. It came in at
 **37.5 per 5 — roughly 37× the bar.** The plugin is kept. `stats` is now a health check rather than a
-survival test; if `uniquePer5` collapses toward 1, revisit.
+survival test; if `uniquePer5` collapses toward 1, revisit. Treat `uniquePer5` as a **floor, not a
+target**: a clean review that produces zero findings is a success, and the reviewer is never tuned toward
+producing findings (LLM reviewers over-reject correct code — see
+`docs/plans/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md`).
 
 ```
 node plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs stats
@@ -69,7 +72,12 @@ node plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs stat
 
 ## Escalation paths (documented, not built — still ungated)
 
-1. **SDD integration** — add Codex as an extra reviewer in the subagent-driven-development review stage.
+1. **SDD integration** — add Codex as a **whole-branch** reviewer *after* an SDD run completes (the
+   `diff main...HEAD` gate), **not** a per-task reviewer inside the loop. Evidence favours whole-branch:
+   an SDD run whose 8 tasks each passed their own per-task gate still had 6 whole-branch blockers (2
+   data-destroying) that per-task review structurally cannot see; and a per-task external reviewer pays
+   N× the paid-call cost and N× the reviewer's over-rejection surface to catch strictly less. See
+   `docs/plans/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md`.
 2. **adversarial-agents persona** — a `codex` persona dispatched via Bash CLI instead of an Agent subagent.
 
 Diff mode has now earned its keep (above), which was the precondition. Neither of these is built yet:
