@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "sdd.mjs"), "utf8");
 const pure = src.split("// >>> PURE")[1].split("// <<< PURE")[0];
 const H = new Function(
-  `${pure}; return { TIERS, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, detectOscillation, ledgerLine, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptVerification };`,
+  `${pure}; return { TIERS, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchImpl, detectOscillation, ledgerLine, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptVerification };`,
 )();
 
 const okArgs = () => ({
@@ -21,7 +21,7 @@ test("validateArgs accepts a valid object and defaults tiers/limits", () => {
   const c = H.validateArgs(okArgs());
   assert.equal(c.tasks[0].tier, "sonnet");
   assert.equal(c.tasks[1].tier, "opus");
-  assert.deepEqual(c.limits, { fixRounds: 2, escalateAttempts: 2, maxParallel: 4 });
+  assert.deepEqual(c.limits, { fixRounds: 2, escalateAttempts: 2, maxParallel: 4, fableEscalation: true });
 });
 
 test("validateArgs parses a JSON string", () => {
@@ -92,6 +92,39 @@ test("reviewerModel bumps to opus only for opus tasks", () => {
 test("maxAttemptsAtTier: opus gets the budget, others one", () => {
   assert.equal(H.maxAttemptsAtTier("sonnet", { escalateAttempts: 2 }), 1);
   assert.equal(H.maxAttemptsAtTier("opus", { escalateAttempts: 2 }), 2);
+});
+
+test("escalationStep: lower rungs step up one tier after their single attempt blocks", () => {
+  const limits = { escalateAttempts: 2, fableEscalation: true };
+  assert.deepEqual(H.escalationStep("haiku", 1, limits), { action: "escalate", tier: "sonnet" });
+  assert.deepEqual(H.escalationStep("sonnet", 1, limits), { action: "escalate", tier: "opus" });
+});
+
+test("escalationStep: opus retries to its budget, then escalates to the fable rung", () => {
+  const limits = { escalateAttempts: 2, fableEscalation: true };
+  assert.deepEqual(H.escalationStep("opus", 1, limits), { action: "retry" });
+  assert.deepEqual(H.escalationStep("opus", 2, limits), { action: "escalate", tier: "fable" });
+});
+
+test("escalationStep: fable is the top rung — one attempt, then halt for a human", () => {
+  const limits = { escalateAttempts: 2, fableEscalation: true };
+  assert.deepEqual(H.escalationStep("fable", 1, limits), { action: "halt" });
+});
+
+test("escalationStep: fableEscalation:false keeps the old opus->halt ceiling (never routes to fable)", () => {
+  const limits = { escalateAttempts: 2, fableEscalation: false };
+  assert.deepEqual(H.escalationStep("opus", 2, limits), { action: "halt" });
+  assert.notDeepEqual(H.escalationStep("opus", 2, limits), { action: "escalate", tier: "fable" });
+});
+
+test("dispatchImpl normalizes a rejecting dispatch (e.g. a withdrawn Fable tier) to null, not a throw", async () => {
+  const reject = async () => { throw new Error("model fable is unavailable"); };
+  assert.equal(await H.dispatchImpl(reject, "prompt", {}), null);
+});
+
+test("dispatchImpl passes a resolved result — and a resolved null — straight through", async () => {
+  assert.deepEqual(await H.dispatchImpl(async () => ({ status: "DONE" }), "p", {}), { status: "DONE" });
+  assert.equal(await H.dispatchImpl(async () => null, "p", {}), null);
 });
 
 test("detectOscillation flags a class surviving two consecutive rounds", () => {

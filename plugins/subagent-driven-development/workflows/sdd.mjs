@@ -61,6 +61,9 @@ function validateArgs(input) {
     fixRounds: Number.isInteger(li.fixRounds) ? li.fixRounds : 2,
     escalateAttempts: Number.isInteger(li.escalateAttempts) ? li.escalateAttempts : 2,
     maxParallel: Number.isInteger(li.maxParallel) && li.maxParallel >= 1 ? li.maxParallel : 4,
+    // Fable is an opt-in top escalation rung above Opus. Default on; flip to false to make the
+    // ladder halt at Opus (e.g. if Fable is withdrawn, breaks, or its premium cost isn't wanted).
+    fableEscalation: typeof li.fableEscalation === "boolean" ? li.fableEscalation : true,
   };
   return {
     planPath, workdir: input.workdir, pluginDir: input.pluginDir,
@@ -104,6 +107,35 @@ function reviewerModel(taskTier) {
 
 function maxAttemptsAtTier(tier, limits) {
   return tier === "opus" ? Math.max(1, limits.escalateAttempts) : 1;
+}
+
+// After the implementer reports BLOCKED at `tier` (having now blocked `attemptsAtTier` times at it),
+// decide the ladder's next move: { action: "retry" } (same tier), { action: "escalate", tier }
+// (step up), or { action: "halt" } (give up for a human). The base ladder is haiku→sonnet→opus, with
+// Fable as an opt-in top rung reached ONLY from an exhausted Opus and tried ONCE. Fable is a paid
+// premium tier that may be withdrawn or repriced, so it is gated on limits.fableEscalation: with that
+// off, the ladder halts at Opus exactly as before. A Fable dispatch that fails outright still degrades
+// safely — runTask's `if (!impl)` guard turns a null result into a clean halt, never a crash or a
+// silent drop back to a lower tier.
+function escalationStep(tier, attemptsAtTier, limits) {
+  if (attemptsAtTier < maxAttemptsAtTier(tier, limits)) return { action: "retry" };
+  if (tier === "opus" && limits.fableEscalation) return { action: "escalate", tier: "fable" };
+  if (tier === "fable") return { action: "halt" };
+  const up = nextTier(tier);
+  return up === null ? { action: "halt" } : { action: "escalate", tier: up };
+}
+
+// Dispatch the implementer, normalizing BOTH failure shapes to null so runTask's clean-halt guard
+// fires either way: a resolved null (the runtime's terminal-error return) AND a thrown rejection. A
+// tier that cannot be dispatched at all — e.g. a withdrawn or repriced Fable — can reject rather than
+// resolve; without this catch that rejection escapes the `if (!impl)` guard and crashes the wave
+// instead of returning the workflow's halted state. `agentFn` is injected so this is unit-testable.
+async function dispatchImpl(agentFn, prompt, opts) {
+  try {
+    return await agentFn(prompt, opts);
+  } catch {
+    return null;
+  }
 }
 
 // roundClasses: array (one per review round) of arrays of finding-class strings.
@@ -461,18 +493,20 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
 
   async function runTask(task, base, wd) {
     // Implement with the BLOCKED escalation ladder.
-    let tier = task.tier, opusAttempts = 0, blocker = null, impl = null;
+    let tier = task.tier, attemptsAtTier = 0, blocker = null, impl = null;
     while (true) {
-      impl = await agent(implPrompt(task, tier, blocker, base, wd), {
+      attemptsAtTier++;
+      impl = await dispatchImpl(agent, implPrompt(task, tier, blocker, base, wd), {
         label: `impl:t${task.n}`, phase: "Implement", model: tier, schema: IMPL_SCHEMA,
       });
       if (!impl) return { halt: { taskN: task.n, reason: "implementer returned no result", reportPath: "" } };
       if (impl.status === "DONE" || impl.status === "DONE_WITH_CONCERNS") break;
       blocker = impl.concerns || impl.status;
-      if (tier !== "opus") { tier = nextTier(tier); continue; }
-      opusAttempts++;
-      if (opusAttempts < maxAttemptsAtTier("opus", cfg.limits)) continue;
-      return { halt: { taskN: task.n, reason: `blocked after escalation: ${blocker}`, reportPath: impl.reportPath } };
+      const step = escalationStep(tier, attemptsAtTier, cfg.limits);
+      if (step.action === "halt") {
+        return { halt: { taskN: task.n, reason: `blocked after escalation: ${blocker}`, reportPath: impl.reportPath } };
+      }
+      if (step.action === "escalate") { tier = step.tier; attemptsAtTier = 0; }
     }
 
     // Review + bounded fix loop.
