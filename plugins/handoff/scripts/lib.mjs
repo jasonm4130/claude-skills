@@ -352,6 +352,139 @@ export function tokensSuffix(tokens) {
   return `(${Math.round(tokens / 1000)}k)`;
 }
 
+const SGR_RE = /\x1b\[[0-9;]*m/g;
+
+/**
+ * @param {string} s
+ * @returns {number} code-point length after stripping SGR escapes
+ */
+export function visibleWidth(s) {
+  return [...s.replace(SGR_RE, "")].length;
+}
+
+/**
+ * End-truncate to `max` code points with a trailing "…" (best-effort; every code
+ * point counts as width 1).
+ * @param {string} s
+ * @param {number} max
+ * @returns {string}
+ */
+export function truncateEnd(s, max) {
+  if (max <= 0) return "";
+  const cps = [...s];
+  if (cps.length <= max) return s;
+  if (max === 1) return "…";
+  return cps.slice(0, max - 1).join("") + "…";
+}
+
+const A_RED = "\x1b[0;31m";
+const A_AMBER = "\x1b[0;33m";
+const A_GREEN = "\x1b[0;32m";
+const A_DIM = "\x1b[2m";
+const A_RESET = "\x1b[0m";
+const IDENTITY_MAX_CHARS = 24;
+const BRANCH_MAX_CHARS = 24;
+
+/**
+ * Assemble the adaptive status line. Pure and deterministic; the caller resolves
+ * git/model/rate-limit data first and passes it in.
+ * @param {{
+ *   identity: string,
+ *   branch: string | null,
+ *   dirty: number,
+ *   pctInt: number,
+ *   tokens: number | null,
+ *   model: string,
+ *   rateLimits: Array<{label:string, pct:number, red:boolean}>,
+ *   budget: number,
+ * }} d
+ * @returns {string}
+ */
+export function assembleStatusLine(d) {
+  const budget = d.budget > 0 ? d.budget : 120;
+  const red = d.pctInt >= 70;
+  let filled = Math.floor(d.pctInt / 10);
+  if (filled < 0) filled = 0;
+  if (filled > 10) filled = 10;
+  const bar = "█".repeat(filled) + "░".repeat(10 - filled);
+  const barColor = red ? A_RED : d.pctInt >= 50 ? A_AMBER : A_GREEN;
+  const tokSfx = red && d.tokens != null ? ` ${tokensSuffix(d.tokens)}` : "";
+  const barText = `${bar} ${d.pctInt}%${tokSfx}`;
+  const barColored = `${barColor}${barText}${A_RESET}`;
+
+  const modelIsAmber = modelColor(d.model) === "amber";
+  const sep = ` ${A_DIM}·${A_RESET} `;
+
+  /** identity cluster text for a given dirty/branch/identity choice */
+  const idText = (identity, branch, showDirty) =>
+    identity + (branch ? ` ⎇${branch}` : "") + (showDirty && d.dirty > 0 ? ` ±${d.dirty}` : "");
+  const idColored = (t) => `${A_DIM}${t}${A_RESET}`;
+  const modelColored = (name) => (modelIsAmber ? `${A_AMBER}${name}${A_RESET}` : name);
+
+  /** build the rate-limit cluster {plain, colored} or null */
+  const buildRl = () => {
+    if (!d.rateLimits.length) return null;
+    const anyRed = d.rateLimits.some((w) => w.red);
+    const parts = d.rateLimits.map((w) => {
+      const p = `${w.label} ${w.pct}%`;
+      return { p, c: `${w.red ? A_RED : A_AMBER}${p}${A_RESET}` };
+    });
+    const warnP = anyRed ? "⚠ " : "";
+    const warnC = anyRed ? `${A_RED}⚠ ${A_RESET}` : "";
+    return { plain: warnP + parts.map((x) => x.p).join(" "), colored: warnC + parts.map((x) => x.c).join(" ") };
+  };
+
+  /**
+   * Assemble a full candidate for a config; returns {width, colored}. Clusters with empty
+   * plain text (e.g. no identity when wsDir is unknown, no model name) are dropped rather
+   * than left as a dangling " · " separator — graceful degradation applies to every
+   * segment, not just the conditional ones.
+   */
+  const candidate = (showRl, showDirty, shortModel) => {
+    const identityStr = idText(d.identity, d.branch, showDirty);
+    const modelName = shortModel ? d.model.split(" ")[0] : d.model;
+    const clusters = [
+      { p: identityStr, c: idColored(identityStr) },
+      { p: barText, c: barColored },
+      { p: modelName, c: modelColored(modelName) },
+    ].filter((x) => x.p.length > 0);
+    const rl = showRl ? buildRl() : null;
+    if (rl) clusters.push({ p: rl.plain, c: rl.colored });
+    const plain = clusters.map((x) => x.p).join(" · ");
+    const colored = clusters.map((x) => x.c).join(sep);
+    return { width: [...plain].length, colored };
+  };
+
+  // Progressive drops, right -> left.
+  const attempts = [
+    [true, true, false],
+    [false, true, false], // 1. drop rate-limits
+    [false, false, false], // 2. drop dirty
+    [false, false, true], // 3. shorten model
+  ];
+  for (const [showRl, showDirty, shortModel] of attempts) {
+    const c = candidate(showRl, showDirty, shortModel);
+    if (c.width <= budget) return c.colored;
+  }
+
+  // 4. Budget-aware clamp of the identity cluster (branch trimmed first because it
+  //    sits at the end of the cluster string). Model is already shortened, no dirty/rl.
+  // An empty model (or empty identity, e.g. wsDir unknown) is dropped rather than left as a
+  // dangling separator — same graceful-degradation rule as the candidate() clusters above.
+  const shortModelName = d.model.split(" ")[0];
+  const idStr = d.identity + (d.branch ? ` ⎇${d.branch}` : "");
+  const modelPart = shortModelName.length > 0 ? `${sep}${modelColored(shortModelName)}` : "";
+  const modelOverhead = shortModelName.length > 0 ? [...shortModelName].length + 3 : 0;
+  const overhead = [...barText].length + modelOverhead + 3; // " · " before the bar
+  const idBudget = budget - overhead;
+  if (idStr.length === 0 || idBudget < 2) {
+    // No room for any identity (or none to show): core (+ model when present).
+    return `${barColored}${modelPart}`;
+  }
+  const clamped = truncateEnd(idStr, Math.min(idBudget, IDENTITY_MAX_CHARS + BRANCH_MAX_CHARS + 2));
+  return `${idColored(clamped)}${sep}${barColored}${modelPart}`;
+}
+
 // POSIX-only flags; undefined on Windows, where we fall back to 0 and rely on the
 // (necessarily non-atomic) lstat pre-check. Windows has no filesystem FIFOs reachable
 // this way, so the blocking hazard O_NONBLOCK guards against does not apply there.

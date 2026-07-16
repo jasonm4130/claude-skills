@@ -39,6 +39,9 @@ import {
   modelColor,
   selectRateLimits,
   tokensSuffix,
+  visibleWidth,
+  truncateEnd,
+  assembleStatusLine,
 } from "../scripts/lib.mjs";
 
 test("safeJsonParse returns object for valid JSON", () => {
@@ -650,4 +653,65 @@ test("selectRateLimits: non-numeric used_percentage is dropped, never NaN", () =
 test("tokensSuffix: rounds to thousands", () => {
   assert.equal(tokensSuffix(287400), "(287k)");
   assert.equal(tokensSuffix(1000), "(1k)");
+});
+
+// --- visibleWidth / truncateEnd / assembleStatusLine (Task 4) ---
+
+test("visibleWidth: ignores ANSI SGR escapes", () => {
+  assert.equal(visibleWidth("\x1b[0;31mabc\x1b[0m"), 3);
+  assert.equal(visibleWidth("main"), 4);
+});
+
+test("truncateEnd: leaves short strings, ellipsizes long ones", () => {
+  assert.equal(truncateEnd("main", 24), "main");
+  assert.equal(truncateEnd("feature/very-long-branch-name", 10), "feature/v…");
+  assert.equal(truncateEnd("x", 0), "");
+});
+
+const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
+test("assembleStatusLine: calm line — core + model, no conditional segments", () => {
+  const line = strip(assembleStatusLine({
+    identity: "claude-skills", branch: "main", dirty: 0,
+    pctInt: 24, tokens: 96000, model: "Opus 4.8", rateLimits: [], budget: 120,
+  }));
+  assert.equal(line, "claude-skills ⎇main · ██░░░░░░░░ 24% · Opus 4.8");
+});
+
+test("assembleStatusLine: busy line — dirty, red tokens, rate-limits with warn", () => {
+  const line = strip(assembleStatusLine({
+    identity: "claude-skills-t2", branch: "sdd/t2", dirty: 5,
+    pctInt: 71, tokens: 287000, model: "Fable 5",
+    rateLimits: [{ label: "5h", pct: 84, red: true }, { label: "7d", pct: 21, red: false }],
+    budget: 120,
+  }));
+  assert.equal(line, "claude-skills-t2 ⎇sdd/t2 ±5 · ███████░░░ 71% (287k) · Fable 5 · ⚠ 5h 84% 7d 21%");
+});
+
+test("assembleStatusLine: tokens suffix only appears when red (>=70)", () => {
+  const green = strip(assembleStatusLine({
+    identity: "x", branch: null, dirty: 0, pctInt: 40, tokens: 160000,
+    model: "Opus 4.8", rateLimits: [], budget: 120,
+  }));
+  assert.ok(!green.includes("("), "no token suffix below red");
+});
+
+test("assembleStatusLine: width drops rate-limits first, then dirty, then shortens model", () => {
+  const d = {
+    identity: "claude-skills-t2", branch: "sdd/t2", dirty: 5, pctInt: 71, tokens: 287000,
+    model: "Fable 5", rateLimits: [{ label: "5h", pct: 84, red: true }], budget: 44,
+  };
+  const line = strip(assembleStatusLine(d));
+  assert.ok(!line.includes("5h"), "rate-limits dropped first");
+  assert.ok(visibleWidth(line) <= 44 || !line.includes("±5"), "dirty dropped next when still over");
+});
+
+test("assembleStatusLine: budget-aware clamp fits a narrow known width", () => {
+  const line = assembleStatusLine({
+    identity: "some-long-identity-name", branch: "a-fairly-long-branch", dirty: 3,
+    pctInt: 55, tokens: null, model: "Sonnet 5",
+    rateLimits: [{ label: "5h", pct: 90, red: true }], budget: 40,
+  });
+  assert.ok(visibleWidth(line) <= 40, `expected <=40 cols, got ${visibleWidth(line)}: ${strip(line)}`);
+  assert.ok(strip(line).includes("55%"), "core is never dropped");
 });

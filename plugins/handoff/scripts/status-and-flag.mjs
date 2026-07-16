@@ -18,6 +18,9 @@ import {
   acquireInflightLock,
   pickContextTokens,
   shouldResetBands,
+  gitBranchDirty,
+  selectRateLimits,
+  assembleStatusLine,
 } from "./lib.mjs";
 
 /**
@@ -47,6 +50,20 @@ import {
  */
 
 /**
+ * @typedef {Object} Model
+ * @property {string} [display_name]
+ */
+/**
+ * @typedef {Object} RateWindow
+ * @property {number} [used_percentage]
+ */
+/**
+ * @typedef {Object} RateLimits
+ * @property {RateWindow} [five_hour]
+ * @property {RateWindow} [seven_day]
+ */
+
+/**
  * @typedef {Object} StatusInput
  * @property {string} [session_id]
  * @property {ContextWindow} [context_window]
@@ -54,6 +71,8 @@ import {
  * @property {string} [cwd]
  * @property {Workspace} [workspace]
  * @property {Worktree} [worktree]
+ * @property {Model} [model]
+ * @property {RateLimits} [rate_limits]
  */
 
 /** Path of the in-flight lock once this run has acquired it. @type {string | null} */
@@ -244,21 +263,40 @@ try {
   // best-effort
 }
 
-// --- Render 10-char block bar ---
 const pctInt = Math.trunc(currentPct);
-let filled = Math.floor(pctInt / 10);
-if (filled < 0) filled = 0;
-if (filled > 10) filled = 10;
-const empty = 10 - filled;
-const bar = "█".repeat(filled) + "░".repeat(empty);
 
-let color;
-if (pctInt >= 70) color = "\x1b[0;31m"; // red
-else if (pctInt >= 50) color = "\x1b[0;33m"; // yellow
-else color = "\x1b[0;32m"; // green
-const reset = "\x1b[0m";
+// --- Resolve display segments (success path only — never on the bail/replay path) ---
+const identity = wsDir !== null ? path.basename(wsDir) : "";
+// Fast path: stdin worktree.branch when present; else shell out.
+let branch = wtBranch;
+let dirty = 0;
+if (wsDir !== null) {
+  const git = gitBranchDirty(wsDir);
+  if (git !== null) {
+    if (branch === null) branch = git.label;
+    dirty = git.dirty;
+  }
+}
+const RATE_LIMIT_SURFACE_PCT = 50;
+const rateLimits = selectRateLimits(parsed && parsed.rate_limits, RATE_LIMIT_SURFACE_PCT);
+const modelName =
+  parsed && parsed.model && typeof parsed.model.display_name === "string" && parsed.model.display_name.length > 0
+    ? parsed.model.display_name
+    : "";
+const budget = Number.parseInt(process.env.COLUMNS ?? "", 10);
 
-const renderLine = `${locPrefix}${color}[${bar}] ${pctInt}%${reset}\n`;
+const renderLine =
+  assembleStatusLine({
+    identity,
+    branch,
+    dirty,
+    pctInt,
+    tokens: contextTokens,
+    model: modelName,
+    rateLimits,
+    budget: Number.isFinite(budget) && budget > 0 ? budget : 120,
+  }) + "\n";
+
 try {
   writeFileSync(renderCacheFile, renderLine);
 } catch {
