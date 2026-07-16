@@ -211,6 +211,25 @@ test("researchProblems: reserved TLDs are guaranteed-unresolvable, so guaranteed
   }
 });
 
+test("researchProblems: alternate-encoding hosts that canonicalize to a blocked target are rejected (SSRF — #41 follow-up)", () => {
+  // The regex parser does NOT canonicalize like new URL() did, so alternate encodings a real fetcher
+  // WOULD normalize must be rejected explicitly — else a fabricated finding aims the tier-1 verifier's
+  // WebFetch at cloud metadata (169.254.169.254) or loopback. A legitimate research host is plain
+  // ASCII DNS. These all resolve, in a real fetcher, to a host the guard is meant to block.
+  for (const url of ["http://0xA9FEA9FE/latest/meta-data/", "http://0x7f000001/",
+                     "http://%31%36%39.254.169.254/", "https://example%E3%80%82com/",
+                     "http://2852039166/"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.ok(researchProblems(r).some((p) => /url|host/i.test(p)), `${url} must be rejected`);
+  }
+  // …but ordinary ASCII DNS hosts with hex-looking or numeric LABELS are still fine (they resolve via
+  // DNS, not as an IP literal): the whole host must be an alternate encoding, not just one label.
+  for (const url of ["https://0xdeadbeef.cloudflare.com/x", "https://s3.amazonaws.com/b", "https://web1.django.com/x"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.deepEqual(researchProblems(r), [], `${url} is a legitimate DNS host`);
+  }
+});
+
 test("researchProblems: host parsing works WITHOUT a URL constructor (issue #41 — the Workflow sandbox has none)", () => {
   // THE root-cause bug. The sealed Workflow runtime has no global URL (probed: `typeof URL` is
   // "undefined", `new URL()` throws ReferenceError). So host came back null for EVERY finding and

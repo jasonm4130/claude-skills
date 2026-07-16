@@ -131,6 +131,13 @@ const PLACEHOLDER_PREFIXES = ["todo", "tbd", "n/a"];
 function isPlaceholderHost(host) {
   // IPv6 arrives bracketed from hostFromUrl ("[::1]"); IPv4 is all-digits-and-dots.
   if (host.startsWith("[") || /^[\d.]+$/.test(host)) return true;
+  // Alternate host encodings that a real fetcher WOULD normalize to a blocked target, but the regex
+  // parser does not (new URL() did — issue #41). A legitimate research citation is plain ASCII DNS.
+  //   - any char outside [a-z0-9.-]: percent-encoding (`%31%36%39.254.169.254`) or a non-ASCII
+  //     homograph (`example%E3%80%82com` = ideographic full stop -> "example.com");
+  //   - a dotless host: a hex/octal/decimal IP literal (`0xA9FEA9FE` -> 169.254.169.254) or a bare
+  //     intranet name — never a real public citation. (Bracketed IPv6 already returned above.)
+  if (/[^a-z0-9.-]/.test(host) || !host.includes(".")) return true;
   const tld = host.split(".").pop();
   if (RESERVED_TLDS.includes(tld)) return true;
   return PLACEHOLDER_HOSTS.some((p) => host === p || host.endsWith(`.${p}`));

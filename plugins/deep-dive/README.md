@@ -54,6 +54,7 @@ through as evidence — when any of these hold:
 | A **bare IP address** (v4 or v6) | Research cites named websites. The tier-1 verifier is *instructed to fetch* these URLs — `169.254.169.254` is the cloud instance-metadata endpoint. |
 | A **reserved TLD** — `.invalid`, `.test`, `.example`, `.local`, `.localhost` | RFC 2606/6761 guarantee these can never resolve, so the citation is fabricated by construction. |
 | A placeholder host (`example.com` and friends), including subdomains and FQDN forms | `sub.example.com` and `example.com.` are the same fabricated citation with a label bolted on. |
+| An **alternate host encoding** — percent-escaped (`%31%36%39.254.169.254`), a non-ASCII homograph (`example。com`), or a hex/octal/decimal IP literal (`0xA9FEA9FE`) | The sandbox parser (no `URL` constructor) can't canonicalize these, but a real fetcher would — straight back to a bare IP or placeholder host. A legitimate citation is plain ASCII DNS. |
 | A placeholder claim — `placeholder`, `lorem ipsum`, `example claim` anywhere; `TODO`/`TBD`/`n/a` as a prefix | The short tokens are prefix-only on purpose: "pricing is TBD as of 2025" is a real finding. |
 | An empty `sourceTitle` or `sourceDate` | Every claim is contracted to carry a URL *and* a title *and* a date; the synthesis renders all three. |
 
