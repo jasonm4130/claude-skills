@@ -20,6 +20,7 @@
 - Dispatcher = match-and-proportion + specificity-wins + user-suppress (Part A) and currency/verification (Part B), verbatim from spec §"The dispatcher — `using-skills`".
 - Do not modify any other owned plugin.
 - `.mjs` tests run with `node --test`.
+- **Repo-consistency invariant** (`scripts/repo-consistency.test.mjs`, runs under `node --test`): every `plugins/<name>` dir must have a matching `marketplace.json` entry (same `version`, `source: ./plugins/<name>`) **and** a backtick-wrapped `` `<name>` `` mention in root `README.md` — an exact bijection. Any task that adds a plugin updates dir + marketplace + README **together**, or the suite goes red.
 
 ---
 
@@ -82,19 +83,22 @@ Expected: `OK`
 
 - [ ] **Step 3: Register in the marketplace** — add to the `plugins` array in `.claude-plugin/marketplace.json` (match the existing entry shape; source `./plugins/superpowers-core`, version `0.1.0`, author Jason Matthew, license MIT).
 
-- [ ] **Step 4: Validate JSON**
+- [ ] **Step 4: Document in `README.md`** — add a backtick-wrapped `` `superpowers-core` `` mention to the root `README.md` plugin list (required by the repo-consistency bijection), with a one-line description in the existing README style.
+
+- [ ] **Step 5: Validate — JSON + repo-consistency**
 
 ```bash
 jq -e '.plugins[] | select(.name=="superpowers-core")' .claude-plugin/marketplace.json >/dev/null && \
 jq -e . plugins/superpowers-core/.claude-plugin/plugin.json >/dev/null && echo VALID
+node --test scripts/repo-consistency.test.mjs
 ```
-Expected: `VALID`
+Expected: `VALID`; repo-consistency tests PASS (dir ↔ marketplace ↔ README bijection holds).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add plugins/superpowers-core/.claude-plugin/plugin.json plugins/superpowers-core/LICENSE .claude-plugin/marketplace.json
-git commit -m "feat(superpowers-core): plugin skeleton + marketplace registration"
+git add plugins/superpowers-core/.claude-plugin/plugin.json plugins/superpowers-core/LICENSE .claude-plugin/marketplace.json README.md
+git commit -m "feat(superpowers-core): plugin skeleton + marketplace + README"
 ```
 
 ---
@@ -395,22 +399,25 @@ git commit -m "feat(superpowers-core): writing-plans open-questions list + first
 **References / inspiration:** …
 ```
 
-- [ ] **Step 3: Register in marketplace** (add `frontend-design` entry to the `plugins` array).
+- [ ] **Step 3: Register in marketplace** (add `frontend-design` entry to the `plugins` array; `source: ./plugins/frontend-design`, version `0.1.0`).
 
-- [ ] **Step 4: Validate**
+- [ ] **Step 4: Document in `README.md`** — add a backtick-wrapped `` `frontend-design` `` mention to the root `README.md` plugin list (required by the repo-consistency bijection), one-line description in existing style.
+
+- [ ] **Step 5: Validate — JSON + brief + repo-consistency**
 
 ```bash
 jq -e '.plugins[] | select(.name=="frontend-design")' .claude-plugin/marketplace.json >/dev/null && \
 jq -e . plugins/frontend-design/.claude-plugin/plugin.json >/dev/null && echo VALID
 grep -qi "design brief" plugins/frontend-design/skills/frontend-design/SKILL.md && echo "BRIEF"
+node --test scripts/repo-consistency.test.mjs
 ```
-Expected: `VALID`, `BRIEF`.
+Expected: `VALID`, `BRIEF`; repo-consistency PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add plugins/frontend-design .claude-plugin/marketplace.json
-git commit -m "feat(frontend-design): owned gate — light inline / heavy -> Claude Design browser brief"
+git add plugins/frontend-design .claude-plugin/marketplace.json README.md
+git commit -m "feat(frontend-design): owned gate + README"
 ```
 
 ---
