@@ -39,8 +39,10 @@ test("reviewer prompts grant a respected clean pass and scrutinize weakened test
     assert.match(s, /zero findings/i, `${f}: a clean pass must be legitimized`);
     assert.match(s, /do not manufacture or inflate/i, `${f}: must forbid manufacturing findings`);
     assert.match(s, /test-file changes[\s\S]{0,30}more carefully/i, `${f}: must prioritize test-diff scrutiny`);
-    assert.match(s, /asserts nothing or cannot\s+fail/i, `${f}: must name the weakened-assertion tell`);
-    assert.match(s, /Critical/, `${f}: a test gamed to pass is a Critical finding`);
+    // Bind Critical to the weakened-assertion language — a bare /Critical/ would match the severity
+    // enum and still pass if this line were softened to "Minor" (the exact gaming this rule forbids).
+    assert.match(s, /asserts nothing or cannot\s+fail[\s\S]{0,120}Critical/i,
+      `${f}: a test that asserts nothing or cannot fail must be classified Critical, not just mentioned`);
   }
 });
 
