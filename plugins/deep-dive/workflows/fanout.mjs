@@ -166,7 +166,11 @@ function isPlaceholderHost(host) {
  * @returns {string|null}
  */
 function hostFromUrl(url) {
-  const m = /^(https?):\/\/([^/?#]*)/i.exec(url);
+  // The authority ends at the first "/", "?" or "#" — and also "\", which WHATWG treats as "/" in
+  // http(s). Without excluding "\", `http://169.254.169.254\@cloudflare.com/` would keep the IP inside
+  // the authority, strip it as userinfo at the last "@", and read the host as cloudflare.com while a
+  // real fetcher targets the metadata IP (issue #41 audit — SSRF).
+  const m = /^(https?):\/\/([^/\\?#]*)/i.exec(url);
   if (!m) return null; // no http(s) scheme → never fetched
   let authority = m[2];
   const at = authority.lastIndexOf("@");

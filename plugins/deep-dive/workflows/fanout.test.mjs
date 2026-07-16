@@ -236,6 +236,22 @@ test("researchProblems: alternate-encoding hosts that canonicalize to a blocked 
   }
 });
 
+test("researchProblems: a backslash authority delimiter cannot smuggle a metadata IP past userinfo stripping (#41 SSRF audit)", () => {
+  // WHATWG treats "\" as "/" in http(s), so `http://169.254.169.254\@cloudflare.com/…` has host
+  // 169.254.169.254 — but a naive userinfo strip at the LAST "@" reads it as cloudflare.com, and a
+  // verifier then fetches the metadata IP. The authority must end at "\" exactly as it ends at "/".
+  // (JS string "\\" is a single backslash.)
+  for (const url of ["http://169.254.169.254\\@cloudflare.com/latest/meta-data",
+                     "https://127.0.0.1\\@realsite.com/", "http://[::1]\\@realsite.com/",
+                     "http://0xA9.0xFE.0xA9.0xFE\\@realsite.com/"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.ok(researchProblems(r).some((p) => /url|host/i.test(p)), `${url} must be rejected`);
+  }
+  // A backslash whose real (WHATWG) host is legitimate stays accepted — the metadata IP is in the path.
+  const benign = { ...good, findings: [{ ...good.findings[0], sourceUrl: "http://blog.cloudflare.com\\@169.254.169.254/x" }] };
+  assert.deepEqual(researchProblems(benign), [], "real host before the backslash is legitimate");
+});
+
 test("researchProblems: an out-of-range port is an invalid, unfetchable citation (#41 follow-up)", () => {
   // The regex parser strips :port; a real URL parser (the old new URL()) rejects a port outside
   // 1..65535 outright. Without a range check, `:99999` passed and an unfetchable citation reached
