@@ -98,6 +98,24 @@
       "category": "productivity"
     },
     {
+      "name": "frontend-design",
+      "source": "./plugins/frontend-design",
+      "description": "Frontend/UI design guidance, gated by scope: a light or surgical change gets inline principles; a wide-sweeping or highly-detailed design gets routed to Claude Design in the browser with a paste-ready design brief.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": [
+        "frontend",
+        "design",
+        "ui",
+        "visual-design",
+        "claude-code"
+      ],
+      "category": "productivity"
+    },
+    {
       "name": "handoff",
       "source": "./plugins/handoff",
       "description": "Context-fill-triggered handoff skill — writes a structured resume doc when context fills, auto-loads it on next session.",
@@ -163,6 +181,24 @@
         "workflow",
         "code-review",
         "ponytail"
+      ],
+      "category": "productivity"
+    },
+    {
+      "name": "superpowers-core",
+      "source": "./plugins/superpowers-core",
+      "description": "Owned fork of the superpowers process skills (brainstorming, systematic-debugging, writing-plans, writing-skills, test-driven-development) plus the using-skills dispatcher.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": [
+        "skills",
+        "process",
+        "brainstorming",
+        "tdd",
+        "claude-code"
       ],
       "category": "productivity"
     },
