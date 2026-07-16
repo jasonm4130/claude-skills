@@ -285,7 +285,8 @@ const GIT_TIMEOUT_MS = 250;
  * omits the whole git segment; git never takes the bar down.
  * @param {string} cwd
  * @param {number} [timeoutMs]
- * @returns {{ label: string, dirty: number } | null}
+ * @returns {{ label: string, dirty: number | null } | null} `dirty` is null when the branch is
+ *   known but the working-tree status could not be determined (the ±N marker is then omitted).
  */
 export function gitBranchDirty(cwd, timeoutMs = GIT_TIMEOUT_MS) {
   /** @type {import("node:child_process").SpawnSyncOptionsWithStringEncoding} */
@@ -305,10 +306,13 @@ export function gitBranchDirty(cwd, timeoutMs = GIT_TIMEOUT_MS) {
       }
     }
     const s = spawnSync("git", ["-C", cwd, "status", "--porcelain"], opts);
+    // A status failure (e.g. a bare repo, a locked/corrupt index) leaves the branch known but the
+    // dirtiness UNdetermined. Report null, never 0 — a fabricated "clean" would hide real changes.
+    // Per the spec this omits only the affected piece (the ±N marker); the branch still shows.
     const dirty =
       s.status === 0 && typeof s.stdout === "string"
         ? s.stdout.split("\n").filter((l) => l.trim().length > 0).length
-        : 0;
+        : null;
     return { label, dirty };
   } catch {
     return null;
@@ -485,8 +489,11 @@ export function assembleStatusLine(d) {
   const overhead = [...barText].length + modelOverhead + 3; // " · " before the bar
   const idBudget = budget - overhead;
   if (idStr.length === 0 || idBudget < 2) {
-    // No room for any identity (or none to show): core (+ model when present).
-    return `${barColored}${modelPart}`;
+    // No room for any identity (or none to show): core, plus the model only if it still fits the
+    // known budget. The core (bar + pct) is the immutable floor and is never dropped — below its
+    // own width the line soft-wraps, which is accepted.
+    const withModel = `${barColored}${modelPart}`;
+    return visibleWidth(withModel) <= budget ? withModel : barColored;
   }
   const clamped = truncateEnd(idStr, Math.min(idBudget, IDENTITY_MAX_CHARS + BRANCH_MAX_CHARS + 2));
   return `${idColored(clamped)}${sep}${barColored}${modelPart}`;

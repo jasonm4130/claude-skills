@@ -624,6 +624,18 @@ test("gitBranchDirty: null for a non-git directory", (t) => {
   assert.equal(gitBranchDirty(dir), null);
 });
 
+test("gitBranchDirty: branch known but status undeterminable -> dirty null, not a fake 0", (t) => {
+  // A bare repo has a valid HEAD symref (symbolic-ref succeeds) but no work tree, so
+  // `git status --porcelain` exits non-zero. dirty must be null (unknown), never a fabricated
+  // clean-looking 0 — otherwise real changes would be hidden behind a "clean" bar.
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-bare-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  spawnSync("git", ["-C", dir, "init", "--bare", "-q", "-b", "main"], { encoding: "utf8" });
+  const r = gitBranchDirty(dir);
+  assert.equal(r?.label, "main");
+  assert.equal(r?.dirty, null, "undeterminable status is null, not 0");
+});
+
 // --- modelColor / selectRateLimits / tokensSuffix (Task 3) ---
 
 test("modelColor: Fable is amber, others plain", () => {
@@ -714,4 +726,16 @@ test("assembleStatusLine: budget-aware clamp fits a narrow known width", () => {
   });
   assert.ok(visibleWidth(line) <= 40, `expected <=40 cols, got ${visibleWidth(line)}: ${strip(line)}`);
   assert.ok(strip(line).includes("55%"), "core is never dropped");
+});
+
+test("assembleStatusLine: narrow fallback drops the model rather than overflow a known budget", () => {
+  // The immutable core (14 cols) fits budget 20, but "· Sonnet" would push it to 23. The model
+  // must be dropped, not appended past the budget.
+  const line = assembleStatusLine({
+    identity: "repo", branch: "main", dirty: 0, pctInt: 55, tokens: null,
+    model: "Sonnet 5", rateLimits: [], budget: 20,
+  });
+  assert.ok(visibleWidth(line) <= 20, `expected <=20 cols, got ${visibleWidth(line)}: ${strip(line)}`);
+  assert.ok(strip(line).includes("55%"), "core is never dropped");
+  assert.ok(!strip(line).includes("Sonnet"), "an unfittable model is dropped, not overflowed");
 });

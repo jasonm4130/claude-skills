@@ -274,7 +274,7 @@ if (wsDir !== null) {
   const git = gitBranchDirty(wsDir);
   if (git !== null) {
     if (branch === null) branch = git.label;
-    dirty = git.dirty;
+    dirty = git.dirty ?? 0; // null = undeterminable status → show the branch, omit the ±N marker
   }
 }
 const RATE_LIMIT_SURFACE_PCT = 50;
