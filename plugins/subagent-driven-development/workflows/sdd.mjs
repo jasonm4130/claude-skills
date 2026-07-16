@@ -125,6 +125,19 @@ function escalationStep(tier, attemptsAtTier, limits) {
   return up === null ? { action: "halt" } : { action: "escalate", tier: up };
 }
 
+// Dispatch the implementer, normalizing BOTH failure shapes to null so runTask's clean-halt guard
+// fires either way: a resolved null (the runtime's terminal-error return) AND a thrown rejection. A
+// tier that cannot be dispatched at all — e.g. a withdrawn or repriced Fable — can reject rather than
+// resolve; without this catch that rejection escapes the `if (!impl)` guard and crashes the wave
+// instead of returning the workflow's halted state. `agentFn` is injected so this is unit-testable.
+async function dispatchImpl(agentFn, prompt, opts) {
+  try {
+    return await agentFn(prompt, opts);
+  } catch {
+    return null;
+  }
+}
+
 // roundClasses: array (one per review round) of arrays of finding-class strings.
 // True if any class recurs across the most recent `cap` consecutive rounds.
 function detectOscillation(roundClasses, cap = 2) {
@@ -483,7 +496,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     let tier = task.tier, attemptsAtTier = 0, blocker = null, impl = null;
     while (true) {
       attemptsAtTier++;
-      impl = await agent(implPrompt(task, tier, blocker, base, wd), {
+      impl = await dispatchImpl(agent, implPrompt(task, tier, blocker, base, wd), {
         label: `impl:t${task.n}`, phase: "Implement", model: tier, schema: IMPL_SCHEMA,
       });
       if (!impl) return { halt: { taskN: task.n, reason: "implementer returned no result", reportPath: "" } };
