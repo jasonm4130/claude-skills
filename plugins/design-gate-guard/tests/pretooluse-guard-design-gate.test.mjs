@@ -119,6 +119,27 @@ test("asks when a scaffold is a later segment in a chained command", () => {
   assertAsks("mkdir app && cd app && npm create vite@latest .");
 });
 
+// ---- quote-awareness + runner flags (codex diff round 1) ----
+
+test("asks when a create-* runner carries flags before the initializer", () => {
+  assertAsks("npx --yes create-vite@latest app");
+  assertAsks("npx -y create-next-app my-app");
+  assertAsks("pnpm dlx --package=x create-astro");
+});
+
+test("asks when a quoted '#' precedes a real scaffold (not a comment)", () => {
+  // The `#` is inside a quoted env value — it is NOT a shell comment, so the
+  // scaffold after it still runs and must be gated.
+  assertAsks('FOO="not # a shell comment" npm create vite@latest app');
+});
+
+test("does not fire on a quoted '&&' inside a documentation string", () => {
+  // The `&&` is inside quotes, so there is only ONE command (`printf …`) — the
+  // quoted `npm create` is literal text being written to a file, not executed.
+  assertAllows('printf "%s\\n" "npm install && npm create vite" >> README.md');
+  assertAllows('echo "step 1 && npm create vite@latest ." >> NOTES.md');
+});
+
 test("reason names the brainstorming gate and the ack escape hatch", () => {
   const d = parseDecision(run(bash("npm create vite")).stdout);
   assert.match(d.permissionDecisionReason, /brainstorm/i);

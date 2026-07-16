@@ -38,8 +38,10 @@ const SCAFFOLD_PATTERNS = [
   /^(?:npm|pnpm|yarn|bun)\s+create\b/i,
   // `npm init <initializer>` (a template name, NOT a flag and NOT bare `npm init`).
   /^npm\s+init\s+(?!-)[@\w]/i,
-  // `npx|bunx|pnpm dlx|yarn dlx create-<x>` (optionally @scope/create-<x>).
-  /^(?:npx|bunx|pnpm\s+dlx|yarn\s+dlx)\s+(?:@[\w.-]+\/)?create-[\w-]+/i,
+  // `npx|bunx|pnpm dlx|yarn dlx [flags…] create-<x>` (optionally @scope/create-<x>).
+  // Flags like `--yes`, `-y`, `--package=x` may sit between the runner and the
+  // initializer — skip them so `npx --yes create-vite` still matches.
+  /^(?:npx|bunx|pnpm\s+dlx|yarn\s+dlx)\s+(?:-{1,2}[\w-]+(?:=\S+)?\s+)*(?:@[\w.-]+\/)?create-[\w-]+/i,
   // A create-* binary invoked directly: `create-next-app my-app`.
   /^create-[\w-]+/i,
   // Other ecosystems' project generators.
@@ -60,45 +62,113 @@ const SCAFFOLD_PATTERNS = [
   /^jekyll\s+new\b/i,
 ];
 
+const ENV_ASSIGN = /^[A-Za-z_]\w*=/;
+
 /**
- * Strip a shell comment (` # ...`) so an appended `# design-gate:ack` (and other
- * trailing comments) don't leak into segment matching. Only strips a `#` that
- * starts a token (preceded by whitespace or string start), never a `#` inside a
- * word like an anchor or a fragment.
- * @param {string} s
+ * Quote-aware shell tokenizer. Splits `command` into segments at UNQUOTED shell
+ * separators (`&&`, `||`, `;`, `|`, newline); each segment is an array of tokens
+ * with quote characters removed and whitespace collapsed. An unquoted `#` at a
+ * token boundary starts a comment to end of line. This is what makes the gate
+ * quote-correct: a separator or `#` inside quotes is literal text, not structure —
+ * so `printf "a && npm create b"` is ONE `printf` command, and `FOO="x # y" npm
+ * create …` keeps its `#` as data, not a comment.
+ * @param {string} command
+ * @returns {string[][]}
  */
-function stripComment(s) {
-  return s.replace(/(^|\s)#.*$/, "$1");
+function parseSegments(command) {
+  /** @type {string[][]} */
+  const segments = [];
+  /** @type {string[]} */
+  let tokens = [];
+  let cur = "";
+  let started = false; // a token is in progress (may be an empty quoted "")
+  /** @type {string | null} */
+  let quote = null;
+  const endTok = () => {
+    if (started) {
+      tokens.push(cur);
+      cur = "";
+      started = false;
+    }
+  };
+  const endSeg = () => {
+    endTok();
+    if (tokens.length) segments.push(tokens);
+    tokens = [];
+  };
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i];
+    if (quote) {
+      if (c === quote) quote = null;
+      else {
+        cur += c;
+        started = true;
+      }
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      quote = c;
+      started = true;
+      continue;
+    }
+    if (c === "\\") {
+      if (i + 1 < command.length) {
+        cur += command[i + 1];
+        started = true;
+        i++;
+      }
+      continue;
+    }
+    if (c === "#" && !started) {
+      while (i < command.length && command[i] !== "\n") i++;
+      i--; // let the loop re-see the newline as a separator
+      continue;
+    }
+    if (c === "\n" || c === ";") {
+      endSeg();
+      continue;
+    }
+    if (c === "&" && command[i + 1] === "&") {
+      endSeg();
+      i++;
+      continue;
+    }
+    if (c === "|" && command[i + 1] === "|") {
+      endSeg();
+      i++;
+      continue;
+    }
+    if (c === "|") {
+      endSeg();
+      continue;
+    }
+    if (c === " " || c === "\t" || c === "\r") {
+      endTok();
+      continue;
+    }
+    cur += c;
+    started = true;
+  }
+  endSeg();
+  return segments;
 }
 
 /**
- * Strip leading env-assignments and a `sudo` so `FOO=bar sudo npm create ...`
- * still matches at the command head.
- * @param {string} s
- */
-function stripLeadingNoise(s) {
-  let out = s.replace(/^\s+/, "");
-  const envAssign = /^[A-Za-z_]\w*=\S*\s+/;
-  while (envAssign.test(out)) out = out.replace(envAssign, "");
-  out = out.replace(/^sudo\s+/, "");
-  while (envAssign.test(out)) out = out.replace(envAssign, "");
-  return out;
-}
-
-/**
- * Does this command start (in any of its shell segments) with a scaffold command?
- * Splits on shell separators so a scaffolder anywhere in a chain is caught, while
- * a scaffold name inside a quoted commit message / echo string is not (that
- * segment starts with `git`/`echo`, not the scaffolder).
+ * Does any command segment start with a scaffold command? For each segment we drop
+ * leading env-assignments (`FOO=bar`) and `sudo`, then test the remaining head
+ * against the anchored scaffold patterns. Because matching is anchored to the
+ * segment head, a scaffolder appearing later in a quoted string (a commit message,
+ * an echo/printf argument) never matches — that segment's head is `git`/`echo`/etc.
  * @param {string} command
  * @returns {boolean}
  */
 function isScaffold(command) {
-  // Split on && || ; | and newlines (|| is consumed before a bare |).
-  const segments = command.split(/&&|\|\||[;\n|]/);
-  for (const seg of segments) {
-    const cleaned = stripLeadingNoise(stripComment(seg));
-    if (SCAFFOLD_PATTERNS.some((re) => re.test(cleaned))) return true;
+  for (const tokens of parseSegments(command)) {
+    let i = 0;
+    while (i < tokens.length && (ENV_ASSIGN.test(tokens[i]) || tokens[i] === "sudo")) i++;
+    if (i >= tokens.length) continue;
+    const head = tokens.slice(i).join(" ");
+    if (SCAFFOLD_PATTERNS.some((re) => re.test(head))) return true;
   }
   return false;
 }
