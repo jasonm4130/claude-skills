@@ -9,15 +9,25 @@ Help turn ideas into fully formed designs and specs through natural collaborativ
 
 Start by understanding the current project context, then ask questions one at a time to refine the idea. Once you understand what you're building, present the design and get user approval.
 
+## Size Gate — assess first, before engaging further
+
+**Size gate:** trivial → skip (no artifact); medium → lean plan only (no separate spec); large/ambiguous → full spec.
+
+The trigger is **ambiguity/complexity, not size alone** — a small change that hinges on a load-bearing decision still gets the full treatment below; a large but mechanical change doesn't.
+
+- **Trivial** (no real ambiguity, no decision to make) → skip this skill entirely. No spec, no plan — just do it.
+- **Medium** (some judgment calls, but scoped and clear) → skip the separate spec. Go straight to a lean plan via the writing-plans skill, with a 2-3 line "why" header at the top of the plan capturing the goal and key trade-off. No design doc.
+- **Large / ambiguous / load-bearing** → run the full process below: spec (durable why) → plan (disposable how, via writing-plans).
+
+When unsure which tier applies, size up rather than down — an unnecessary question costs one exchange; a missed decision costs rework.
+
 <HARD-GATE>
-Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until you have presented a design and the user has approved it. This applies to EVERY project regardless of perceived simplicity.
+For large/ambiguous work (see Size Gate above), do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until you have presented a design and the user has approved it.
 </HARD-GATE>
 
-## Anti-Pattern: "This Is Too Simple To Need A Design"
-
-Every project goes through this process. A todo list, a single-function utility, a config change — all of them. "Simple" projects are where unexamined assumptions cause the most wasted work. The design can be short (a few sentences for truly simple projects), but you MUST present it and get approval.
-
 ## Checklist
+
+The following applies to the large/ambiguous tier. Medium work skips straight to writing-plans (see Size Gate above); trivial work skips this skill entirely.
 
 You MUST create a task for each of these items and complete them in order:
 
@@ -32,6 +42,8 @@ You MUST create a task for each of these items and complete them in order:
 9. **Transition to implementation** — invoke writing-plans skill to create implementation plan
 
 ## Process Flow
+
+This flow is the large/ambiguous tier (see Size Gate above). Medium work skips straight to `Invoke writing-plans skill`; trivial work skips this graph entirely.
 
 ```dot
 digraph brainstorming {
@@ -71,12 +83,21 @@ digraph brainstorming {
 - Prefer multiple choice questions when possible, but open-ended is fine too
 - Only one question per message - if a topic needs more exploration, break it into multiple questions
 - Focus on understanding: purpose, constraints, success criteria
+- **Tree, not list** — one branch, one question; the answer picks the next question rather than working down a fixed list prepared in advance
+- **Always offer a recommended default** with each question — the biggest fatigue reducer; the user can accept it instead of deliberating from scratch
+- **Auto-resolve first** — before asking, check what's discoverable in the codebase/docs; only ask what genuinely needs the human's judgment
+- **Log evidence inline** as decisions resolve (into the spec draft as you go), not reconstructed at the end. Stop condition: no unresolved items remain — not a fixed question count
 
 **Exploring approaches:**
 
 - Propose 2-3 different approaches with trade-offs
 - Present options conversationally with your recommendation and reasoning
 - Lead with your recommended option and explain why
+
+**Doc-grounded assumption check:**
+
+- Before locking the design, check every load-bearing library/API assumption against fetched docs (context7 / WebFetch)
+- Surface any contradiction as *one* question — don't silently pick a resolution
 
 **Presenting the design:**
 
@@ -132,6 +153,7 @@ Wait for the user's response. If they request changes, make them and re-run the 
 
 ## Key Principles
 
+- **Size-gated** - trivial skips the artifact, medium gets a lean plan, large/ambiguous gets a full spec (see Size Gate above)
 - **One question at a time** - Don't overwhelm with multiple questions
 - **Multiple choice preferred** - Easier to answer than open-ended when possible
 - **YAGNI ruthlessly** - Remove unnecessary features from all designs
