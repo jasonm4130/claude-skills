@@ -36,6 +36,9 @@ import {
   pickContextTokens,
   shouldResetBands,
   gitBranchDirty,
+  modelColor,
+  selectRateLimits,
+  tokensSuffix,
 } from "../scripts/lib.mjs";
 
 test("safeJsonParse returns object for valid JSON", () => {
@@ -616,4 +619,35 @@ test("gitBranchDirty: null for a non-git directory", (t) => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-nongit-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   assert.equal(gitBranchDirty(dir), null);
+});
+
+// --- modelColor / selectRateLimits / tokensSuffix (Task 3) ---
+
+test("modelColor: Fable is amber, others plain", () => {
+  assert.equal(modelColor("Fable 5"), "amber");
+  assert.equal(modelColor("claude-fable-5"), "amber");
+  assert.equal(modelColor("Opus 4.8"), "plain");
+  assert.equal(modelColor("Sonnet 5"), "plain");
+});
+
+test("selectRateLimits: drops absent/below-threshold, keeps surfaced, flags red", () => {
+  assert.deepEqual(selectRateLimits(undefined, 50), []);
+  assert.deepEqual(selectRateLimits({}, 50), []);
+  assert.deepEqual(
+    selectRateLimits({ five_hour: { used_percentage: 45 }, seven_day: { used_percentage: 84.6 } }, 50),
+    [{ label: "7d", pct: 84, red: true }], // 5h below 50 dropped; 7d surfaced + red
+  );
+  assert.deepEqual(
+    selectRateLimits({ five_hour: { used_percentage: 60 } }, 50),
+    [{ label: "5h", pct: 60, red: false }], // 7d absent -> dropped, no NaN
+  );
+});
+
+test("selectRateLimits: non-numeric used_percentage is dropped, never NaN", () => {
+  assert.deepEqual(selectRateLimits({ five_hour: { used_percentage: "oops" }, seven_day: {} }, 50), []);
+});
+
+test("tokensSuffix: rounds to thousands", () => {
+  assert.equal(tokensSuffix(287400), "(287k)");
+  assert.equal(tokensSuffix(1000), "(1k)");
 });

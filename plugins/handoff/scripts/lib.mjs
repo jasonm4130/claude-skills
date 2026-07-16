@@ -314,6 +314,44 @@ export function gitBranchDirty(cwd, timeoutMs = GIT_TIMEOUT_MS) {
   }
 }
 
+/**
+ * @param {string} name model display name
+ * @returns {"amber"|"plain"} amber only for the Fable family (2x-tier flag)
+ */
+export function modelColor(name) {
+  return /fable/i.test(String(name)) ? "amber" : "plain";
+}
+
+/**
+ * @param {any} rateLimits stdin rate_limits (may be undefined / partial)
+ * @param {number} surfacePct
+ * @returns {Array<{label:string, pct:number, red:boolean}>}
+ */
+export function selectRateLimits(rateLimits, surfacePct) {
+  /** @type {Array<{label:string, pct:number, red:boolean}>} */
+  const out = [];
+  const windows = [
+    ["5h", "five_hour"],
+    ["7d", "seven_day"],
+  ];
+  for (const [label, key] of windows) {
+    const w = rateLimits && rateLimits[key];
+    const pct = w && w.used_percentage;
+    if (typeof pct === "number" && Number.isFinite(pct) && pct >= surfacePct) {
+      out.push({ label, pct: Math.trunc(pct), red: pct >= 80 });
+    }
+  }
+  return out;
+}
+
+/**
+ * @param {number} tokens
+ * @returns {string} e.g. "(287k)"
+ */
+export function tokensSuffix(tokens) {
+  return `(${Math.round(tokens / 1000)}k)`;
+}
+
 // POSIX-only flags; undefined on Windows, where we fall back to 0 and rely on the
 // (necessarily non-atomic) lstat pre-check. Windows has no filesystem FIFOs reachable
 // this way, so the blocking hazard O_NONBLOCK guards against does not apply there.
