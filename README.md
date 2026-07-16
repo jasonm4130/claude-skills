@@ -22,6 +22,7 @@ Add the marketplace once, then install the plugins you want.
 | `session-retro` | Session retrospectives that capture learnings to memory | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | `/plugin install ship-gate@jasonm4130-claude-skills` |
 | `subagent-driven-development` | Deterministic workflow-driven implement/review/fix loop | `/plugin install subagent-driven-development@jasonm4130-claude-skills` |
+| `superpowers-core` | Owned fork of the superpowers process skills + the `using-skills` dispatcher | `/plugin install superpowers-core@jasonm4130-claude-skills` |
 | `visual-plan` | Markdown-canonical ADR/plan, optional rich HTML companion | `/plugin install visual-plan@jasonm4130-claude-skills` |
 | `workflow-model-guard` | PreToolUse guard nudging model tiering in high-fan-out Workflows | `/plugin install workflow-model-guard@jasonm4130-claude-skills` |
 

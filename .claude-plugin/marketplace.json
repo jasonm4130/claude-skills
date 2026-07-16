@@ -167,6 +167,24 @@
       "category": "productivity"
     },
     {
+      "name": "superpowers-core",
+      "source": "./plugins/superpowers-core",
+      "description": "Owned fork of the superpowers process skills (brainstorming, systematic-debugging, writing-plans, writing-skills, test-driven-development) plus the using-skills dispatcher.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": [
+        "skills",
+        "process",
+        "brainstorming",
+        "tdd",
+        "claude-code"
+      ],
+      "category": "productivity"
+    },
+    {
       "name": "visual-plan",
       "source": "./plugins/visual-plan",
       "description": "Writes a durable, committed Markdown ADR/plan as the source-of-truth record, and — only when the content needs visuals markdown can't express (wireframes, annotated split-diffs, before/after columns) — also emits a self-contained rich plan.html to /tmp. Markdown canonical, HTML disposable; no backend.",
