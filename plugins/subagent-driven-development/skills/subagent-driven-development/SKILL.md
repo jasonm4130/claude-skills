@@ -106,7 +106,7 @@ Workflow({ scriptPath: "<resolved sdd.mjs>", args: {
   tasks: [ { n: 1, title: "...", tier: "sonnet", deps: [] }, ... ],
   setupCmd: "<optional: per-worktree env setup, e.g. 'npm ci'>",
   testCmd: "<strongly recommended; pass it whenever the repo has a canonical suite command>",
-  limits: { fixRounds: 2, escalateAttempts: 2, maxParallel: 4 }
+  limits: { fixRounds: 2, escalateAttempts: 2, maxParallel: 4, fableEscalation: true }
 }})
 ```
 
@@ -191,6 +191,7 @@ gate exists to catch.
 | reviewer | `opus` if the task was `opus`, else `sonnet` |
 | fixer | `sonnet` |
 | final whole-branch review | `opus` |
+| BLOCKED escalation ceiling | `fable` — opt-in top rung tried once above a stuck `opus` (`fableEscalation`, default on) |
 
 ## Red flags — never
 

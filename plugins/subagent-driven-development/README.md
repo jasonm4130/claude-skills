@@ -51,7 +51,7 @@ finishing (see step 7 above).
 ### The contract
 
 **args (controller → workflow):**
-`{ planPath, workdir, pluginDir, globalConstraints, mergeBase, branchTip?, tasks:[{n,title,tier,deps}], setupCmd?, testCmd?, limits:{fixRounds,escalateAttempts,maxParallel} }`
+`{ planPath, workdir, pluginDir, globalConstraints, mergeBase, branchTip?, tasks:[{n,title,tier,deps}], setupCmd?, testCmd?, limits:{fixRounds,escalateAttempts,maxParallel,fableEscalation} }`
 
 `mergeBase` anchors the final-review diff range; `branchTip` (the branch's
 current tip, `git rev-parse HEAD`) anchors wave-0 dispatch. Omitting
@@ -89,9 +89,12 @@ set on **every** `agent()` call, so none inherit the orchestrator and the
 
 ### Deterministic failure handling
 
-- **BLOCKED ladder:** escalate `haiku → sonnet → opus`, one attempt per tier
-  below opus; at opus, up to `escalateAttempts` (default 2); then halt the run
-  and return state (resume via `resumeFromRunId` after a human fixes the cause).
+- **BLOCKED ladder:** escalate `haiku → sonnet → opus → fable`, one attempt per
+  tier below opus; at opus, up to `escalateAttempts` (default 2); then one shot on
+  `fable` — the premium top rung, opt out with `fableEscalation: false` to halt at
+  opus (on by default) — then halt the run and return state (resume via
+  `resumeFromRunId` after a human fixes the cause). A Fable dispatch that fails
+  (tier unavailable) degrades to the same clean halt, never a crash.
 - **Oscillation breaker:** the same finding-class surviving two consecutive fix
   rounds halts that task instead of looping forever.
 - **Fix cap:** `fixRounds` (default 2).
