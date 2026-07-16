@@ -140,6 +140,11 @@ function isPlaceholderHost(host) {
   if (/[^a-z0-9.-]/.test(host) || !host.includes(".")) return true;
   const tld = host.split(".").pop();
   if (RESERVED_TLDS.includes(tld)) return true;
+  // A real TLD is alphabetic (or punycode `xn--…`, which starts with a letter). EVERY alternate IPv4
+  // notation — dotted hex (`0xA9.0xFE.0xA9.0xFE`), dotted octal (`0250.0376.…`), mixed (`0x7f.0.0.1`),
+  // short-form (`127.1`) — ends in a numeric/hex label, so a non-letter TLD is an IP in disguise.
+  // This is what makes the guard robust without re-implementing new URL()'s inet_aton canonicalization.
+  if (!tld || !/^[a-z]/.test(tld)) return true;
   return PLACEHOLDER_HOSTS.some((p) => host === p || host.endsWith(`.${p}`));
 }
 

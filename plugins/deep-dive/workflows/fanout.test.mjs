@@ -218,13 +218,19 @@ test("researchProblems: alternate-encoding hosts that canonicalize to a blocked 
   // ASCII DNS. These all resolve, in a real fetcher, to a host the guard is meant to block.
   for (const url of ["http://0xA9FEA9FE/latest/meta-data/", "http://0x7f000001/",
                      "http://%31%36%39.254.169.254/", "https://example%E3%80%82com/",
-                     "http://2852039166/"]) {
+                     "http://2852039166/",
+                     // dotted alternate-IPv4 notations — these HAVE dots, so the dotless rule misses
+                     // them; caught by the alphabetic-TLD rule (an IP's last label is always numeric).
+                     "http://0xA9.0xFE.0xA9.0xFE/latest/meta-data/", "http://0x7f.0.0.1/",
+                     "http://0250.0376.0251.0376/", "http://127.1/", "http://127.0.0.0x1/"]) {
     const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
     assert.ok(researchProblems(r).some((p) => /url|host/i.test(p)), `${url} must be rejected`);
   }
   // …but ordinary ASCII DNS hosts with hex-looking or numeric LABELS are still fine (they resolve via
-  // DNS, not as an IP literal): the whole host must be an alternate encoding, not just one label.
-  for (const url of ["https://0xdeadbeef.cloudflare.com/x", "https://s3.amazonaws.com/b", "https://web1.django.com/x"]) {
+  // DNS, not as an IP literal): only the last label (the TLD) must be alphabetic. Punycode TLDs
+  // (`xn--…`) start with a letter, so internationalized domains still pass.
+  for (const url of ["https://0xdeadbeef.cloudflare.com/x", "https://s3.amazonaws.com/b",
+                     "https://web1.django.com/x", "https://xn--80ak6aa92e.xn--p1ai/x"]) {
     const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
     assert.deepEqual(researchProblems(r), [], `${url} is a legitimate DNS host`);
   }
