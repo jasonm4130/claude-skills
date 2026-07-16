@@ -33,6 +33,8 @@ import {
   resetBands,
   acquireInflightLock,
   cachedTranscriptUsage,
+  pickContextTokens,
+  shouldResetBands,
 } from "../scripts/lib.mjs";
 
 test("safeJsonParse returns object for valid JSON", () => {
@@ -532,4 +534,45 @@ test("cachedTranscriptUsage: 'no assistant turn yet' is CACHED, not re-scanned e
   assert.equal(c.usage, null, "the negative result is cached");
   assert.equal(c.transcriptPath, transcript);
   assert.equal(cachedTranscriptUsage(transcript, dir, "sid"), null, "and is served from the cache");
+});
+
+// --- pickContextTokens / shouldResetBands (Task 1) ---
+
+test("pickContextTokens: transcript is primary when its sum is positive", () => {
+  const transcript = { inputTokens: 100, cacheCreationTokens: 20, cacheReadTokens: 30 };
+  const current = { input_tokens: 999, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  assert.equal(pickContextTokens(transcript, current), 150);
+});
+
+test("pickContextTokens: falls back to stdin only when transcript is null", () => {
+  const current = { input_tokens: 10, cache_creation_input_tokens: 5, cache_read_input_tokens: 2 };
+  assert.equal(pickContextTokens(null, current), 17);
+});
+
+test("pickContextTokens: transcript sum of zero falls through to stdin", () => {
+  const transcript = { inputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 };
+  const current = { input_tokens: 8, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  assert.equal(pickContextTokens(transcript, current), 8);
+});
+
+test("pickContextTokens: null when neither source is usable", () => {
+  assert.equal(pickContextTokens(null, null), null);
+  assert.equal(pickContextTokens(null, {}), null);
+});
+
+test("shouldResetBands: resets below threshold", () => {
+  assert.equal(shouldResetBands(65, 60, 70, 1), true);
+});
+
+test("shouldResetBands: resets on a real decrease while still above threshold", () => {
+  // 85% -> 75% compaction: still above 70, but the reading dropped -> reset the ladder
+  assert.equal(shouldResetBands(75, 85, 70, 1), true);
+});
+
+test("shouldResetBands: does NOT reset on monotonic growth", () => {
+  assert.equal(shouldResetBands(76, 75, 70, 1), false);
+});
+
+test("shouldResetBands: epsilon absorbs sub-point wobble", () => {
+  assert.equal(shouldResetBands(74.6, 75, 70, 1), false); // 0.4 drop < epsilon
 });

@@ -16,6 +16,8 @@ import {
   resetBands,
   bandMarkerPath,
   acquireInflightLock,
+  pickContextTokens,
+  shouldResetBands,
 } from "./lib.mjs";
 
 /**
@@ -159,30 +161,16 @@ const hasEffectiveMax = Number.isFinite(effectiveMax) && effectiveMax > 0;
 /** @type {number | undefined} */
 let currentPct;
 
+/** @type {number | null} */
+let contextTokens = null;
+
 if (hasEffectiveMax) {
-  // Step 1: prefer current_usage when present and non-zero
+  const transcriptUsage = transcriptPath !== null ? cachedTranscriptUsage(transcriptPath, dataDir, sid) : null;
   const cu = cw && cw.current_usage != null ? cw.current_usage : null;
-  if (cu !== null) {
-    const inputTokens =
-      (cu.input_tokens ?? 0) +
-      (cu.cache_creation_input_tokens ?? 0) +
-      (cu.cache_read_input_tokens ?? 0);
-    if (inputTokens > 0) {
-      currentPct = (inputTokens / effectiveMax) * 100;
-    }
-  }
-
-  // Step 2: JSONL fallback when current_usage was absent or zero
-  if (currentPct === undefined && transcriptPath !== null) {
-    const usage = cachedTranscriptUsage(transcriptPath, dataDir, sid);
-    if (usage !== null) {
-      const inputTokens = usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens;
-      currentPct = (inputTokens / effectiveMax) * 100;
-    }
-  }
-
+  contextTokens = pickContextTokens(transcriptUsage, cu);
   // Step 3: bail — do NOT fall through to raw used_percentage
-  if (currentPct === undefined) bail(locPrefix);
+  if (contextTokens === null) bail(locPrefix);
+  currentPct = (contextTokens / effectiveMax) * 100;
 } else if (typeof pctRaw === "number" && Number.isFinite(pctRaw)) {
   currentPct = pctRaw;
 }
@@ -218,14 +206,15 @@ if (existsSync(lastPctFile)) {
 //
 // Do NOT "simplify" this to a claim-only check: a level-keyed marker has no memory of where the
 // session came from, so it can express neither behavior above.
+const RESET_DROP_EPSILON_PCT = 1;
 const band = currentPct >= threshold ? Math.floor((currentPct - threshold) / 10) : -1;
 const lastBand = lastPct >= threshold ? Math.floor((lastPct - threshold) / 10) : -1;
 
-if (band < 0) {
-  // Below the threshold: the climb is over (a fresh session, or a /compact). Clear the ladder so a
-  // later climb can re-fire. This also self-heals the resolveSessionId "unknown" fallback — a new
-  // no-ID session starts low, so it clears the previous one's markers rather than inheriting
-  // permanent suppression.
+if (shouldResetBands(currentPct, lastPct, threshold, RESET_DROP_EPSILON_PCT)) {
+  // Below the threshold, or a real decrease (e.g. a /compact) while still above it: the climb is
+  // over. Clear the ladder so a later climb can re-fire. This also self-heals the resolveSessionId
+  // "unknown" fallback — a new no-ID session starts low, so it clears the previous one's markers
+  // rather than inheriting permanent suppression.
   resetBands(dataDir, sid);
 } else if (band > lastBand && claimBand(dataDir, sid, threshold, band)) {
   try {

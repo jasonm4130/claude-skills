@@ -672,13 +672,16 @@ test("effective_max + JSONL fallback: current_usage all-zero uses JSONL when tra
   assert.doesNotMatch(result.stdout, /10%/);
 });
 
-test("effective_max + JSONL fallback: last assistant turn with all-zero usage renders 0%", async (t) => {
+test("effective_max + JSONL fallback: last assistant turn with all-zero usage bails to '?' (transcript-primary, Task 1)", async (t) => {
   const dir = mkTmp();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
   const sid = "test-jsonl-zero-tokens";
   // current_usage missing, transcript exists, last assistant turn has all-zero usage.
-  // Documented behavior: still uses it (0%); not bailing to '?'.
+  // Under transcript-primary pickContextTokens, a transcript sum of exactly 0 is treated as
+  // "unusable" and falls through to stdin current_usage — which is also absent here — so this
+  // bails to '?' rather than rendering a possibly-stale 0%. (Pre-Task-1 behavior rendered 0%
+  // because the old JSONL-fallback sentinel was "usage !== null", not "usage sum > 0".)
   const transcriptPath = writeTranscript(dir, [
     {
       type: "assistant",
@@ -698,7 +701,7 @@ test("effective_max + JSONL fallback: last assistant turn with all-zero usage re
   });
 
   assert.equal(result.code, 0);
-  assert.match(result.stdout, /\] 0%/);
+  assert.match(result.stdout, /^\?/);
   assert.doesNotMatch(result.stdout, /50%/);
 });
 

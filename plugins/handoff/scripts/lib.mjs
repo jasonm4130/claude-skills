@@ -237,6 +237,45 @@ export function cachedTranscriptUsage(transcriptPath, dataDir, sid) {
   return usage;
 }
 
+/**
+ * Pick the context token total, transcript-primary. Output tokens are excluded
+ * (matches Claude Code's own used_percentage definition).
+ * @param {{inputTokens:number,cacheCreationTokens:number,cacheReadTokens:number}|null} transcriptUsage
+ * @param {{input_tokens?:number,cache_creation_input_tokens?:number,cache_read_input_tokens?:number}|null} currentUsage
+ * @returns {number|null}
+ */
+export function pickContextTokens(transcriptUsage, currentUsage) {
+  if (transcriptUsage !== null) {
+    const t = transcriptUsage.inputTokens + transcriptUsage.cacheCreationTokens + transcriptUsage.cacheReadTokens;
+    if (t > 0) return t;
+  }
+  if (currentUsage !== null && typeof currentUsage === "object") {
+    const c =
+      (currentUsage.input_tokens ?? 0) +
+      (currentUsage.cache_creation_input_tokens ?? 0) +
+      (currentUsage.cache_read_input_tokens ?? 0);
+    if (c > 0) return c;
+  }
+  return null;
+}
+
+/**
+ * Should the nudge-band ladder reset this render? Below-threshold covers a fresh
+ * session and the resolveSessionId "unknown" self-heal; the decrease branch covers
+ * a real compaction (trustworthy because the transcript-primary reading is
+ * monotonic-up within a segment).
+ * @param {number} currentPct
+ * @param {number} lastPct
+ * @param {number} threshold
+ * @param {number} dropEpsilon
+ * @returns {boolean}
+ */
+export function shouldResetBands(currentPct, lastPct, threshold, dropEpsilon) {
+  if (currentPct < threshold) return true;
+  if (currentPct < lastPct - dropEpsilon) return true;
+  return false;
+}
+
 // POSIX-only flags; undefined on Windows, where we fall back to 0 and rely on the
 // (necessarily non-atomic) lstat pre-check. Windows has no filesystem FIFOs reachable
 // this way, so the blocking hazard O_NONBLOCK guards against does not apply there.
