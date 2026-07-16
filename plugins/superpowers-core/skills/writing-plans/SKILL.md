@@ -11,6 +11,10 @@ Write comprehensive implementation plans assuming the engineer has zero context 
 
 Assume they are a skilled developer, but know almost nothing about our toolset or problem domain. Assume they don't know good test design very well.
 
+**This plan is a disposable derivative of the spec** (where one exists): regenerated from it, thrown away after `subagent-driven-development` runs, never hand-maintained. Don't restate the spec's why/trade-offs — reference them; drift is prevented by regenerating the plan, not by keeping two documents in sync. Where no spec exists (a medium-sized task), keep this plan's own "why" to 2-3 lines and move straight to tasks.
+
+**Stay lean.** Don't add spec-kit constitutional gates, EARS templates, PR-FAQ sections, or pre-mortem/red-team role-play — the terminal Codex gate (see Execution Handoff) already covers that ground adversarially.
+
 **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
 
 **Context:** If working in an isolated worktree, the owned `subagent-driven-development` loop handles that isolation at execution time.
@@ -153,11 +157,30 @@ After writing the complete plan, look at the spec with fresh eyes and check the 
 
 If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
 
+## Open Questions / Unresolved Assumptions
+
+**Every plan ends with this required section**, appended after the last task, before handoff. It gives the Codex gate (below) concrete targets for its spec-fidelity check.
+
+```markdown
+## Open Questions / Unresolved Assumptions
+
+- [Ambiguity, unverified assumption, or judgment call this plan made without full certainty — one line each, naming which task it affects.]
+```
+
+"None" is a claim, not a default — write it only after you've actually checked for gaps.
+
 ## Execution Handoff
 
-After saving the plan, hand off execution:
+After saving the plan (including the Open Questions section above), run the terminal Codex gate before handing off to execution:
 
-**"Plan complete and saved to `docs/superpowers/plans/<filename>.md`. Executing via `subagent-driven-development`: a fresh subagent per task, review between tasks, fast iteration."**
+1. **Finalize the plan** and confirm it's saved to its canonical path.
+2. **Invoke `codex-plan-review`** on the saved plan file — it checks two things: internal soundness, and fidelity to the spec's intent (did the plan's *how* drift from the spec's *why*?).
+3. **Loop on verdict**: fold accepted findings into the plan and re-run per that skill's own round protocol, until it reaches `APPROVED`/audit-pass or its round cap.
+4. **If Codex is unavailable or unauthenticated:** disclose that the gate was skipped — do not block on it. The review status (reviewed / skipped-disclosed) travels with the plan into `subagent-driven-development`.
 
-- **REQUIRED SUB-SKILL:** Use `subagent-driven-development`
+Then hand off execution:
+
+**"Plan complete and saved to `docs/superpowers/plans/<filename>.md`. Codex review: [APPROVED | skipped — disclosed]. Executing via `subagent-driven-development`: a fresh subagent per task, review between tasks, fast iteration."**
+
+- **REQUIRED SUB-SKILL:** Use `codex-plan-review` to gate the finalized plan, then `subagent-driven-development` to execute it.
 - Fresh subagent per task + two-stage review
