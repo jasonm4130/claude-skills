@@ -171,6 +171,14 @@ function hostFromUrl(url) {
     const end = authority.indexOf("]");
     host = end === -1 ? authority : authority.slice(0, end + 1); // keep the [..] IPv6 literal
   } else {
+    const port = /:(\d+)$/.exec(authority);
+    // A real URL parser rejects a port outside 1..65535; the old new URL() path did too. Without this
+    // an unfetchable citation (`…:99999`) would reach the verifier. (`:abc` is caught by the charset
+    // rule in isPlaceholderHost; this handles the numeric-but-out-of-range case.)
+    if (port) {
+      const n = Number(port[1]);
+      if (n < 1 || n > 65535) return null;
+    }
     host = authority.replace(/:\d*$/, ""); // drop :port
   }
   host = host.toLowerCase().replace(/\.$/, "");

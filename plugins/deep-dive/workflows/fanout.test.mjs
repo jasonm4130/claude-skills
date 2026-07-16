@@ -230,6 +230,22 @@ test("researchProblems: alternate-encoding hosts that canonicalize to a blocked 
   }
 });
 
+test("researchProblems: an out-of-range port is an invalid, unfetchable citation (#41 follow-up)", () => {
+  // The regex parser strips :port; a real URL parser (the old new URL()) rejects a port outside
+  // 1..65535 outright. Without a range check, `:99999` passed and an unfetchable citation reached
+  // the verifier. Non-numeric ports (`:abc`) are already caught by the ASCII-DNS charset rule.
+  for (const url of ["https://blog.cloudflare.com:99999/workerd", "http://a.cloudflare.com:70000/",
+                     "https://b.cloudflare.com:0/z"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.ok(researchProblems(r).some((p) => /url|host/i.test(p)), `${url} must be rejected`);
+  }
+  // Valid ports still pass.
+  for (const url of ["https://blog.cloudflare.com:8080/x", "https://blog.cloudflare.com:443/x"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.deepEqual(researchProblems(r), [], `${url} has a valid port`);
+  }
+});
+
 test("researchProblems: host parsing works WITHOUT a URL constructor (issue #41 — the Workflow sandbox has none)", () => {
   // THE root-cause bug. The sealed Workflow runtime has no global URL (probed: `typeof URL` is
   // "undefined", `new URL()` throws ReferenceError). So host came back null for EVERY finding and
