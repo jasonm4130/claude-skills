@@ -29,6 +29,21 @@ test("reviewer prompt has three verdicts, the over-engineering tags, net score, 
   assert.match(s, COUNTER);
 });
 
+test("reviewer prompts grant a respected clean pass and scrutinize weakened test assertions (over-rejection calibration)", () => {
+  // Ported from the codex-review side (codex-review.mjs:99): AI reviewers over-reject correct code, and
+  // these reviewers run on EVERY task/branch, so each inflated finding costs a paid fixer round. A clean
+  // pass must be a legitimate result — and because the implementer's job is to make the planned tests
+  // pass, a test weakened to pass trivially is the one thing that must be CAUGHT, not softened.
+  for (const f of ["reviewer.md", "final-reviewer.md"]) {
+    const s = read(f);
+    assert.match(s, /zero findings/i, `${f}: a clean pass must be legitimized`);
+    assert.match(s, /do not manufacture or inflate/i, `${f}: must forbid manufacturing findings`);
+    assert.match(s, /test-file changes[\s\S]{0,30}more carefully/i, `${f}: must prioritize test-diff scrutiny`);
+    assert.match(s, /asserts nothing or cannot\s+fail/i, `${f}: must name the weakened-assertion tell`);
+    assert.match(s, /Critical/, `${f}: a test gamed to pass is a Critical finding`);
+  }
+});
+
 test("fixer prompt forbids scope creep and requires test re-run evidence", () => {
   const s = read("fixer.md");
   assert.match(s, /only the listed findings|do not.*beyond/i);
