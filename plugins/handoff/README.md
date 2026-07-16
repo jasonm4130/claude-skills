@@ -5,19 +5,31 @@ when your context window fills up, and auto-loads it in the next session.
 
 ## What it does
 
-1. **Monitors context fill** via a statusLine command that renders a color-coded
-   progress bar and detects when context crosses a configurable threshold (default 70%).
-   Since 0.5.0 the bar is prefixed with the working-dir basename (and `⎇branch` when in
-   a git worktree) so parallel sessions in different tabs are tellable apart at a glance.
-   Since 0.6.0, each nudge is **idempotent per band**: an atomic exclusive-create marker
-   (not a lock) guarantees a band fires at most once no matter how many invocations race,
-   and the transcript-derivation fallback is cached on the transcript's path + mtime + size
-   so the expensive read only runs when the transcript actually changed. Overlapping
-   invocations (Claude Code can fire the next one before a slow render finishes) are still
-   guarded — a concurrent run replays the previous render — but that guard is a
-   **performance guard**, not a mutex: it never breaks a lock on age alone or one whose
-   holder is alive, and correctness does not depend on it (statusLine has no documented
-   timeout).
+1. **Monitors context fill** via a statusLine command that renders a color-coded,
+   adaptive status line and detects when context crosses a configurable threshold
+   (default 70%). Since 0.8.0 the line composes up to four segments — identity/branch/dirty,
+   context bar, model, and rate-limits — and reads context from the transcript first
+   (stable, once-per-turn) rather than the volatile per-request stdin frame, which is what
+   stopped the bar from filling and emptying erratically mid-turn; stdin's `current_usage`
+   is now the fallback, not the primary source. The line stays calm by default: dirty count,
+   rate-limit windows, and the token-count suffix only appear when they're actually
+   noteworthy (dirty > 0, a window ≥50% used, tokens when the bar is red), and the whole
+   line best-effort fits the terminal width (via `COLUMNS`, populated from CC 2.1.153+;
+   defaults to a 120-column budget otherwise) by progressively dropping rate-limits, then
+   dirty, then shortening the model name, then clamping identity/branch — the context %
+   is never dropped. Git branch + dirty count come from a `spawnSync` shell-out that
+   degrades to omitting the whole git segment on any failure (non-git dir, missing git,
+   timeout) — it never takes the bar down. Since 0.6.0, each nudge is **idempotent per
+   band**: an atomic exclusive-create marker (not a lock) guarantees a band fires at most
+   once no matter how many invocations race, and the transcript-derivation fallback is
+   cached on the transcript's path + mtime + size so the expensive read only runs when the
+   transcript actually changed. A band also resets on a real decrease in context (not just
+   dropping below the threshold), so a `/compact` that lands above the threshold still lets
+   the next climb re-nudge instead of staying silently suppressed. Overlapping invocations
+   (Claude Code can fire the next one before a slow render finishes) are still guarded — a
+   concurrent run replays the previous render — but that guard is a **performance guard**,
+   not a mutex: it never breaks a lock on age alone or one whose holder is alive, and
+   correctness does not depend on it (statusLine has no documented timeout).
 2. **Nudges escalate with context** — a nudge fires on every 10%-point band
    entered at or above the threshold (e.g. 70%, then again at 80%, then again
    at 90%), not just once. Marathon sessions that sail past the first nudge
@@ -132,7 +144,8 @@ This is a workaround for upstream
 ## Example flow
 
 1. You work through a session. Context climbs.
-2. At 70%, the status bar turns red: `[███████░░░] 71%`. On your next prompt,
+2. At 70%, the status bar turns red: `claude-skills ⎇main · ███████░░░ 71% · Sonnet 5`.
+   On your next prompt,
    the agent gets an instruction to wrap the current step and run `/handoff`,
    and suggest `/clear` to you.
 3. You keep going — a long session sails past 70%. At 80% and again at 90%
