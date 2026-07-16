@@ -39,12 +39,16 @@ test("reviewer prompts grant a respected clean pass and scrutinize weakened test
     assert.match(s, /zero findings/i, `${f}: a clean pass must be legitimized`);
     assert.match(s, /do not manufacture or inflate/i, `${f}: must forbid manufacturing findings`);
     assert.match(s, /test-file changes[\s\S]{0,30}more carefully/i, `${f}: must prioritize test-diff scrutiny`);
-    // Pin the POLARITY, not just proximity: the weakened-assertion tell must be classified
-    // `Critical`, never `Minor` — in that order. A bare /Critical/ matches the severity enum, and a
-    // mere proximity check still accepts the inverted "Minor finding, never a Critical". Requiring
-    // fail → Critical → never → Minor rejects both the softened and the inverted mutation.
-    assert.match(s, /asserts nothing or cannot\s+fail[\s\S]{0,80}Critical[\s\S]{0,25}never[\s\S]{0,15}Minor/i,
-      `${f}: a test that asserts nothing or cannot fail must be classified Critical, never Minor`);
+    // Bind the WHOLE rule: the Critical classification must be QUALIFIED by gaming ("trivial") and
+    // pinned in polarity. Requiring trivial → tell → Critical → never → Minor rejects (a) a bare
+    // /Critical/ that only matches the severity enum, (b) the inverted "Minor…never Critical", and
+    // (c) an UNqualified blanket rule that would flag legitimate contract-change test deletions as
+    // Critical — the over-rejection this whole change exists to reduce.
+    assert.match(
+      s,
+      /trivial[\s\S]{0,120}asserts nothing or cannot\s+fail[\s\S]{0,80}Critical[\s\S]{0,25}never[\s\S]{0,15}Minor/i,
+      `${f}: a test weakened to pass trivially (asserts nothing / cannot fail) must be Critical, never Minor`,
+    );
   }
 });
 

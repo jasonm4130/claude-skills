@@ -83,7 +83,8 @@ fixer round.
 make the planned tests pass, so a test edited to pass *trivially* — a weakened,
 deleted, or now-vacuous assertion, a test that **asserts nothing or cannot
 fail** — is gaming the gate, not satisfying it. That is a `Critical` finding,
-never a `Minor`.
+never a `Minor`. A test legitimately updated because the task's own contract
+genuinely changed is a normal edit, not a finding.
 
 ## Return
 
