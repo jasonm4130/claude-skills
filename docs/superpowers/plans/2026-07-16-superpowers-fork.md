@@ -21,6 +21,7 @@
 - Do not modify any other owned plugin.
 - `.mjs` tests run with `node --test`.
 - **Repo-consistency invariant** (`scripts/repo-consistency.test.mjs`, runs under `node --test`): every `plugins/<name>` dir must have a matching `marketplace.json` entry (same `version`, `source: ./plugins/<name>`) **and** a backtick-wrapped `` `<name>` `` mention in root `README.md` — an exact bijection. Any task that adds a plugin updates dir + marketplace + README **together**, or the suite goes red.
+- **docs-sync-guard** (`PreToolUse` on Bash `git commit`): a commit staging executable plugin surface — top-level `plugins/<name>/{scripts,hooks,agents,workflows}/` only — MUST also stage that plugin's `README.md`/`CLAUDE.md`, or the commit is denied. `skills/` (incl. nested `skills/*/scripts/`) and `tests/` are exempt. **Only Task 4 is affected** (it adds top-level `hooks/`); it stages a per-plugin README. Add `docs-sync:ack` to a commit message only for a genuine no-doc-impact change.
 
 ---
 
@@ -297,11 +298,20 @@ node --test plugins/superpowers-core/tests/session-start.test.mjs
 ```
 Expected: 2 tests PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Write the per-plugin `README.md`** — `plugins/superpowers-core/README.md` documenting the plugin (the 6 skills + the `using-skills` dispatcher), with the standard install block (exact strings — `scripts/repo-consistency.test.mjs` checks these if present):
+
+```
+/plugin marketplace add jasonm4130/claude-skills
+/plugin install superpowers-core@jasonm4130-claude-skills
+```
+
+  **Required by docs-sync-guard:** this commit stages `hooks/` (executable surface), so it MUST also stage a `README.md`/`CLAUDE.md` in this plugin, or the commit is denied.
+
+- [ ] **Step 8: Commit** (stages `hooks/` + the README together)
 
 ```bash
-git add plugins/superpowers-core/skills/using-skills plugins/superpowers-core/hooks plugins/superpowers-core/tests/session-start.test.mjs
-git commit -m "feat(superpowers-core): using-skills dispatcher + SessionStart kernel hook"
+git add plugins/superpowers-core/skills/using-skills plugins/superpowers-core/hooks plugins/superpowers-core/tests/session-start.test.mjs plugins/superpowers-core/README.md
+git commit -m "feat(superpowers-core): using-skills dispatcher + SessionStart kernel hook + README"
 ```
 
 ---
