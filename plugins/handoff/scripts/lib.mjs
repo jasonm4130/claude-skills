@@ -276,6 +276,44 @@ export function shouldResetBands(currentPct, lastPct, threshold, dropEpsilon) {
   return false;
 }
 
+const GIT_TIMEOUT_MS = 250;
+
+/**
+ * Resolve the current branch label + dirty count for a working directory by
+ * shelling to git. Same option shape as gitTracksFile. Returns null for a
+ * non-git dir, a missing git binary, a timeout, or any error — the caller then
+ * omits the whole git segment; git never takes the bar down.
+ * @param {string} cwd
+ * @param {number} [timeoutMs]
+ * @returns {{ label: string, dirty: number } | null}
+ */
+export function gitBranchDirty(cwd, timeoutMs = GIT_TIMEOUT_MS) {
+  const opts = { encoding: "utf8", timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"] };
+  try {
+    /** @type {string} */
+    let label;
+    const b = spawnSync("git", ["-C", cwd, "symbolic-ref", "--quiet", "--short", "HEAD"], opts);
+    if (b.status === 0 && typeof b.stdout === "string" && b.stdout.trim().length > 0) {
+      label = b.stdout.trim();
+    } else {
+      const r = spawnSync("git", ["-C", cwd, "rev-parse", "--short", "HEAD"], opts);
+      if (r.status === 0 && typeof r.stdout === "string" && r.stdout.trim().length > 0) {
+        label = "@" + r.stdout.trim();
+      } else {
+        return null; // not a git repo (or git unavailable / timed out)
+      }
+    }
+    const s = spawnSync("git", ["-C", cwd, "status", "--porcelain"], opts);
+    const dirty =
+      s.status === 0 && typeof s.stdout === "string"
+        ? s.stdout.split("\n").filter((l) => l.trim().length > 0).length
+        : 0;
+    return { label, dirty };
+  } catch {
+    return null;
+  }
+}
+
 // POSIX-only flags; undefined on Windows, where we fall back to 0 and rely on the
 // (necessarily non-atomic) lstat pre-check. Windows has no filesystem FIFOs reachable
 // this way, so the blocking hazard O_NONBLOCK guards against does not apply there.

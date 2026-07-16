@@ -18,7 +18,7 @@ import {
 import path from "node:path";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import {
   safeJsonParse,
@@ -35,6 +35,7 @@ import {
   cachedTranscriptUsage,
   pickContextTokens,
   shouldResetBands,
+  gitBranchDirty,
 } from "../scripts/lib.mjs";
 
 test("safeJsonParse returns object for valid JSON", () => {
@@ -575,4 +576,44 @@ test("shouldResetBands: does NOT reset on monotonic growth", () => {
 
 test("shouldResetBands: epsilon absorbs sub-point wobble", () => {
   assert.equal(shouldResetBands(74.6, 75, 70, 1), false); // 0.4 drop < epsilon
+});
+
+// --- gitBranchDirty (Task 2) ---
+
+function initRepo(t) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-git-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const g = (args) => spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t"]);
+  g(["config", "user.name", "t"]);
+  writeFileSync(path.join(dir, "a.txt"), "1");
+  g(["add", "a.txt"]);
+  g(["commit", "-qm", "init"]);
+  return { dir, g };
+}
+
+test("gitBranchDirty: clean repo on a branch reports label + dirty 0", (t) => {
+  const { dir } = initRepo(t);
+  assert.deepEqual(gitBranchDirty(dir), { label: "main", dirty: 0 });
+});
+
+test("gitBranchDirty: counts an untracked file as dirty", (t) => {
+  const { dir } = initRepo(t);
+  writeFileSync(path.join(dir, "b.txt"), "2");
+  assert.deepEqual(gitBranchDirty(dir), { label: "main", dirty: 1 });
+});
+
+test("gitBranchDirty: detached HEAD reports @<sha>", (t) => {
+  const { dir, g } = initRepo(t);
+  const sha = g(["rev-parse", "--short", "HEAD"]).stdout.trim();
+  g(["checkout", "-q", sha]);
+  const r = gitBranchDirty(dir);
+  assert.equal(r?.label, "@" + sha);
+});
+
+test("gitBranchDirty: null for a non-git directory", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-nongit-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(gitBranchDirty(dir), null);
 });
