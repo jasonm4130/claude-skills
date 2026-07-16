@@ -18,7 +18,7 @@ import {
 import path from "node:path";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import {
   safeJsonParse,
@@ -33,6 +33,15 @@ import {
   resetBands,
   acquireInflightLock,
   cachedTranscriptUsage,
+  pickContextTokens,
+  shouldResetBands,
+  gitBranchDirty,
+  modelColor,
+  selectRateLimits,
+  tokensSuffix,
+  visibleWidth,
+  truncateEnd,
+  assembleStatusLine,
 } from "../scripts/lib.mjs";
 
 test("safeJsonParse returns object for valid JSON", () => {
@@ -532,4 +541,201 @@ test("cachedTranscriptUsage: 'no assistant turn yet' is CACHED, not re-scanned e
   assert.equal(c.usage, null, "the negative result is cached");
   assert.equal(c.transcriptPath, transcript);
   assert.equal(cachedTranscriptUsage(transcript, dir, "sid"), null, "and is served from the cache");
+});
+
+// --- pickContextTokens / shouldResetBands (Task 1) ---
+
+test("pickContextTokens: transcript is primary when its sum is positive", () => {
+  const transcript = { inputTokens: 100, cacheCreationTokens: 20, cacheReadTokens: 30 };
+  const current = { input_tokens: 999, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  assert.equal(pickContextTokens(transcript, current), 150);
+});
+
+test("pickContextTokens: falls back to stdin only when transcript is null", () => {
+  const current = { input_tokens: 10, cache_creation_input_tokens: 5, cache_read_input_tokens: 2 };
+  assert.equal(pickContextTokens(null, current), 17);
+});
+
+test("pickContextTokens: transcript sum of zero falls through to stdin", () => {
+  const transcript = { inputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 };
+  const current = { input_tokens: 8, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  assert.equal(pickContextTokens(transcript, current), 8);
+});
+
+test("pickContextTokens: null when neither source is usable", () => {
+  assert.equal(pickContextTokens(null, null), null);
+  assert.equal(pickContextTokens(null, {}), null);
+});
+
+test("shouldResetBands: resets below threshold", () => {
+  assert.equal(shouldResetBands(65, 60, 70, 1), true);
+});
+
+test("shouldResetBands: resets on a real decrease while still above threshold", () => {
+  // 85% -> 75% compaction: still above 70, but the reading dropped -> reset the ladder
+  assert.equal(shouldResetBands(75, 85, 70, 1), true);
+});
+
+test("shouldResetBands: does NOT reset on monotonic growth", () => {
+  assert.equal(shouldResetBands(76, 75, 70, 1), false);
+});
+
+test("shouldResetBands: epsilon absorbs sub-point wobble", () => {
+  assert.equal(shouldResetBands(74.6, 75, 70, 1), false); // 0.4 drop < epsilon
+});
+
+// --- gitBranchDirty (Task 2) ---
+
+function initRepo(t) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-git-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const g = (args) => spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t"]);
+  g(["config", "user.name", "t"]);
+  writeFileSync(path.join(dir, "a.txt"), "1");
+  g(["add", "a.txt"]);
+  g(["commit", "-qm", "init"]);
+  return { dir, g };
+}
+
+test("gitBranchDirty: clean repo on a branch reports label + dirty 0", (t) => {
+  const { dir } = initRepo(t);
+  assert.deepEqual(gitBranchDirty(dir), { label: "main", dirty: 0 });
+});
+
+test("gitBranchDirty: counts an untracked file as dirty", (t) => {
+  const { dir } = initRepo(t);
+  writeFileSync(path.join(dir, "b.txt"), "2");
+  assert.deepEqual(gitBranchDirty(dir), { label: "main", dirty: 1 });
+});
+
+test("gitBranchDirty: detached HEAD reports @<sha>", (t) => {
+  const { dir, g } = initRepo(t);
+  const sha = g(["rev-parse", "--short", "HEAD"]).stdout.trim();
+  g(["checkout", "-q", sha]);
+  const r = gitBranchDirty(dir);
+  assert.equal(r?.label, "@" + sha);
+});
+
+test("gitBranchDirty: null for a non-git directory", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-nongit-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(gitBranchDirty(dir), null);
+});
+
+test("gitBranchDirty: branch known but status undeterminable -> dirty null, not a fake 0", (t) => {
+  // A bare repo has a valid HEAD symref (symbolic-ref succeeds) but no work tree, so
+  // `git status --porcelain` exits non-zero. dirty must be null (unknown), never a fabricated
+  // clean-looking 0 — otherwise real changes would be hidden behind a "clean" bar.
+  const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-bare-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  spawnSync("git", ["-C", dir, "init", "--bare", "-q", "-b", "main"], { encoding: "utf8" });
+  const r = gitBranchDirty(dir);
+  assert.equal(r?.label, "main");
+  assert.equal(r?.dirty, null, "undeterminable status is null, not 0");
+});
+
+// --- modelColor / selectRateLimits / tokensSuffix (Task 3) ---
+
+test("modelColor: Fable is amber, others plain", () => {
+  assert.equal(modelColor("Fable 5"), "amber");
+  assert.equal(modelColor("claude-fable-5"), "amber");
+  assert.equal(modelColor("Opus 4.8"), "plain");
+  assert.equal(modelColor("Sonnet 5"), "plain");
+});
+
+test("selectRateLimits: drops absent/below-threshold, keeps surfaced, flags red", () => {
+  assert.deepEqual(selectRateLimits(undefined, 50), []);
+  assert.deepEqual(selectRateLimits({}, 50), []);
+  assert.deepEqual(
+    selectRateLimits({ five_hour: { used_percentage: 45 }, seven_day: { used_percentage: 84.6 } }, 50),
+    [{ label: "7d", pct: 84, red: true }], // 5h below 50 dropped; 7d surfaced + red
+  );
+  assert.deepEqual(
+    selectRateLimits({ five_hour: { used_percentage: 60 } }, 50),
+    [{ label: "5h", pct: 60, red: false }], // 7d absent -> dropped, no NaN
+  );
+});
+
+test("selectRateLimits: non-numeric used_percentage is dropped, never NaN", () => {
+  assert.deepEqual(selectRateLimits({ five_hour: { used_percentage: "oops" }, seven_day: {} }, 50), []);
+});
+
+test("tokensSuffix: rounds to thousands", () => {
+  assert.equal(tokensSuffix(287400), "(287k)");
+  assert.equal(tokensSuffix(1000), "(1k)");
+});
+
+// --- visibleWidth / truncateEnd / assembleStatusLine (Task 4) ---
+
+test("visibleWidth: ignores ANSI SGR escapes", () => {
+  assert.equal(visibleWidth("\x1b[0;31mabc\x1b[0m"), 3);
+  assert.equal(visibleWidth("main"), 4);
+});
+
+test("truncateEnd: leaves short strings, ellipsizes long ones", () => {
+  assert.equal(truncateEnd("main", 24), "main");
+  assert.equal(truncateEnd("feature/very-long-branch-name", 10), "feature/v…");
+  assert.equal(truncateEnd("x", 0), "");
+});
+
+const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
+test("assembleStatusLine: calm line — core + model, no conditional segments", () => {
+  const line = strip(assembleStatusLine({
+    identity: "claude-skills", branch: "main", dirty: 0,
+    pctInt: 24, tokens: 96000, model: "Opus 4.8", rateLimits: [], budget: 120,
+  }));
+  assert.equal(line, "claude-skills ⎇main · ██░░░░░░░░ 24% · Opus 4.8");
+});
+
+test("assembleStatusLine: busy line — dirty, red tokens, rate-limits with warn", () => {
+  const line = strip(assembleStatusLine({
+    identity: "claude-skills-t2", branch: "sdd/t2", dirty: 5,
+    pctInt: 71, tokens: 287000, model: "Fable 5",
+    rateLimits: [{ label: "5h", pct: 84, red: true }, { label: "7d", pct: 21, red: false }],
+    budget: 120,
+  }));
+  assert.equal(line, "claude-skills-t2 ⎇sdd/t2 ±5 · ███████░░░ 71% (287k) · Fable 5 · ⚠ 5h 84% 7d 21%");
+});
+
+test("assembleStatusLine: tokens suffix only appears when red (>=70)", () => {
+  const green = strip(assembleStatusLine({
+    identity: "x", branch: null, dirty: 0, pctInt: 40, tokens: 160000,
+    model: "Opus 4.8", rateLimits: [], budget: 120,
+  }));
+  assert.ok(!green.includes("("), "no token suffix below red");
+});
+
+test("assembleStatusLine: width drops rate-limits first, then dirty, then shortens model", () => {
+  const d = {
+    identity: "claude-skills-t2", branch: "sdd/t2", dirty: 5, pctInt: 71, tokens: 287000,
+    model: "Fable 5", rateLimits: [{ label: "5h", pct: 84, red: true }], budget: 44,
+  };
+  const line = strip(assembleStatusLine(d));
+  assert.ok(!line.includes("5h"), "rate-limits dropped first");
+  assert.ok(visibleWidth(line) <= 44 || !line.includes("±5"), "dirty dropped next when still over");
+});
+
+test("assembleStatusLine: budget-aware clamp fits a narrow known width", () => {
+  const line = assembleStatusLine({
+    identity: "some-long-identity-name", branch: "a-fairly-long-branch", dirty: 3,
+    pctInt: 55, tokens: null, model: "Sonnet 5",
+    rateLimits: [{ label: "5h", pct: 90, red: true }], budget: 40,
+  });
+  assert.ok(visibleWidth(line) <= 40, `expected <=40 cols, got ${visibleWidth(line)}: ${strip(line)}`);
+  assert.ok(strip(line).includes("55%"), "core is never dropped");
+});
+
+test("assembleStatusLine: narrow fallback drops the model rather than overflow a known budget", () => {
+  // The immutable core (14 cols) fits budget 20, but "· Sonnet" would push it to 23. The model
+  // must be dropped, not appended past the budget.
+  const line = assembleStatusLine({
+    identity: "repo", branch: "main", dirty: 0, pctInt: 55, tokens: null,
+    model: "Sonnet 5", rateLimits: [], budget: 20,
+  });
+  assert.ok(visibleWidth(line) <= 20, `expected <=20 cols, got ${visibleWidth(line)}: ${strip(line)}`);
+  assert.ok(strip(line).includes("55%"), "core is never dropped");
+  assert.ok(!strip(line).includes("Sonnet"), "an unfittable model is dropped, not overflowed");
 });

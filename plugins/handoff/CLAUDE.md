@@ -11,6 +11,12 @@ idempotent under concurrency via an atomic claim marker. When triggered, the `/h
 `$PROJECT_ROOT/.claude/handoffs/`. The next session's `SessionStart` hook
 auto-loads the document via `additionalContext` injection.
 
+Since 0.8.0 the statusLine reads context from the transcript first (stable, once-per-turn)
+instead of the volatile per-request stdin frame — the fix for a bar that filled and emptied
+erratically mid-turn — and composes an adaptive line from up to four segments (identity/
+branch/dirty, context bar, model, rate-limits), calm by default and best-effort width-fit to
+the terminal.
+
 `setup.mjs` wires `statusLine` into `~/.claude/settings.json` and (since 0.3.0)
 writes a stable wrapper at `~/.claude/handoff-statusline.mjs` that auto-resolves
 the highest installed plugin version at run time, so plugin upgrades no longer
@@ -25,8 +31,8 @@ handoff/
 ├── hooks/
 │   └── hooks.json            — UserPromptSubmit + SessionStart
 ├── scripts/
-│   ├── lib.mjs               — shared stdin/env/flag helpers; also the atomic band-claim (claimBand/resetBands), in-flight lock (acquireInflightLock), and cached transcript parse (cachedTranscriptUsage) primitives (since 0.6.0)
-│   ├── status-and-flag.mjs   — statusLine: renders dir/worktree prefix + bar, writes flag at threshold; nudges are idempotent per band (since 0.6.0, via an atomic claim marker, not a lock); overlap guard replays the last render when another invocation is in flight — a performance guard, not a mutex, with no statusLine-timeout assumption
+│   ├── lib.mjs               — shared stdin/env/flag helpers; the atomic band-claim (claimBand/resetBands), in-flight lock (acquireInflightLock), and cached transcript parse (cachedTranscriptUsage) primitives (since 0.6.0); and (since 0.8.0) the adaptive-render helpers: pickContextTokens (transcript-primary source selection), shouldResetBands (decrease-based band reset), gitBranchDirty (spawnSync branch/dirty, degrades to null), modelColor/selectRateLimits/tokensSuffix (segment formatters), and visibleWidth/truncateEnd/assembleStatusLine (ANSI-aware width fitting + line assembly)
+│   ├── status-and-flag.mjs   — statusLine: renders the adaptive line (identity/branch/dirty, context bar, model, rate-limits — since 0.8.0, via lib.mjs's assembleStatusLine) and writes the nudge flag at threshold; nudges are idempotent per band (since 0.6.0, via an atomic claim marker, not a lock) and the ladder also resets on a real decrease in context, not just dropping below threshold (since 0.8.0); overlap guard replays the last render when another invocation is in flight — a performance guard, not a mutex, with no statusLine-timeout assumption
 │   ├── check-handoff-flag.mjs— UserPromptSubmit: consumes flag → additionalContext
 │   ├── load-pending-handoff.mjs — SessionStart: loads .pending handoff → additionalContext
 │   └── setup.mjs             — one-time helper that wires statusLine into ~/.claude/settings.json
@@ -104,3 +110,13 @@ CLAUDE_PLUGIN_DATA=/tmp/test-handoff \
   is a separate, explicitly best-effort **performance** guard (don't pile up; replay the
   cached render); it is never a mutex, never breaks a lock on age alone, and statusLine has
   no documented invocation timeout to lean on.
+- **Adaptive render (since 0.8.0):** context is read transcript-primary
+  (`pickContextTokens`) — the transcript's cached token sum when positive, else stdin's
+  `current_usage`, else the render bails to `?`. Git branch/dirty is a `spawnSync`
+  shell-out (`gitBranchDirty`, `GIT_TIMEOUT_MS`) that returns `null` on any failure (non-git
+  dir, missing git, timeout), and the caller omits the whole git segment rather than let it
+  take the bar down. Every segment — identity, model, rate-limits, dirty — degrades by
+  omission, never by rendering an empty/dangling separator. Width fitting is best-effort:
+  `COLUMNS` is only populated from Claude Code 2.1.153+, so an unset value falls back to a
+  120-column budget; `assembleStatusLine` then drops rate-limits, then dirty, then shortens
+  the model name, then clamps identity/branch — the context bar and `%` are never dropped.

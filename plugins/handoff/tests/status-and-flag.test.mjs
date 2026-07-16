@@ -672,13 +672,16 @@ test("effective_max + JSONL fallback: current_usage all-zero uses JSONL when tra
   assert.doesNotMatch(result.stdout, /10%/);
 });
 
-test("effective_max + JSONL fallback: last assistant turn with all-zero usage renders 0%", async (t) => {
+test("effective_max + JSONL fallback: last assistant turn with all-zero usage bails to '?' (transcript-primary, Task 1)", async (t) => {
   const dir = mkTmp();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
   const sid = "test-jsonl-zero-tokens";
   // current_usage missing, transcript exists, last assistant turn has all-zero usage.
-  // Documented behavior: still uses it (0%); not bailing to '?'.
+  // Under transcript-primary pickContextTokens, a transcript sum of exactly 0 is treated as
+  // "unusable" and falls through to stdin current_usage — which is also absent here — so this
+  // bails to '?' rather than rendering a possibly-stale 0%. (Pre-Task-1 behavior rendered 0%
+  // because the old JSONL-fallback sentinel was "usage !== null", not "usage sum > 0".)
   const transcriptPath = writeTranscript(dir, [
     {
       type: "assistant",
@@ -698,7 +701,7 @@ test("effective_max + JSONL fallback: last assistant turn with all-zero usage re
   });
 
   assert.equal(result.code, 0);
-  assert.match(result.stdout, /\] 0%/);
+  assert.match(result.stdout, /^\?/);
   assert.doesNotMatch(result.stdout, /50%/);
 });
 
@@ -719,7 +722,7 @@ test("location prefix: workspace.current_dir basename precedes the bar", async (
   assert.match(result.stdout, /dotfiles/);
   assert.match(result.stdout, /24%/);
   assert.ok(
-    result.stdout.indexOf("dotfiles") < result.stdout.indexOf("[█"),
+    result.stdout.indexOf("dotfiles") < result.stdout.indexOf("█"),
     `prefix should precede the bar, got: ${JSON.stringify(result.stdout)}`,
   );
 });
@@ -773,7 +776,7 @@ test("location prefix: bail ('?') keeps the prefix when dir is known", async (t)
   assert.match(result.stdout, /dotfiles.*\?/s);
 });
 
-test("location prefix: absent when neither workspace nor cwd provided (existing output unchanged)", async (t) => {
+test("location prefix: absent when neither workspace nor cwd provided (no dangling identity separator)", async (t) => {
   const dir = mkTmp();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -784,7 +787,9 @@ test("location prefix: absent when neither workspace nor cwd provided (existing 
   const result = await run(input, { CLAUDE_PLUGIN_DATA: dir });
 
   assert.equal(result.code, 0);
-  assert.match(result.stdout, /^\x1b\[0;32m\[/, `output should start with the colored bar, got: ${JSON.stringify(result.stdout)}`);
+  // No identity (empty wsDir) and no model in this payload -> both clusters are omitted, so the
+  // line starts directly with the colored bar, no dangling "· " separator.
+  assert.match(result.stdout, /^\x1b\[0;32m/, `output should start with the colored bar, got: ${JSON.stringify(result.stdout)}`);
 });
 
 // --- Overlap guard: in-flight lock + last-render cache replay ---
@@ -1081,4 +1086,29 @@ test("overlap guard: a stale lock is broken, taken, and released — the bar rec
   assert.equal(code, 0);
   assert.match(stdout, /42%/, "the run breaks the dead holder's lock and renders");
   assert.equal(existsSync(lock), false, "and releases its own lock on the way out");
+});
+
+// --- Adaptive render wiring (Task 4) ---
+
+test("adaptive render: model name and surfaced rate-limit appear", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const transcript = path.join(dir, "t.jsonl");
+  writeFileSync(transcript, JSON.stringify({
+    type: "assistant", isSidechain: false,
+    message: { usage: { input_tokens: 100000, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+  }));
+  const payload = JSON.stringify({
+    session_id: "adaptive", transcript_path: transcript,
+    workspace: { current_dir: dir },
+    context_window: {},
+    model: { display_name: "Opus 4.8" },
+    rate_limits: { five_hour: { used_percentage: 84 }, seven_day: { used_percentage: 21 } },
+  });
+  const { stdout } = await run(payload, {
+    CLAUDE_PLUGIN_DATA: dir, HANDOFF_EFFECTIVE_MAX_TOKENS: "400000",
+  });
+  const plain = stdout.replace(/\x1b\[[0-9;]*m/g, "");
+  assert.ok(plain.includes("Opus 4.8"), `model missing: ${plain}`);
+  assert.ok(plain.includes("5h 84%"), `surfaced rate-limit missing: ${plain}`);
 });

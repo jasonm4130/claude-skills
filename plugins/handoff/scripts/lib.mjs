@@ -237,6 +237,268 @@ export function cachedTranscriptUsage(transcriptPath, dataDir, sid) {
   return usage;
 }
 
+/**
+ * Pick the context token total, transcript-primary. Output tokens are excluded
+ * (matches Claude Code's own used_percentage definition).
+ * @param {{inputTokens:number,cacheCreationTokens:number,cacheReadTokens:number}|null} transcriptUsage
+ * @param {{input_tokens?:number,cache_creation_input_tokens?:number,cache_read_input_tokens?:number}|null} currentUsage
+ * @returns {number|null}
+ */
+export function pickContextTokens(transcriptUsage, currentUsage) {
+  if (transcriptUsage !== null) {
+    const t = transcriptUsage.inputTokens + transcriptUsage.cacheCreationTokens + transcriptUsage.cacheReadTokens;
+    if (t > 0) return t;
+  }
+  if (currentUsage !== null && typeof currentUsage === "object") {
+    const c =
+      (currentUsage.input_tokens ?? 0) +
+      (currentUsage.cache_creation_input_tokens ?? 0) +
+      (currentUsage.cache_read_input_tokens ?? 0);
+    if (c > 0) return c;
+  }
+  return null;
+}
+
+/**
+ * Should the nudge-band ladder reset this render? Below-threshold covers a fresh
+ * session and the resolveSessionId "unknown" self-heal; the decrease branch covers
+ * a real compaction (trustworthy because the transcript-primary reading is
+ * monotonic-up within a segment).
+ * @param {number} currentPct
+ * @param {number} lastPct
+ * @param {number} threshold
+ * @param {number} dropEpsilon
+ * @returns {boolean}
+ */
+export function shouldResetBands(currentPct, lastPct, threshold, dropEpsilon) {
+  if (currentPct < threshold) return true;
+  if (currentPct < lastPct - dropEpsilon) return true;
+  return false;
+}
+
+const GIT_TIMEOUT_MS = 250;
+
+/**
+ * Resolve the current branch label + dirty count for a working directory by
+ * shelling to git. Same option shape as gitTracksFile. Returns null for a
+ * non-git dir, a missing git binary, a timeout, or any error — the caller then
+ * omits the whole git segment; git never takes the bar down.
+ * @param {string} cwd
+ * @param {number} [timeoutMs]
+ * @returns {{ label: string, dirty: number | null } | null} `dirty` is null when the branch is
+ *   known but the working-tree status could not be determined (the ±N marker is then omitted).
+ */
+export function gitBranchDirty(cwd, timeoutMs = GIT_TIMEOUT_MS) {
+  /** @type {import("node:child_process").SpawnSyncOptionsWithStringEncoding} */
+  const opts = { encoding: "utf8", timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"] };
+  try {
+    /** @type {string} */
+    let label;
+    const b = spawnSync("git", ["-C", cwd, "symbolic-ref", "--quiet", "--short", "HEAD"], opts);
+    if (b.status === 0 && typeof b.stdout === "string" && b.stdout.trim().length > 0) {
+      label = b.stdout.trim();
+    } else {
+      const r = spawnSync("git", ["-C", cwd, "rev-parse", "--short", "HEAD"], opts);
+      if (r.status === 0 && typeof r.stdout === "string" && r.stdout.trim().length > 0) {
+        label = "@" + r.stdout.trim();
+      } else {
+        return null; // not a git repo (or git unavailable / timed out)
+      }
+    }
+    const s = spawnSync("git", ["-C", cwd, "status", "--porcelain"], opts);
+    // A status failure (e.g. a bare repo, a locked/corrupt index) leaves the branch known but the
+    // dirtiness UNdetermined. Report null, never 0 — a fabricated "clean" would hide real changes.
+    // Per the spec this omits only the affected piece (the ±N marker); the branch still shows.
+    const dirty =
+      s.status === 0 && typeof s.stdout === "string"
+        ? s.stdout.split("\n").filter((l) => l.trim().length > 0).length
+        : null;
+    return { label, dirty };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} name model display name
+ * @returns {"amber"|"plain"} amber only for the Fable family (2x-tier flag)
+ */
+export function modelColor(name) {
+  return /fable/i.test(String(name)) ? "amber" : "plain";
+}
+
+/**
+ * @param {any} rateLimits stdin rate_limits (may be undefined / partial)
+ * @param {number} surfacePct
+ * @returns {Array<{label:string, pct:number, red:boolean}>}
+ */
+export function selectRateLimits(rateLimits, surfacePct) {
+  /** @type {Array<{label:string, pct:number, red:boolean}>} */
+  const out = [];
+  const windows = [
+    ["5h", "five_hour"],
+    ["7d", "seven_day"],
+  ];
+  for (const [label, key] of windows) {
+    const w = rateLimits && rateLimits[key];
+    const pct = w && w.used_percentage;
+    if (typeof pct === "number" && Number.isFinite(pct) && pct >= surfacePct) {
+      out.push({ label, pct: Math.trunc(pct), red: pct >= 80 });
+    }
+  }
+  return out;
+}
+
+/**
+ * @param {number} tokens
+ * @returns {string} e.g. "(287k)"
+ */
+export function tokensSuffix(tokens) {
+  return `(${Math.round(tokens / 1000)}k)`;
+}
+
+const SGR_RE = /\x1b\[[0-9;]*m/g;
+
+/**
+ * @param {string} s
+ * @returns {number} code-point length after stripping SGR escapes
+ */
+export function visibleWidth(s) {
+  return [...s.replace(SGR_RE, "")].length;
+}
+
+/**
+ * End-truncate to `max` code points with a trailing "…" (best-effort; every code
+ * point counts as width 1).
+ * @param {string} s
+ * @param {number} max
+ * @returns {string}
+ */
+export function truncateEnd(s, max) {
+  if (max <= 0) return "";
+  const cps = [...s];
+  if (cps.length <= max) return s;
+  if (max === 1) return "…";
+  return cps.slice(0, max - 1).join("") + "…";
+}
+
+const A_RED = "\x1b[0;31m";
+const A_AMBER = "\x1b[0;33m";
+const A_GREEN = "\x1b[0;32m";
+const A_DIM = "\x1b[2m";
+const A_RESET = "\x1b[0m";
+const IDENTITY_MAX_CHARS = 24;
+const BRANCH_MAX_CHARS = 24;
+
+/**
+ * Assemble the adaptive status line. Pure and deterministic; the caller resolves
+ * git/model/rate-limit data first and passes it in.
+ * @param {{
+ *   identity: string,
+ *   branch: string | null,
+ *   dirty: number,
+ *   pctInt: number,
+ *   tokens: number | null,
+ *   model: string,
+ *   rateLimits: Array<{label:string, pct:number, red:boolean}>,
+ *   budget: number,
+ * }} d
+ * @returns {string}
+ */
+export function assembleStatusLine(d) {
+  const budget = d.budget > 0 ? d.budget : 120;
+  const red = d.pctInt >= 70;
+  let filled = Math.floor(d.pctInt / 10);
+  if (filled < 0) filled = 0;
+  if (filled > 10) filled = 10;
+  const bar = "█".repeat(filled) + "░".repeat(10 - filled);
+  const barColor = red ? A_RED : d.pctInt >= 50 ? A_AMBER : A_GREEN;
+  const tokSfx = red && d.tokens != null ? ` ${tokensSuffix(d.tokens)}` : "";
+  const barText = `${bar} ${d.pctInt}%${tokSfx}`;
+  const barColored = `${barColor}${barText}${A_RESET}`;
+
+  const modelIsAmber = modelColor(d.model) === "amber";
+  const sep = ` ${A_DIM}·${A_RESET} `;
+
+  /**
+   * identity cluster text for a given dirty/branch/identity choice
+   * @type {(identity: string, branch: string|null, showDirty: boolean) => string}
+   */
+  const idText = (identity, branch, showDirty) =>
+    identity + (branch ? ` ⎇${branch}` : "") + (showDirty && d.dirty > 0 ? ` ±${d.dirty}` : "");
+  /** @type {(t: string) => string} */
+  const idColored = (t) => `${A_DIM}${t}${A_RESET}`;
+  /** @type {(name: string) => string} */
+  const modelColored = (name) => (modelIsAmber ? `${A_AMBER}${name}${A_RESET}` : name);
+
+  /** build the rate-limit cluster {plain, colored} or null */
+  const buildRl = () => {
+    if (!d.rateLimits.length) return null;
+    const anyRed = d.rateLimits.some((w) => w.red);
+    const parts = d.rateLimits.map((w) => {
+      const p = `${w.label} ${w.pct}%`;
+      return { p, c: `${w.red ? A_RED : A_AMBER}${p}${A_RESET}` };
+    });
+    const warnP = anyRed ? "⚠ " : "";
+    const warnC = anyRed ? `${A_RED}⚠ ${A_RESET}` : "";
+    return { plain: warnP + parts.map((x) => x.p).join(" "), colored: warnC + parts.map((x) => x.c).join(" ") };
+  };
+
+  /**
+   * Assemble a full candidate for a config; returns {width, colored}. Clusters with empty
+   * plain text (e.g. no identity when wsDir is unknown, no model name) are dropped rather
+   * than left as a dangling " · " separator — graceful degradation applies to every
+   * segment, not just the conditional ones.
+   * @type {(showRl: boolean, showDirty: boolean, shortModel: boolean) => {width: number, colored: string}}
+   */
+  const candidate = (showRl, showDirty, shortModel) => {
+    const identityStr = idText(d.identity, d.branch, showDirty);
+    const modelName = shortModel ? d.model.split(" ")[0] : d.model;
+    const clusters = [
+      { p: identityStr, c: idColored(identityStr) },
+      { p: barText, c: barColored },
+      { p: modelName, c: modelColored(modelName) },
+    ].filter((x) => x.p.length > 0);
+    const rl = showRl ? buildRl() : null;
+    if (rl) clusters.push({ p: rl.plain, c: rl.colored });
+    const plain = clusters.map((x) => x.p).join(" · ");
+    const colored = clusters.map((x) => x.c).join(sep);
+    return { width: [...plain].length, colored };
+  };
+
+  // Progressive drops, right -> left.
+  const attempts = [
+    [true, true, false],
+    [false, true, false], // 1. drop rate-limits
+    [false, false, false], // 2. drop dirty
+    [false, false, true], // 3. shorten model
+  ];
+  for (const [showRl, showDirty, shortModel] of attempts) {
+    const c = candidate(showRl, showDirty, shortModel);
+    if (c.width <= budget) return c.colored;
+  }
+
+  // 4. Budget-aware clamp of the identity cluster (branch trimmed first because it
+  //    sits at the end of the cluster string). Model is already shortened, no dirty/rl.
+  // An empty model (or empty identity, e.g. wsDir unknown) is dropped rather than left as a
+  // dangling separator — same graceful-degradation rule as the candidate() clusters above.
+  const shortModelName = d.model.split(" ")[0];
+  const idStr = d.identity + (d.branch ? ` ⎇${d.branch}` : "");
+  const modelPart = shortModelName.length > 0 ? `${sep}${modelColored(shortModelName)}` : "";
+  const modelOverhead = shortModelName.length > 0 ? [...shortModelName].length + 3 : 0;
+  const overhead = [...barText].length + modelOverhead + 3; // " · " before the bar
+  const idBudget = budget - overhead;
+  if (idStr.length === 0 || idBudget < 2) {
+    // No room for any identity (or none to show): core, plus the model only if it still fits the
+    // known budget. The core (bar + pct) is the immutable floor and is never dropped — below its
+    // own width the line soft-wraps, which is accepted.
+    const withModel = `${barColored}${modelPart}`;
+    return visibleWidth(withModel) <= budget ? withModel : barColored;
+  }
+  const clamped = truncateEnd(idStr, Math.min(idBudget, IDENTITY_MAX_CHARS + BRANCH_MAX_CHARS + 2));
+  return `${idColored(clamped)}${sep}${barColored}${modelPart}`;
+}
+
 // POSIX-only flags; undefined on Windows, where we fall back to 0 and rely on the
 // (necessarily non-atomic) lstat pre-check. Windows has no filesystem FIFOs reachable
 // this way, so the blocking hazard O_NONBLOCK guards against does not apply there.

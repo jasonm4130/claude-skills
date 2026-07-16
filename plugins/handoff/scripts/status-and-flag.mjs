@@ -16,6 +16,11 @@ import {
   resetBands,
   bandMarkerPath,
   acquireInflightLock,
+  pickContextTokens,
+  shouldResetBands,
+  gitBranchDirty,
+  selectRateLimits,
+  assembleStatusLine,
 } from "./lib.mjs";
 
 /**
@@ -45,6 +50,20 @@ import {
  */
 
 /**
+ * @typedef {Object} Model
+ * @property {string} [display_name]
+ */
+/**
+ * @typedef {Object} RateWindow
+ * @property {number} [used_percentage]
+ */
+/**
+ * @typedef {Object} RateLimits
+ * @property {RateWindow} [five_hour]
+ * @property {RateWindow} [seven_day]
+ */
+
+/**
  * @typedef {Object} StatusInput
  * @property {string} [session_id]
  * @property {ContextWindow} [context_window]
@@ -52,6 +71,8 @@ import {
  * @property {string} [cwd]
  * @property {Workspace} [workspace]
  * @property {Worktree} [worktree]
+ * @property {Model} [model]
+ * @property {RateLimits} [rate_limits]
  */
 
 /** Path of the in-flight lock once this run has acquired it. @type {string | null} */
@@ -159,30 +180,16 @@ const hasEffectiveMax = Number.isFinite(effectiveMax) && effectiveMax > 0;
 /** @type {number | undefined} */
 let currentPct;
 
+/** @type {number | null} */
+let contextTokens = null;
+
 if (hasEffectiveMax) {
-  // Step 1: prefer current_usage when present and non-zero
+  const transcriptUsage = transcriptPath !== null ? cachedTranscriptUsage(transcriptPath, dataDir, sid) : null;
   const cu = cw && cw.current_usage != null ? cw.current_usage : null;
-  if (cu !== null) {
-    const inputTokens =
-      (cu.input_tokens ?? 0) +
-      (cu.cache_creation_input_tokens ?? 0) +
-      (cu.cache_read_input_tokens ?? 0);
-    if (inputTokens > 0) {
-      currentPct = (inputTokens / effectiveMax) * 100;
-    }
-  }
-
-  // Step 2: JSONL fallback when current_usage was absent or zero
-  if (currentPct === undefined && transcriptPath !== null) {
-    const usage = cachedTranscriptUsage(transcriptPath, dataDir, sid);
-    if (usage !== null) {
-      const inputTokens = usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens;
-      currentPct = (inputTokens / effectiveMax) * 100;
-    }
-  }
-
+  contextTokens = pickContextTokens(transcriptUsage, cu);
   // Step 3: bail — do NOT fall through to raw used_percentage
-  if (currentPct === undefined) bail(locPrefix);
+  if (contextTokens === null) bail(locPrefix);
+  currentPct = (contextTokens / effectiveMax) * 100;
 } else if (typeof pctRaw === "number" && Number.isFinite(pctRaw)) {
   currentPct = pctRaw;
 }
@@ -218,14 +225,15 @@ if (existsSync(lastPctFile)) {
 //
 // Do NOT "simplify" this to a claim-only check: a level-keyed marker has no memory of where the
 // session came from, so it can express neither behavior above.
+const RESET_DROP_EPSILON_PCT = 1;
 const band = currentPct >= threshold ? Math.floor((currentPct - threshold) / 10) : -1;
 const lastBand = lastPct >= threshold ? Math.floor((lastPct - threshold) / 10) : -1;
 
-if (band < 0) {
-  // Below the threshold: the climb is over (a fresh session, or a /compact). Clear the ladder so a
-  // later climb can re-fire. This also self-heals the resolveSessionId "unknown" fallback — a new
-  // no-ID session starts low, so it clears the previous one's markers rather than inheriting
-  // permanent suppression.
+if (shouldResetBands(currentPct, lastPct, threshold, RESET_DROP_EPSILON_PCT)) {
+  // Below the threshold, or a real decrease (e.g. a /compact) while still above it: the climb is
+  // over. Clear the ladder so a later climb can re-fire. This also self-heals the resolveSessionId
+  // "unknown" fallback — a new no-ID session starts low, so it clears the previous one's markers
+  // rather than inheriting permanent suppression.
   resetBands(dataDir, sid);
 } else if (band > lastBand && claimBand(dataDir, sid, threshold, band)) {
   try {
@@ -255,21 +263,40 @@ try {
   // best-effort
 }
 
-// --- Render 10-char block bar ---
 const pctInt = Math.trunc(currentPct);
-let filled = Math.floor(pctInt / 10);
-if (filled < 0) filled = 0;
-if (filled > 10) filled = 10;
-const empty = 10 - filled;
-const bar = "█".repeat(filled) + "░".repeat(empty);
 
-let color;
-if (pctInt >= 70) color = "\x1b[0;31m"; // red
-else if (pctInt >= 50) color = "\x1b[0;33m"; // yellow
-else color = "\x1b[0;32m"; // green
-const reset = "\x1b[0m";
+// --- Resolve display segments (success path only — never on the bail/replay path) ---
+const identity = wsDir !== null ? path.basename(wsDir) : "";
+// Fast path: stdin worktree.branch when present; else shell out.
+let branch = wtBranch;
+let dirty = 0;
+if (wsDir !== null) {
+  const git = gitBranchDirty(wsDir);
+  if (git !== null) {
+    if (branch === null) branch = git.label;
+    dirty = git.dirty ?? 0; // null = undeterminable status → show the branch, omit the ±N marker
+  }
+}
+const RATE_LIMIT_SURFACE_PCT = 50;
+const rateLimits = selectRateLimits(parsed && parsed.rate_limits, RATE_LIMIT_SURFACE_PCT);
+const modelName =
+  parsed && parsed.model && typeof parsed.model.display_name === "string" && parsed.model.display_name.length > 0
+    ? parsed.model.display_name
+    : "";
+const budget = Number.parseInt(process.env.COLUMNS ?? "", 10);
 
-const renderLine = `${locPrefix}${color}[${bar}] ${pctInt}%${reset}\n`;
+const renderLine =
+  assembleStatusLine({
+    identity,
+    branch,
+    dirty,
+    pctInt,
+    tokens: contextTokens,
+    model: modelName,
+    rateLimits,
+    budget: Number.isFinite(budget) && budget > 0 ? budget : 120,
+  }) + "\n";
+
 try {
   writeFileSync(renderCacheFile, renderLine);
 } catch {
