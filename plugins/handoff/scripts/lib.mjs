@@ -288,6 +288,7 @@ const GIT_TIMEOUT_MS = 250;
  * @returns {{ label: string, dirty: number } | null}
  */
 export function gitBranchDirty(cwd, timeoutMs = GIT_TIMEOUT_MS) {
+  /** @type {import("node:child_process").SpawnSyncOptionsWithStringEncoding} */
   const opts = { encoding: "utf8", timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"] };
   try {
     /** @type {string} */
@@ -415,10 +416,15 @@ export function assembleStatusLine(d) {
   const modelIsAmber = modelColor(d.model) === "amber";
   const sep = ` ${A_DIM}·${A_RESET} `;
 
-  /** identity cluster text for a given dirty/branch/identity choice */
+  /**
+   * identity cluster text for a given dirty/branch/identity choice
+   * @type {(identity: string, branch: string|null, showDirty: boolean) => string}
+   */
   const idText = (identity, branch, showDirty) =>
     identity + (branch ? ` ⎇${branch}` : "") + (showDirty && d.dirty > 0 ? ` ±${d.dirty}` : "");
+  /** @type {(t: string) => string} */
   const idColored = (t) => `${A_DIM}${t}${A_RESET}`;
+  /** @type {(name: string) => string} */
   const modelColored = (name) => (modelIsAmber ? `${A_AMBER}${name}${A_RESET}` : name);
 
   /** build the rate-limit cluster {plain, colored} or null */
@@ -439,6 +445,7 @@ export function assembleStatusLine(d) {
    * plain text (e.g. no identity when wsDir is unknown, no model name) are dropped rather
    * than left as a dangling " · " separator — graceful degradation applies to every
    * segment, not just the conditional ones.
+   * @type {(showRl: boolean, showDirty: boolean, shortModel: boolean) => {width: number, colored: string}}
    */
   const candidate = (showRl, showDirty, shortModel) => {
     const identityStr = idText(d.identity, d.branch, showDirty);
