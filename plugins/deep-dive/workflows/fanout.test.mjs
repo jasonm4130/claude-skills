@@ -211,6 +211,29 @@ test("researchProblems: reserved TLDs are guaranteed-unresolvable, so guaranteed
   }
 });
 
+test("researchProblems: host parsing works WITHOUT a URL constructor (issue #41 — the Workflow sandbox has none)", () => {
+  // THE root-cause bug. The sealed Workflow runtime has no global URL (probed: `typeof URL` is
+  // "undefined", `new URL()` throws ReferenceError). So host came back null for EVERY finding and
+  // 100% of real research was false-rejected as "not a fetched http(s) URL". This went uncaught
+  // because the node test harness DOES have URL — so we rebuild the helpers with URL shadowed to
+  // undefined, reproducing the sandbox, and assert real citations pass and the security checks hold.
+  const sandbox = new Function(
+    "const URL = undefined;\n" + block + "\nreturn { researchProblems };"
+  )();
+  assert.deepEqual(sandbox.researchProblems(good), [],
+    "a real https citation must pass in a runtime with no URL constructor");
+  // Every security property must still hold with URL unavailable — same rejections, no constructor.
+  for (const url of ["https://evil@example.com/x", "https://example.com./x", "https://EXAMPLE.COM/x",
+                     "http://169.254.169.254/x", "http://[::1]/", "https://example.invalid/fake",
+                     "ftp://x/y", "internal-knowledge", "https://"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.ok(sandbox.researchProblems(r).length > 0, `${url} must still be rejected without URL`);
+  }
+  // …and a real host that merely contains a placeholder substring is still not over-rejected.
+  const legit = { ...good, findings: [{ ...good.findings[0], sourceUrl: "https://example.community/x" }] };
+  assert.deepEqual(sandbox.researchProblems(legit), [], "example.community is a real host, even without URL");
+});
+
 test("researchProblems: placeholder and stub claims are rejected", () => {
   for (const claim of ["TODO", "TBD", "placeholder", "Lorem ipsum dolor sit", "Example claim here", "short"]) {
     const r = { ...good, findings: [{ ...good.findings[0], claim }] };

@@ -129,11 +129,45 @@ const PLACEHOLDER_PREFIXES = ["todo", "tbd", "n/a"];
  * @returns {boolean}
  */
 function isPlaceholderHost(host) {
-  // IPv6 arrives bracketed from URL.hostname ("[::1]"); IPv4 is all-digits-and-dots.
+  // IPv6 arrives bracketed from hostFromUrl ("[::1]"); IPv4 is all-digits-and-dots.
   if (host.startsWith("[") || /^[\d.]+$/.test(host)) return true;
   const tld = host.split(".").pop();
   if (RESERVED_TLDS.includes(tld)) return true;
   return PLACEHOLDER_HOSTS.some((p) => host === p || host.endsWith(`.${p}`));
+}
+
+/**
+ * Canonical host of an http(s) URL, or null if the URL is not http(s) or has no host.
+ *
+ * Why not `new URL()`: the sealed Workflow runtime has NO global URL constructor — `new URL()`
+ * throws ReferenceError there, which false-rejected every finding as "not a fetched http(s) URL"
+ * (issue #41). The node test harness DOES have URL, so the break was invisible to the suite. This
+ * parses with RegExp only (which the sandbox does have) and reproduces the exact canonicalization
+ * the old code relied on, so the security checks below are unchanged:
+ *   - scheme must be http/https (case-insensitive) — anything else was never fetched;
+ *   - userinfo is stripped at the LAST "@" so `https://evil@example.com/x` reads as host example.com;
+ *   - a bracketed IPv6 literal keeps its brackets (isPlaceholderHost keys off the leading "[");
+ *   - an :port suffix is dropped; the host is lowercased and its trailing FQDN dot removed, so
+ *     `EXAMPLE.COM` and `example.com.` both canonicalize to `example.com`.
+ *
+ * @param {string} url
+ * @returns {string|null}
+ */
+function hostFromUrl(url) {
+  const m = /^(https?):\/\/([^/?#]*)/i.exec(url);
+  if (!m) return null; // no http(s) scheme → never fetched
+  let authority = m[2];
+  const at = authority.lastIndexOf("@");
+  if (at !== -1) authority = authority.slice(at + 1); // drop userinfo
+  let host;
+  if (authority.startsWith("[")) {
+    const end = authority.indexOf("]");
+    host = end === -1 ? authority : authority.slice(0, end + 1); // keep the [..] IPv6 literal
+  } else {
+    host = authority.replace(/:\d*$/, ""); // drop :port
+  }
+  host = host.toLowerCase().replace(/\.$/, "");
+  return host === "" ? null : host;
 }
 
 /**
@@ -208,19 +242,9 @@ function researchProblems(research, angle) {
 
     // Parse the host properly. A hand-rolled split on "/" treats `https://evil@example.com/x` as host
     // "evil@example.com", which is not in the blocklist — so the userinfo trick smuggles a placeholder
-    // URL straight through. URL.hostname handles userinfo, ports, IPv6 and case.
-    let host = null;
-    try {
-      const u = new URL(url);
-      if (u.protocol === "http:" || u.protocol === "https:") {
-        // Canonicalize. `https://example.com./x` parses to hostname "example.com." — a fully-qualified
-        // DNS name that resolves identically and is NOT equal to "example.com", so a bare equality
-        // check waves it straight through.
-        host = u.hostname.toLowerCase().replace(/\.$/, "");
-      }
-    } catch {
-      host = null; // not a parseable URL at all
-    }
+    // URL straight through. hostFromUrl handles userinfo, ports, IPv6 and case — without `new URL()`,
+    // which the sandbox lacks (issue #41).
+    const host = hostFromUrl(url);
 
     if (host === null) {
       problems.push(`finding ${n}: sourceUrl is not a fetched http(s) URL (${JSON.stringify(url)})`);
