@@ -140,6 +140,18 @@ test("does not fire on a quoted '&&' inside a documentation string", () => {
   assertAllows('echo "step 1 && npm create vite@latest ." >> NOTES.md');
 });
 
+test("does not fire when an escaped quote keeps a scaffold inside the string", () => {
+  // `\"` inside "" is a literal quote (bash-verified), so this is ONE echo command
+  // and the `; npm create vite` is literal argument text, not a second command.
+  assertAllows('echo "quoted \\"; npm create vite"');
+});
+
+test("still fires when a real \\\\ closes the quote before a scaffold", () => {
+  // Guard against over-correction: `\\` is a literal backslash that DOES close the
+  // string, so the `;` is a real separator and `npm create vite` actually runs.
+  assertAsks('echo "path\\\\"; npm create vite');
+});
+
 test("reason names the brainstorming gate and the ack escape hatch", () => {
   const d = parseDecision(run(bash("npm create vite")).stdout);
   assert.match(d.permissionDecisionReason, /brainstorm/i);

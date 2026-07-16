@@ -99,6 +99,21 @@ function parseSegments(command) {
   for (let i = 0; i < command.length; i++) {
     const c = command[i];
     if (quote) {
+      // Inside "" a backslash escapes " \ $ ` (so \" is a literal quote, not a
+      // close); inside '' nothing is special. Matches bash word-splitting.
+      if (quote === '"' && c === "\\" && i + 1 < command.length) {
+        const next = command[i + 1];
+        if (next === '"' || next === "\\" || next === "$" || next === "`") {
+          cur += next;
+          started = true;
+          i++;
+          continue;
+        }
+        // backslash before a non-special char inside "" stays literal
+        cur += c;
+        started = true;
+        continue;
+      }
       if (c === quote) quote = null;
       else {
         cur += c;
