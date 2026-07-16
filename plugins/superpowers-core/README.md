@@ -50,11 +50,15 @@ This is normal — plugins that execute code require explicit user trust.
   `SessionStart` matcher source)
 - Node.js 18+ on `PATH` — used by `hooks/session-start` to JSON-encode the
   injected kernel; no other dependency
+- For the `writing-plans` handoff: the `codex-review` and
+  `subagent-driven-development` plugins from the same marketplace — the finished
+  plan is gated by `codex-plan-review`, then executed by
+  `subagent-driven-development`. Without them installed, that handoff dangles.
 
 ## Tests
 
 ```
-node --test plugins/superpowers-core/tests/
+node --test plugins/superpowers-core/tests/*.test.mjs
 ```
 
 Covers the `SessionStart` hook: valid JSON with a non-empty
