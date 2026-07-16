@@ -62,7 +62,7 @@ independently testable deliverable.
 ```markdown
 # [Feature Name] Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development:subagent-driven-development` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** [One sentence describing what this builds]
 
@@ -174,7 +174,7 @@ If you find issues, fix them inline. No need to re-review — just fix and move 
 After saving the plan (including the Open Questions section above), run the terminal Codex gate before handing off to execution:
 
 1. **Finalize the plan** and confirm it's saved to its canonical path.
-2. **Invoke `codex-plan-review`** on the saved plan file — it checks two things: internal soundness, and fidelity to the spec's intent (did the plan's *how* drift from the spec's *why*?).
+2. **Invoke `codex-review:codex-plan-review`** on the saved plan file — it checks two things: internal soundness, and fidelity to the spec's intent (did the plan's *how* drift from the spec's *why*?).
 3. **Loop on verdict**: fold accepted findings into the plan and re-run per that skill's own round protocol, until it reaches `APPROVED`/audit-pass or its round cap.
 4. **If Codex is unavailable or unauthenticated:** disclose that the gate was skipped — do not block on it. The review status (reviewed / skipped-disclosed) travels with the plan into `subagent-driven-development`.
 
@@ -182,5 +182,5 @@ Then hand off execution:
 
 **"Plan complete and saved to `docs/superpowers/plans/<filename>.md`. Codex review: [APPROVED | skipped — disclosed]. Executing via `subagent-driven-development`: a fresh subagent per task, review between tasks, fast iteration."**
 
-- **REQUIRED SUB-SKILL:** Use `codex-plan-review` to gate the finalized plan, then `subagent-driven-development` to execute it.
+- **REQUIRED SUB-SKILL:** Use `codex-review:codex-plan-review` to gate the finalized plan, then `subagent-driven-development:subagent-driven-development` to execute it.
 - Fresh subagent per task + two-stage review

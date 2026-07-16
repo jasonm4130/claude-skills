@@ -1,8 +1,9 @@
 # frontend-design
 
 Guidance for distinctive, intentional visual design when building new UI or reshaping an existing
-one. Gates by scope before designing: a light/surgical change (one component, one page, extending an
-existing design system) gets inline design principles; a wide-sweeping or highly-detailed design (a new
+one. Gates by scope before designing: a light/surgical change (one component, one page section,
+extending an existing design system) gets inline design principles; a wide-sweeping or highly-detailed
+design (a new
 page, a new flow, a visual identity, an ambiguous "make it look better") gets routed to Claude Design in
 the browser with a paste-ready design brief instead of being designed blind in a terminal.
 
