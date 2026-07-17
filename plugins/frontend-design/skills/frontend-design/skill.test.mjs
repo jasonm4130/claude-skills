@@ -23,6 +23,10 @@ test("documents the light/heavy scope gate and the light-path loop", () => {
   assert.match(s, /Self-critique/);
 });
 
+test("heavy path points to the dedicated claude-design skill for the best-in-class brief", () => {
+  assert.match(s, /claude-design/); // the sibling skill name (lowercase-hyphen), not just the product name
+});
+
 test("heavy path routes to Claude Design and emits the exact paste-ready brief template", () => {
   assert.match(s, /Claude Design/);
   assert.match(s, /# Design brief: <feature>/);

@@ -45,7 +45,7 @@ Before calling it done, check the result against the trap of templated defaults:
 
 ## Heavy path: hand off to Claude Design in the browser
 
-Do not design a wide-sweeping or highly-detailed surface blind, inline, in a back-and-forth text loop — visual work like this is genuinely better iterated where it can be seen and steered live. Tell the user directly, then hand them a brief they can paste straight in:
+Do not design a wide-sweeping or highly-detailed surface blind, inline, in a back-and-forth text loop — visual work like this is genuinely better iterated where it can be seen and steered live. **If the `claude-design` skill is installed, use it** for the best-in-class brief (Anthropic's official goal/layout/content/audience framework) and the option to drive Claude Design from Claude Code (`/design`, `/design-sync`); otherwise hand the brief below. Tell the user directly, then hand them a brief they can paste straight in:
 
 > This reads as a wide-sweeping / highly-detailed design rather than a surgical tweak — better iterated visually in **Claude Design** (claude.ai, in the browser) than designed blind here. Here's a paste-ready brief to carry the context over:
 
