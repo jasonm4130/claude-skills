@@ -16,82 +16,94 @@ You are running an interactive session retrospective. Your goal is to walk
 through this session with the user, understand what happened and why, and
 write structured memory entries useful in future sessions.
 
-The retro reads from two cheap signals: a per-session JSONL event log
-(append-only, maintained by the PostToolUse hook) and live git state
-(`git status`, `git diff --stat`, `git log` since session start). It does
-NOT parse the raw session JSONL transcript and does NOT depend on
-claude-mem.
+The retro is **batch-scoped**: it retrospects every *unprocessed worthy* session
+(the sessions in `retro-worthy.jsonl` not yet in `retro-processed.jsonl`) **plus the
+current session**, not just the current one — because a batched nudge fires only after
+several worthy sessions have accrued, and each of those deserves capture. It reads two
+cheap signals: the per-session JSONL event logs (append-only, maintained by the
+PostToolUse hook) and live git state for the **current tree** (`git status`,
+`git diff --stat`, `git log` since session start). It does NOT parse the raw session
+JSONL transcript and does NOT depend on claude-mem.
 
-## Step 1: Quick-skip gate
+## Step 1: Collect the batch + quick-skip gate
 
-Read the event log to decide whether a full retro is worth doing. If there
-are no Edit/Write events, this was a read-only session — offer to skip.
+Run the collector **once**. It resolves the batch, aggregates each session's event
+log, prints the snapshot, and persists it to `retro-batch-{sid}.json` for Steps 2 and
+6 to reuse — **do not run it again** in later steps.
 
 ```bash
-EVENTS_FILE="${CLAUDE_PLUGIN_DATA}/events-${CLAUDE_SESSION_ID}.jsonl"
-if [ ! -f "$EVENTS_FILE" ] || ! jq -R 'fromjson? | select(.tool == "Edit" or .tool == "Write")' "$EVENTS_FILE" 2>/dev/null | grep -q .; then
-    echo "This session had no edits/writes. Anything specific you want to capture?"
-    # If user says no → exit cleanly with "clean session, nothing to capture".
-    # If user says yes → skip directly to Step 4 (open catch-all only).
-fi
+CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/collect-batch-sessions.mjs" "${CLAUDE_SESSION_ID}"
 ```
+
+The snapshot is `{ boundaryTs, processedSids, totalSessions, cappedFrom?, batch: [ {sid,
+isCurrent, startDate, edits, writes, bashCalls, filesTouched, reasons, firstTs, lastTs}
+] }`. Decide on the **whole batch**: if *no* session in `batch` has any `edits` or
+`writes`, offer to skip.
+
+- If the user declines a skip / there is signal → continue to Step 2.
+- If the user accepts the skip (nothing to capture) → **still run Step 6 cleanup**.
+  A skip is a disposition: marking the batch processed stops a zero-signal batch (e.g.
+  one whose event logs are missing) from re-triggering the nudge forever.
+
+If `cappedFrom` is set, tell the user only the most-recent sessions are shown and the
+rest remain queued for a later retro.
 
 ## Step 2: Gather signals
 
-In one bash block, collect the session signals:
+Reuse the snapshot from Step 1 (read `retro-batch-${CLAUDE_SESSION_ID}.json` — do NOT
+re-run the collector). Add live git state for the **current tree only** (older sessions
+have no live diff):
 
 ```bash
-EVENTS_FILE="${CLAUDE_PLUGIN_DATA}/events-${CLAUDE_SESSION_ID}.jsonl"
 START_FILE="${CLAUDE_PLUGIN_DATA}/session-start-${CLAUDE_SESSION_ID}.txt"
 SESSION_START=$(cat "$START_FILE" 2>/dev/null || echo "4 hours ago")
 
-echo "=== event summary ==="
-jq -R -s '
-    split("\n")
-    | map(select(. != "") | fromjson?)
-    | {
-        edits: ([.[] | select(.tool == "Edit")] | length),
-        writes: ([.[] | select(.tool == "Write")] | length),
-        bash_calls: ([.[] | select(.tool == "Bash")] | length),
-        files_touched: ([.[] | select(.tool == "Edit" or .tool == "Write") | .input.file_path // empty] | map(select(. != "")) | unique)
-    }
-' < "$EVENTS_FILE" 2>/dev/null
+echo "=== batch snapshot ==="
+cat "${CLAUDE_PLUGIN_DATA}/retro-batch-${CLAUDE_SESSION_ID}.json" 2>/dev/null
 
-echo "=== git status ==="
+echo "=== git status (current tree) ==="
 git status --short 2>/dev/null || echo "(not a git repo)"
-echo "=== git diff stat ==="
+echo "=== git diff stat (current tree) ==="
 git diff --stat 2>/dev/null
-echo "=== git log since session start ==="
+echo "=== git log since current session start ==="
 git log --since="$SESSION_START" --oneline 2>/dev/null
 ```
 
-If `git status` errors with "not a git repository", skip the diff steps and
-proceed with interview-only mode. The event log alone is enough signal.
+If `git status` errors with "not a git repository", skip the diff steps and proceed
+with interview-only mode. The event logs alone are enough signal.
 
-Surface the recap to the user in plain English. Example:
+Surface a **dated, per-session** recap in plain English. Example:
 
-> "Quick recap: this session you edited `auth.ts` 4 times, added
-> `auth.test.ts`, ran tests twice, and made 1 commit. Uncommitted changes
-> in `config.yaml`. Want me to walk through?"
+> "Batch of 3 sessions since your last retro:
+> • 2026-07-14 — 6 edits across the codex-review plugin, 1 commit
+> • 2026-07-15 — added `deep-dive.test.mjs`, ran tests twice
+> • today — edited `auth.ts` 4 times; uncommitted changes in `config.yaml`
+> Want me to walk through?"
 
 ## Step 3: Adaptive questions
 
-Pick 3-5 specific moments from the diff/log/event-log. Ask **one question at
-a time**. Wait for the response before the next question. Examples of good
-questions:
+Pick 3-5 specific moments **from anywhere in the batch**, prioritising the
+highest-signal sessions. Ask **one question at a time**. Wait for the response before
+the next.
 
-- "You edited `src/auth.ts` 4 times — what was the iteration about?"
-- "You added `tests/auth.test.ts` — what were you trying to verify?"
-- "You reverted part of `config.yaml` — what changed your mind?"
+- For the **current** session, seed questions from the live diff/log AND its event log.
+- For **older** sessions there is **no live diff** — seed questions only from that
+  session's event-log aggregates in the snapshot (files touched, edit/write counts, and
+  its stored `reasons`). Do NOT invent diff-based questions for old sessions, and date
+  the question so the user knows which session you mean.
+
+Examples of good questions:
+
+- "On 2026-07-14 you edited `codex-review.mjs` 6 times — what was that iteration about?"
+- "You added `tests/auth.test.ts` today — what were you trying to verify?"
 - "Your commit `fix: token bug` — what was the actual root cause?"
-- "Tests ran 2 times before passing — what was breaking?"
+- "The 2026-07-15 session was flagged for 'committed during session' but touched 9 files — anything notable?"
 
 Rules for the question set:
 
-- Each question MUST reference something visible in the diff, log, or event
-  log
-- Do NOT ask generic questions ("what did you learn?", "any decisions?") —
-  the diff IS the question seed
+- Each question MUST reference something visible in a session's snapshot aggregates,
+  the current diff, or the current log — and name the session's date when it's not today
+- Do NOT ask generic questions ("what did you learn?", "any decisions?")
 - Do NOT batch questions
 - Do NOT ask about routine successful operations
 - Skip a question if the user says "nothing notable" — move on to the next
@@ -165,6 +177,9 @@ hook`). Show the user each entry for confirmation before writing.
 
 ## Step 6: Cleanup
 
+Run this on **both** paths: after a normal interview **and** after an accepted
+Step-1 skip. It reads the Step-1 snapshot (`retro-batch-{sid}.json`) — no extra args.
+
 ```bash
 CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/mark-retro-done.mjs" "${CLAUDE_SESSION_ID}"
 ```
@@ -173,11 +188,13 @@ CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/m
 way hooks do, and without it the script writes to an `os.tmpdir()` fallback the
 hooks never read.)
 
-This records the per-session fired flag (suppressing further Stop-hook
-suggestions for the rest of the session) **and** resets the cross-session batch
-clock — it writes `last-retro.txt`, so the accumulated worthy-session count
-starts fresh and no batched nudge fires until enough new worthy sessions accrue.
-PreCompact still suggests regardless, since context loss is a hard event.
+This **appends** the interviewed sids (the snapshot's `processedSids`) to the
+append-only `retro-processed.jsonl` ledger — the batch is cleared by *identity*, so
+`retro-worthy.jsonl` and any session that became worthy during the interview are left
+untouched. It also writes the per-session fired flag (suppressing further Stop-hook
+suggestions this session) and the `last-retro.txt` days-cadence hint, so no batched
+nudge fires until enough *new* worthy sessions accrue. PreCompact still suggests
+regardless, since context loss is a hard event.
 
 ## Guidelines
 
@@ -185,9 +202,9 @@ PreCompact still suggests regardless, since context loss is a hard event.
 - Focus on the "why" — decisions, rationale, trade-offs. Not the "what."
 - Keep memory entries concise. One entry per distinct learning.
 - Only write memories for things genuinely useful in future sessions.
-- If the session was routine with no notable decisions, say so. A short
-  "clean session, nothing to capture" is fine.
-- Never fabricate learnings. If the diff/log doesn't show clear decision
-  points, ask the user what they found valuable rather than inventing
-  insights.
-- The diff is the question seed. Avoid generic prompts.
+- If the batch was routine with no notable decisions, say so. A short
+  "clean batch, nothing to capture" is fine — but still run Step 6.
+- Never fabricate learnings. If a session's aggregates don't show clear decision
+  points, ask the user what they found valuable rather than inventing insights.
+- The snapshot aggregates and the current diff are the question seeds. Avoid
+  generic prompts.

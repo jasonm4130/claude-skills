@@ -262,29 +262,68 @@ test("batch silent: worthy entries predate last retro", async (t) => {
   assert.equal(stdout, "", "all worthy entries predate the last retro");
 });
 
-// Entries predating the last retro are pruned from disk, not just excluded
-// from the count, so retro-worthy.jsonl doesn't grow unboundedly forever.
-test("worthy log is pruned: stale entries (predating last retro) are removed from disk", async (t) => {
+// Cleanup is now append-only + identity: processed sids are excluded from the
+// count via retro-processed.jsonl, and retro-worthy.jsonl is NEVER rewritten
+// (it's a concurrently-appended multi-writer log — a rewrite would clobber
+// another session's append).
+test("processed sids are excluded from the count and the worthy log is not rewritten", async (t) => {
   const tmp = mkTmp();
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
   writeWorthy(tmp, [
-    { ts: isoDaysAgo(20), sid: "old1", reasons: "a" },
-    { ts: isoDaysAgo(19), sid: "old2", reasons: "b" },
-    { ts: nowIso(), sid: "fresh1", reasons: "c" },
+    { ts: isoDaysAgo(3), sid: "done1", reasons: "a" },
+    { ts: isoDaysAgo(2), sid: "done2", reasons: "b" },
+    { ts: isoDaysAgo(1), sid: "todo1", reasons: "c" },
   ]);
-  writeFileSync(path.join(tmp, "last-retro.txt"), isoDaysAgo(10));
+  // done1/done2 already retro'd (identity ledger); a processed marker exists so
+  // the migration seed is a no-op.
+  writeFileSync(
+    path.join(tmp, "retro-processed.jsonl"),
+    [
+      JSON.stringify({ ts: isoDaysAgo(2), sid: "done1" }),
+      JSON.stringify({ ts: isoDaysAgo(1), sid: "done2" }),
+    ].join("\n") + "\n",
+  );
+  const worthyPath = path.join(tmp, "retro-worthy.jsonl");
+  const before = readFileSync(worthyPath, "utf8");
 
-  const { code } = await run(
-    JSON.stringify({ session_id: "test-prune-stale" }),
-    { CLAUDE_PLUGIN_DATA: tmp },
+  const { code, stdout } = await run(
+    JSON.stringify({ session_id: "test-identity-count" }),
+    { CLAUDE_PLUGIN_DATA: tmp, RETRO_BATCH_MIN_SESSIONS: "1", RETRO_BATCH_MIN_DAYS: "0" },
   );
   assert.equal(code, 0);
+  // Only todo1 is unprocessed → count 1.
+  const parsed = JSON.parse(stdout);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /1 retro-worthy session/);
+  // The worthy log is byte-for-byte unchanged (never rewritten).
+  assert.equal(readFileSync(worthyPath, "utf8"), before, "worthy log must not be rewritten");
+});
 
-  const worthy = path.join(tmp, "retro-worthy.jsonl");
-  const lines = readFileSync(worthy, "utf8").split("\n").filter((l) => l);
-  assert.equal(lines.length, 1, "stale entries should be pruned from disk");
-  assert.equal(JSON.parse(lines[0]).sid, "fresh1");
+// One-time upgrade migration: an install with legacy worthy entries but no
+// processed ledger must not resurface sessions the old timestamp watermark
+// already treated as done.
+test("migration: legacy worthy entries (ts <= last-retro) are seeded processed, not re-counted", async (t) => {
+  const tmp = mkTmp();
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeWorthy(tmp, [
+    { ts: isoDaysAgo(20), sid: "legacy1", reasons: "a" },
+    { ts: isoDaysAgo(19), sid: "legacy2", reasons: "b" },
+    { ts: isoDaysAgo(19), sid: "legacy3", reasons: "c" },
+  ]);
+  writeFileSync(path.join(tmp, "last-retro.txt"), isoDaysAgo(10));
+  // no retro-processed.jsonl
+
+  const { code, stdout } = await run(
+    JSON.stringify({ session_id: "test-migration" }),
+    { CLAUDE_PLUGIN_DATA: tmp, RETRO_BATCH_MIN_SESSIONS: "1", RETRO_BATCH_MIN_DAYS: "0" },
+  );
+  assert.equal(code, 0);
+  assert.equal(stdout, "", "all legacy entries seeded as processed → 0 unprocessed → silent");
+  const processed = readFileSync(path.join(tmp, "retro-processed.jsonl"), "utf8");
+  for (const sid of ["legacy1", "legacy2", "legacy3"]) {
+    assert.match(processed, new RegExp(`"sid":"${sid}"`));
+  }
 });
 
 // Env override lowers the session threshold.

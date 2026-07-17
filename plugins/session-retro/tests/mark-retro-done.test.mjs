@@ -5,7 +5,13 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, existsSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+} from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
@@ -83,6 +89,62 @@ test("argv[2] overrides stdin session_id", async (t) => {
 
   assert.ok(existsSync(path.join(tmp, "retro-fired-argv-sid.flag")));
   assert.ok(!existsSync(path.join(tmp, "retro-fired-stdin-sid.flag")));
+});
+
+test("batch snapshot present: appends processedSids to the ledger, leaves worthy log untouched", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-mrd-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  // A concurrent worthy-log line that is NOT in this batch must survive.
+  const worthyBody =
+    [
+      JSON.stringify({ ts: "2026-07-10T00:00:00Z", sid: "w1", reasons: "a" }),
+      JSON.stringify({ ts: "2026-07-11T00:00:00Z", sid: "w2", reasons: "b" }),
+      JSON.stringify({ ts: "2026-07-12T00:00:00Z", sid: "concurrent", reasons: "c" }),
+    ].join("\n") + "\n";
+  writeFileSync(path.join(tmp, "retro-worthy.jsonl"), worthyBody);
+  writeFileSync(
+    path.join(tmp, "retro-batch-cur.json"),
+    JSON.stringify({
+      boundaryTs: "2026-07-15T09:00:00Z",
+      processedSids: ["w1", "w2"],
+      totalSessions: 3,
+      batch: [],
+    }) + "\n",
+  );
+
+  const { code } = await run("", { CLAUDE_PLUGIN_DATA: tmp }, ["cur"]);
+  assert.equal(code, 0);
+
+  // processedSids appended to the ledger.
+  const processed = readFileSync(path.join(tmp, "retro-processed.jsonl"), "utf8");
+  assert.match(processed, /"sid":"w1"/);
+  assert.match(processed, /"sid":"w2"/);
+  assert.doesNotMatch(processed, /"sid":"concurrent"/, "unprocessed session not marked");
+
+  // Worthy log byte-for-byte unchanged (never rewritten).
+  assert.equal(readFileSync(path.join(tmp, "retro-worthy.jsonl"), "utf8"), worthyBody);
+
+  // last-retro.txt uses the snapshot's boundaryTs, not now().
+  assert.equal(readFileSync(path.join(tmp, "last-retro.txt"), "utf8"), "2026-07-15T09:00:00Z");
+
+  // Snapshot consumed.
+  assert.ok(!existsSync(path.join(tmp, "retro-batch-cur.json")), "batch json deleted");
+});
+
+test("no batch snapshot: fallback writes now() cadence, appends nothing", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-mrd-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  const { code } = await run("", { CLAUDE_PLUGIN_DATA: tmp }, ["cur"]);
+  assert.equal(code, 0);
+
+  const ts = readFileSync(path.join(tmp, "last-retro.txt"), "utf8").trim();
+  assert.ok(Number.isFinite(Date.parse(ts)), "cadence hint is a valid timestamp");
+  assert.ok(
+    !existsSync(path.join(tmp, "retro-processed.jsonl")),
+    "no ledger created when there is nothing to append",
+  );
 });
 
 test("SKILL.md Step 6 sets CLAUDE_PLUGIN_DATA on the invocation", () => {

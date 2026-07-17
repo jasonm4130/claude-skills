@@ -7,7 +7,14 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, existsSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  appendFileSync,
+  rmSync,
+} from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
@@ -101,6 +108,58 @@ test("end-to-end: edits → flag → consumed silently into worthy log", async (
     .filter((l) => l);
   assert.equal(worthyLines.length, 1);
   assert.match(worthyLines[0], /3 edits across 2 files/);
+});
+
+test("interleaving: a worthy session appended during the interview survives cleanup", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-int-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const env = { CLAUDE_PLUGIN_DATA: tmp };
+
+  // Two accrued worthy sessions the retro is about to interview.
+  writeFileSync(
+    path.join(tmp, "retro-worthy.jsonl"),
+    [
+      JSON.stringify({ ts: "2026-07-10T00:00:00Z", sid: "w1", reasons: "a" }),
+      JSON.stringify({ ts: "2026-07-11T00:00:00Z", sid: "w2", reasons: "b" }),
+    ].join("\n") + "\n",
+  );
+
+  // Step 1: collector snapshots the batch (processedSids = [w1, w2]).
+  const collect = await run(
+    path.join(SCRIPTS, "collect-batch-sessions.mjs"),
+    JSON.stringify({ session_id: "cur" }),
+    env,
+  );
+  assert.equal(collect.code, 0);
+  assert.deepEqual(JSON.parse(collect.stdout).processedSids, ["w1", "w2"]);
+
+  // Meanwhile, a concurrent session becomes worthy and appends — AFTER the
+  // snapshot, DURING the interview.
+  appendFileSync(
+    path.join(tmp, "retro-worthy.jsonl"),
+    JSON.stringify({ ts: "2026-07-12T00:00:00Z", sid: "concurrent", reasons: "c" }) + "\n",
+  );
+
+  // Step 6: cleanup appends only the interviewed sids to the processed ledger.
+  const done = await run(
+    path.join(SCRIPTS, "mark-retro-done.mjs"),
+    JSON.stringify({ session_id: "cur" }),
+    env,
+  );
+  assert.equal(done.code, 0);
+
+  // The concurrent session is still unprocessed → it still counts.
+  const chk = await run(
+    path.join(SCRIPTS, "check-retro-flag.mjs"),
+    JSON.stringify({ session_id: "cur" }),
+    { ...env, RETRO_BATCH_MIN_SESSIONS: "1", RETRO_BATCH_MIN_DAYS: "0" },
+  );
+  assert.equal(chk.code, 0);
+  assert.match(
+    JSON.parse(chk.stdout).hookSpecificOutput.additionalContext,
+    /1 retro-worthy session/,
+    "the concurrent session survived cleanup and still counts",
+  );
 });
 
 test("end-to-end: PreCompact path bypasses thresholds", async (t) => {

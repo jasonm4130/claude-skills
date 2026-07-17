@@ -154,8 +154,8 @@
     {
       "name": "session-retro",
       "source": "./plugins/session-retro",
-      "description": "Interactive session retrospectives — deterministic Stop/PreCompact triggers, diff-driven interview, native memory entries. No external services.",
-      "version": "0.6.1",
+      "description": "Interactive session retrospectives — deterministic Stop/PreCompact triggers, batch-scoped diff- and event-log-driven interview, native memory entries. No external services.",
+      "version": "0.7.0",
       "author": {
         "name": "Jason Matthew"
       },
