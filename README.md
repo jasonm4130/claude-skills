@@ -15,6 +15,7 @@ Add the marketplace once, then install the plugins you want.
 |---|---|---|
 | `adr` | Intent → grounded, cited, build-ready ADR, handed to the SDD loop | `/plugin install adr@jasonm4130-claude-skills` |
 | `adversarial-agents` | Configurable adversarial panel review for any artefact | `/plugin install adversarial-agents@jasonm4130-claude-skills` |
+| `claude-design` | Paste-ready Claude Design brief + the Claude Code driving path (`/design`, `/design-sync`) | `/plugin install claude-design@jasonm4130-claude-skills` |
 | `codex-review` | Cross-provider plan/design review via OpenAI Codex (Terra) | `/plugin install codex-review@jasonm4130-claude-skills` |
 | `deep-dive` | Model-tiered, adversarially-verified multi-source research | `/plugin install deep-dive@jasonm4130-claude-skills` |
 | `design-gate-guard` | PreToolUse gate asking before a new-project scaffold runs ahead of an approved design | `/plugin install design-gate-guard@jasonm4130-claude-skills` |
