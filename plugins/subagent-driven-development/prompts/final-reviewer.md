@@ -48,6 +48,17 @@ Decide `verdict`: `"approve"` (ready to merge) or `"changes"` (findings must be
 addressed first). Keep the same counter-boundary in mind — never recommend
 cutting security, validation, error handling, accessibility, or observability.
 
+## Calibration — a clean pass is the expected result
+
+A sound branch is an `approve` with **zero findings** — the correct and expected
+result, not a failure to look hard enough. Do not manufacture or inflate findings
+to prove you reviewed; skepticism is about the code, not a quota. **Read
+test-file changes across the branch more carefully than code:** a test weakened
+or deleted **to pass trivially** — one that **asserts nothing or cannot fail**
+yet guards behavior that still matters — is a `Critical` finding, never a
+`Minor`. A test legitimately removed or relaxed because its contract genuinely
+changed is a normal edit, not a finding.
+
 ## Return
 
 Per schema: `verdict` (`approve`/`changes`),

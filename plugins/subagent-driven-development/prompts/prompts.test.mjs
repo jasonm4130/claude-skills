@@ -29,6 +29,29 @@ test("reviewer prompt has three verdicts, the over-engineering tags, net score, 
   assert.match(s, COUNTER);
 });
 
+test("reviewer prompts grant a respected clean pass and scrutinize weakened test assertions (over-rejection calibration)", () => {
+  // Ported from the codex-review side (codex-review.mjs:99): AI reviewers over-reject correct code, and
+  // these reviewers run on EVERY task/branch, so each inflated finding costs a paid fixer round. A clean
+  // pass must be a legitimate result — and because the implementer's job is to make the planned tests
+  // pass, a test weakened to pass trivially is the one thing that must be CAUGHT, not softened.
+  for (const f of ["reviewer.md", "final-reviewer.md"]) {
+    const s = read(f);
+    assert.match(s, /zero findings/i, `${f}: a clean pass must be legitimized`);
+    assert.match(s, /do not manufacture or inflate/i, `${f}: must forbid manufacturing findings`);
+    assert.match(s, /test-file changes[\s\S]{0,30}more carefully/i, `${f}: must prioritize test-diff scrutiny`);
+    // Bind the WHOLE rule: the Critical classification must be QUALIFIED by gaming ("trivial") and
+    // pinned in polarity. Requiring trivial → tell → Critical → never → Minor rejects (a) a bare
+    // /Critical/ that only matches the severity enum, (b) the inverted "Minor…never Critical", and
+    // (c) an UNqualified blanket rule that would flag legitimate contract-change test deletions as
+    // Critical — the over-rejection this whole change exists to reduce.
+    assert.match(
+      s,
+      /trivial[\s\S]{0,120}asserts nothing or cannot\s+fail[\s\S]{0,80}Critical[\s\S]{0,25}never[\s\S]{0,15}Minor/i,
+      `${f}: a test weakened to pass trivially (asserts nothing / cannot fail) must be Critical, never Minor`,
+    );
+  }
+});
+
 test("fixer prompt forbids scope creep and requires test re-run evidence", () => {
   const s = read("fixer.md");
   assert.match(s, /only the listed findings|do not.*beyond/i);

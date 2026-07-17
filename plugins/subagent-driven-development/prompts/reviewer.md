@@ -69,6 +69,23 @@ the plan or brief explicitly mandates the thing you're flagging — the controll
 not the reviewer, decides those. Calibrate honestly: Important means the task
 can't be trusted until fixed; polish is Minor.
 
+## Calibration — a clean pass is the expected result
+
+A sound task produces **zero findings**: an empty `findings[]` with `spec:
+"pass"` and `net 0` ("Lean already") is the correct and expected outcome, not a
+failure to look hard enough. Do not manufacture or inflate findings to prove you
+reviewed — skepticism is about the code, not a quota. An `Important` you cannot
+tie to a concrete failure is a `Minor` at most; a `Minor` you cannot defend is
+not a finding. You run on every task, and each inflated finding costs a real
+fixer round.
+
+**Read test-file changes more carefully than code.** The implementer's job is to
+make the planned tests pass, so a test edited to pass *trivially* — a weakened,
+deleted, or now-vacuous assertion, a test that **asserts nothing or cannot
+fail** — is gaming the gate, not satisfying it. That is a `Critical` finding,
+never a `Minor`. A test legitimately updated because the task's own contract
+genuinely changed is a normal edit, not a finding.
+
 ## Return
 
 Per schema: `spec`, `findings[{severity,class,file,line,what,planMandated}]`,

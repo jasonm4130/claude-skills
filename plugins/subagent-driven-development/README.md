@@ -116,6 +116,16 @@ an over-engineering lens (`delete/stdlib/native/yagni/shrink`, `net −N lines`)
 accessibility, observability. *We know we need it → build it; we might need it
 someday → don't.*
 
+### Reviewer calibration (a clean pass is a real result)
+
+Both the per-task and whole-branch reviewers are told, like the cross-family
+`codex-review` gate, that **zero findings is the correct and expected outcome**
+for sound work — AI reviewers over-reject, and these run on every task, so an
+inflated finding costs a real fixer round. The one thing they must *not* soften:
+because the implementer's job is to make the planned tests pass, a test edited to
+pass trivially (a weakened assertion, one that asserts nothing or cannot fail) is
+a `Critical` finding — reviewers read test-file changes more carefully than code.
+
 ## Requirements
 
 - The plan must use `# Task N` / `## Task N` headings (parsed by `scripts/task-brief`).
