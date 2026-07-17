@@ -200,8 +200,28 @@ test("does not fire on a scaffold command echoed as a string", () => {
   assertAllows('echo "run npm create vite to start"');
 });
 
-test("does not fire on a scaffold command inside a heredoc/README write", () => {
+test("does not fire on a scaffold command inside a printf write to a file", () => {
   assertAllows('printf "First run: npm create vite@latest\\n" >> README.md');
+});
+
+// ---- heredoc bodies are literal text, not commands (codex audit) ----
+
+test("does not fire on a scaffold inside a heredoc body (quoted delimiter)", () => {
+  assertAllows("cat <<'EOF'\nnpm create vite\nEOF\n");
+});
+
+test("does not fire on a scaffold in a heredoc body with an unquoted delimiter + redirect", () => {
+  assertAllows("cat <<EOF > README.md\nRun: npm create vite@latest .\nEOF");
+});
+
+test("does not fire on a scaffold in a <<- heredoc with a tab-indented terminator", () => {
+  assertAllows("cat <<-EOF\n\tnpm create vite\n\tEOF");
+});
+
+test("still fires on a real scaffold command AFTER a heredoc terminator", () => {
+  // Guard against over-correction: the body ends at EOF; the next line is a real
+  // command that actually runs.
+  assertAsks("cat <<EOF\nhello world\nEOF\nnpm create vite@latest app");
 });
 
 // ---- ack bypass ----

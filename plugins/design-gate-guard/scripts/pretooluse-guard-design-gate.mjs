@@ -68,10 +68,12 @@ const ENV_ASSIGN = /^[A-Za-z_]\w*=/;
  * Quote-aware shell tokenizer. Splits `command` into segments at UNQUOTED shell
  * separators (`&&`, `||`, `;`, `|`, newline); each segment is an array of tokens
  * with quote characters removed and whitespace collapsed. An unquoted `#` at a
- * token boundary starts a comment to end of line. This is what makes the gate
- * quote-correct: a separator or `#` inside quotes is literal text, not structure —
- * so `printf "a && npm create b"` is ONE `printf` command, and `FOO="x # y" npm
- * create …` keeps its `#` as data, not a comment.
+ * token boundary starts a comment to end of line. Heredoc bodies (`<<DELIM` …
+ * `DELIM`) are skipped entirely — they are literal text being written, not
+ * commands. This is what makes the gate quote-correct: a separator, `#`, or
+ * heredoc-body line is literal text, not structure — so `printf "a && npm create
+ * b"` is ONE `printf` command, `FOO="x # y" npm create …` keeps its `#` as data,
+ * and `cat <<EOF … npm create vite … EOF` runs only `cat`.
  * @param {string} command
  * @returns {string[][]}
  */
@@ -84,6 +86,8 @@ function parseSegments(command) {
   let started = false; // a token is in progress (may be an empty quoted "")
   /** @type {string | null} */
   let quote = null;
+  /** @type {{ delim: string, strip: boolean }[]} pending heredocs, in order */
+  let heredocs = [];
   const endTok = () => {
     if (started) {
       tokens.push(cur);
@@ -139,7 +143,62 @@ function parseSegments(command) {
       i--; // let the loop re-see the newline as a separator
       continue;
     }
-    if (c === "\n" || c === ";") {
+    // Heredoc introducer: `<<`, optional `-`, optional ws, an (optionally quoted)
+    // delimiter. Record it; the body is consumed when this line's newline is hit.
+    if (c === "<" && command[i + 1] === "<") {
+      let k = i + 2;
+      let strip = false;
+      if (command[k] === "-") {
+        strip = true;
+        k++;
+      }
+      while (command[k] === " " || command[k] === "\t") k++;
+      let q = null;
+      if (command[k] === "'" || command[k] === '"') {
+        q = command[k];
+        k++;
+      }
+      let delim = "";
+      if (q) {
+        while (k < command.length && command[k] !== q) delim += command[k++];
+        if (command[k] === q) k++; // consume closing quote
+      } else if (/[A-Za-z_]/.test(command[k] || "")) {
+        // bare delimiters look like identifiers — avoids reading `$((1<<2))` as one
+        while (k < command.length && /[\w.-]/.test(command[k])) delim += command[k++];
+      }
+      if (delim) {
+        heredocs.push({ delim, strip });
+        i = k - 1; // resume just past the delimiter
+        continue;
+      }
+      // not a heredoc (e.g. a bare `<<`) → treat as ordinary chars
+      cur += c;
+      started = true;
+      continue;
+    }
+    if (c === "\n") {
+      endSeg();
+      if (heredocs.length) {
+        // Consume each pending heredoc's body: lines up to and including a line
+        // equal to its delimiter (leading tabs stripped for `<<-`).
+        let j = i + 1;
+        for (const hd of heredocs) {
+          while (j < command.length) {
+            let end = command.indexOf("\n", j);
+            if (end === -1) end = command.length;
+            const line = command.slice(j, end);
+            const cmp = hd.strip ? line.replace(/^\t+/, "") : line;
+            j = end + 1;
+            if (cmp === hd.delim) break;
+            if (end === command.length) break; // ran out before the terminator
+          }
+        }
+        heredocs = [];
+        i = j - 1; // resume after the last consumed body line
+      }
+      continue;
+    }
+    if (c === ";") {
       endSeg();
       continue;
     }
