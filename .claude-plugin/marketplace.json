@@ -79,6 +79,25 @@
       "category": "productivity"
     },
     {
+      "name": "design-gate-guard",
+      "source": "./plugins/design-gate-guard",
+      "description": "PreToolUse Bash gate for the brainstorming HARD-GATE — asks the user before a new-project scaffold command (npm create vite, create-next-app, cargo new, rails new, django-admin startproject, …) so the model can't jump to implementation before a design is approved. Stateless and fail-open; add design-gate:ack to the command to proceed after approval.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": [
+        "brainstorming",
+        "design-gate",
+        "scaffold",
+        "hooks",
+        "guard",
+        "claude-code"
+      ],
+      "category": "productivity"
+    },
+    {
       "name": "docs-sync-guard",
       "source": "./plugins/docs-sync-guard",
       "description": "PreToolUse git-commit gate against docs drift — denies a commit that changes code without staging its covering docs: per-plugin README/CLAUDE.md pairs in plugins/ monorepos, and a generic nearest-covering-doc rule (README.md/CLAUDE.md/AGENTS.md walking up from each changed file) in any repo. Tests, version bumps, markdown, and lockfiles never trigger it; add docs-sync:ack to the commit message for deliberate no-doc-impact changes.",
