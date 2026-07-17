@@ -3,7 +3,12 @@
 // Duplicated surface mirrors plugins/handoff/scripts/lib.mjs — CC plugins can't
 // share files across plugin boundaries, so the duplication is intentional.
 
-import { mkdirSync } from "node:fs";
+import {
+  mkdirSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import process from "node:process";
@@ -99,4 +104,145 @@ export function emitAdditionalContext(eventName, additionalContext) {
  */
 export function nowIso() {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+/**
+ * Distinct sids recorded in retro-processed.jsonl (append-only ledger of
+ * sessions already retro'd). Malformed lines are skipped.
+ * @param {string} dataDir
+ * @returns {Set<string>}
+ */
+function readProcessedSet(dataDir) {
+  /** @type {Set<string>} */
+  const set = new Set();
+  try {
+    const lines = readFileSync(
+      path.join(dataDir, "retro-processed.jsonl"),
+      "utf8",
+    ).split("\n");
+    for (const line of lines) {
+      if (line.length === 0) continue;
+      let e;
+      try {
+        e = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (e && typeof e.sid === "string" && e.sid.length > 0) set.add(e.sid);
+    }
+  } catch {
+    // no ledger yet
+  }
+  return set;
+}
+
+/**
+ * One-time upgrade migration. If retro-processed.jsonl is absent, seed it from
+ * legacy state: every worthy sid whose ts <= lastRetroMs — the set the old
+ * timestamp watermark treated as already retro'd. Entries newer than the last
+ * retro stay unprocessed, exactly as the old prune left them. Idempotent: the
+ * ledger's existence is the guard, so it runs at most once. This is the ONLY
+ * place a timestamp touches membership, and only to reproduce the legacy cut.
+ * @param {string} dataDir
+ */
+export function migrateProcessedLedger(dataDir) {
+  const processedPath = path.join(dataDir, "retro-processed.jsonl");
+  if (existsSync(processedPath)) return;
+
+  let lastRetroMs = 0;
+  try {
+    const t = Date.parse(
+      readFileSync(path.join(dataDir, "last-retro.txt"), "utf8").trim(),
+    );
+    if (Number.isFinite(t)) lastRetroMs = t;
+  } catch {
+    // no last-retro → nothing is legacy-done
+  }
+
+  /** @type {string[]} */
+  const seeded = [];
+  /** @type {Set<string>} */
+  const seen = new Set();
+  try {
+    const lines = readFileSync(
+      path.join(dataDir, "retro-worthy.jsonl"),
+      "utf8",
+    ).split("\n");
+    for (const line of lines) {
+      if (line.length === 0) continue;
+      let e;
+      try {
+        e = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!e || typeof e.sid !== "string" || e.sid.length === 0) continue;
+      if (seen.has(e.sid)) continue;
+      seen.add(e.sid);
+      const t = Date.parse(typeof e.ts === "string" ? e.ts : "");
+      if (Number.isFinite(t) && t <= lastRetroMs) seeded.push(e.sid);
+    }
+  } catch {
+    // no worthy log → seed nothing, but still create the ledger below
+  }
+
+  // Create the ledger (even empty) so the guard trips on later runs. Use an
+  // exclusive create ('wx'): if another migration OR a concurrent
+  // mark-retro-done append created it between our existsSync check and here, the
+  // write throws EEXIST and we leave that writer's content intact — never a
+  // read-then-overwrite that could clobber a concurrent append. Losing the race
+  // just means the ledger already exists, which is the desired end state.
+  try {
+    const body = seeded
+      .map((sid) => JSON.stringify({ ts: nowIso(), sid }))
+      .join("\n");
+    writeFileSync(processedPath, body.length > 0 ? body + "\n" : "", {
+      flag: "wx",
+    });
+  } catch {
+    // EEXIST (already created) or best-effort failure — nothing to do.
+  }
+}
+
+/**
+ * The unprocessed worthy sessions: distinct sids in retro-worthy.jsonl (first-seen
+ * file order, newest-last) minus any sid in retro-processed.jsonl. Pure identity
+ * set-difference — no timestamp comparison. Runs the upgrade migration first.
+ * @param {string} dataDir
+ * @returns {{ sid: string, reasons: string }[]}
+ */
+export function unprocessedWorthySessions(dataDir) {
+  migrateProcessedLedger(dataDir);
+  const processedSet = readProcessedSet(dataDir);
+  /** @type {{ sid: string, reasons: string }[]} */
+  const out = [];
+  /** @type {Set<string>} */
+  const seen = new Set();
+  let lines;
+  try {
+    lines = readFileSync(
+      path.join(dataDir, "retro-worthy.jsonl"),
+      "utf8",
+    ).split("\n");
+  } catch {
+    return out;
+  }
+  for (const line of lines) {
+    if (line.length === 0) continue;
+    let e;
+    try {
+      e = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!e || typeof e.sid !== "string" || e.sid.length === 0) continue;
+    if (seen.has(e.sid)) continue;
+    seen.add(e.sid);
+    if (processedSet.has(e.sid)) continue;
+    out.push({
+      sid: e.sid,
+      reasons: typeof e.reasons === "string" ? e.reasons : "",
+    });
+  }
+  return out;
 }

@@ -7,13 +7,13 @@ Claude Code plugin for interactive session retrospectives. Captures decisions, l
 At the end of a productive Claude Code session, you've made decisions, hit errors, changed approach, discovered patterns. None of it gets captured by default. session-retro fixes that with two complementary mechanisms:
 
 1. **Ambient, batched suggestions.** A `Stop` hook scores your session (edits, files touched, duration, commits, tests) and writes a nudge flag when work crosses sensible thresholds. On your next prompt a `UserPromptSubmit` hook absorbs that flag *silently* into a cross-session worthy log — it only surfaces a nudge once enough worthy sessions have accrued since your last retro (default: 3 sessions and 7 days), at most once a day, and the nudge tells the agent to run the retro for you. A `PreCompact` hook is the exception: it still nudges immediately, because context loss is a hard event.
-2. **Diff-driven interview.** When you run `/retro`, the skill reads the per-session event log plus `git status`, `git diff --stat`, and `git log` since session start, then asks specific questions about the actual changes ("you edited `auth.ts` 4 times — what was the iteration about?"). No generic "what did you learn" prompts.
+2. **Batch-scoped interview.** When you run `/retro`, the skill retrospects *every* unprocessed worthy session since your last retro — not just the current one — because the nudge only fires after several have accrued. For the current session it reads live `git status`/`diff`/`log` plus the event log and asks about actual changes ("you edited `auth.ts` 4 times — what was the iteration about?"). Older sessions have no live diff, so their questions are seeded from their event-log aggregates ("on 2026-07-14 you edited the codex-review plugin 6 times — what was that about?"). No generic "what did you learn" prompts.
 
 ## What it does
 
 - **Logs your work** — a tiny `PostToolUse` hook appends one JSONL line per Edit/Write/Bash event to `events-{session_id}.jsonl` (POSIX `O_APPEND`, atomic per PIPE_BUF, race-free under parallel tool calls)
 - **Suggests retros, batched** — `Stop` aggregates the event log and writes a nudge flag when thresholds are met; `UserPromptSubmit` folds Stop-origin flags into a cross-session worthy log and only surfaces an agent-directed nudge once enough worthy sessions have piled up since the last retro; `PreCompact` still nudges immediately
-- **Walks you through** — `/retro` uses the event log + git diff to ask specific, non-generic questions, one at a time
+- **Walks you through the whole batch** — `/retro` spans every unprocessed worthy session (current session diff-driven, older ones event-log-driven) to ask specific, non-generic questions, one at a time
 - **Writes native memory** — entries land in your project memory dir using `feedback` / `project` / `reference` types with `**Why:**` and `**How to apply:**` slots
 
 ## How it works
@@ -27,9 +27,9 @@ Five hooks + one skill. The hooks are Node `.mjs` scripts (stdlib only, no third
 | `Stop` | `stop-write-retro-flag.mjs` aggregates events and writes a nudge flag if retro-worthy |
 | `PreCompact` | `precompact-write-retro-flag.mjs` always writes a nudge flag before compaction |
 | `UserPromptSubmit` | `check-retro-flag.mjs` consumes the flag (fire-once): PreCompact nudges immediately, Stop-origin folds into `retro-worthy.jsonl`, and a batched nudge fires once thresholds are met |
-| `/session-retro:retro` | The skill — reads events + git, walks you through, writes memory, then `mark-retro-done.mjs` resets the batch clock |
+| `/session-retro:retro` | The skill — `collect-batch-sessions.mjs` resolves the unprocessed-worthy batch, walks you through it, writes memory, then `mark-retro-done.mjs` appends the batch to `retro-processed.jsonl` |
 
-The batch nudge fires when `retro-worthy.jsonl` holds `≥ RETRO_BATCH_MIN_SESSIONS` sessions (default 3) newer than the last retro, `≥ RETRO_BATCH_MIN_DAYS` (default 7) have passed, and no batch nudge fired in the last 24h. Both thresholds are env-overridable.
+The batch nudge fires when the **unprocessed** worthy count (distinct sids in `retro-worthy.jsonl` minus those in `retro-processed.jsonl`) is `≥ RETRO_BATCH_MIN_SESSIONS` (default 3), `≥ RETRO_BATCH_MIN_DAYS` (default 7) have passed since the last retro, and no batch nudge fired in the last 24h. Both thresholds are env-overridable. Cleanup is append-only: a retro appends the interviewed sids to `retro-processed.jsonl` rather than rewriting the worthy log, so concurrent sessions can't lose writes.
 
 No external services. No SQLite. No MCP server. No Python. Just Node 18+ and git.
 

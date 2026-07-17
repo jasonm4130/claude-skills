@@ -25,6 +25,7 @@ import {
   resolveDataDir,
   emitAdditionalContext,
   nowIso,
+  unprocessedWorthySessions,
 } from "./lib.mjs";
 
 /**
@@ -102,36 +103,12 @@ if (existsSync(lastRetroFile)) {
 }
 const daysSince = (Date.now() - lastRetroMs) / 86400000;
 
-let worthyCount = 0;
-if (existsSync(worthyLog)) {
-  try {
-    const lines = readFileSync(worthyLog, "utf8").split("\n").filter((l) => l.length > 0);
-    // Entries at/before the last retro no longer contribute to the batch
-    // count; drop them so the log doesn't grow unboundedly across retros.
-    const survivors = [];
-    for (const line of lines) {
-      try {
-        const e = JSON.parse(line);
-        const t = Date.parse(typeof e.ts === "string" ? e.ts : "");
-        if (Number.isFinite(t) && t > lastRetroMs) {
-          worthyCount += 1;
-          survivors.push(line);
-        }
-      } catch {
-        continue;
-      }
-    }
-    if (survivors.length !== lines.length) {
-      try {
-        writeFileSync(worthyLog, survivors.length > 0 ? survivors.join("\n") + "\n" : "");
-      } catch {
-        // best-effort; failing to prune is not fatal
-      }
-    }
-  } catch {
-    worthyCount = 0;
-  }
-}
+// Worthy count = unprocessed worthy sessions, by identity set-difference
+// (retro-worthy.jsonl minus retro-processed.jsonl). The one-time upgrade
+// migration runs inside the helper. retro-worthy.jsonl is append-only and is
+// never rewritten here — a retro clears its batch by appending to the processed
+// ledger (mark-retro-done.mjs), not by pruning this file.
+const worthyCount = unprocessedWorthySessions(dataDir).length;
 
 let batchNudgedRecently = false;
 if (existsSync(lastBatchFile)) {
