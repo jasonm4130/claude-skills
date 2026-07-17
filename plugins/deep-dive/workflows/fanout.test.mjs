@@ -211,6 +211,86 @@ test("researchProblems: reserved TLDs are guaranteed-unresolvable, so guaranteed
   }
 });
 
+test("researchProblems: alternate-encoding hosts that canonicalize to a blocked target are rejected (SSRF — #41 follow-up)", () => {
+  // The regex parser does NOT canonicalize like new URL() did, so alternate encodings a real fetcher
+  // WOULD normalize must be rejected explicitly — else a fabricated finding aims the tier-1 verifier's
+  // WebFetch at cloud metadata (169.254.169.254) or loopback. A legitimate research host is plain
+  // ASCII DNS. These all resolve, in a real fetcher, to a host the guard is meant to block.
+  for (const url of ["http://0xA9FEA9FE/latest/meta-data/", "http://0x7f000001/",
+                     "http://%31%36%39.254.169.254/", "https://example%E3%80%82com/",
+                     "http://2852039166/",
+                     // dotted alternate-IPv4 notations — these HAVE dots, so the dotless rule misses
+                     // them; caught by the alphabetic-TLD rule (an IP's last label is always numeric).
+                     "http://0xA9.0xFE.0xA9.0xFE/latest/meta-data/", "http://0x7f.0.0.1/",
+                     "http://0250.0376.0251.0376/", "http://127.1/", "http://127.0.0.0x1/"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.ok(researchProblems(r).some((p) => /url|host/i.test(p)), `${url} must be rejected`);
+  }
+  // …but ordinary ASCII DNS hosts with hex-looking or numeric LABELS are still fine (they resolve via
+  // DNS, not as an IP literal): only the last label (the TLD) must be alphabetic. Punycode TLDs
+  // (`xn--…`) start with a letter, so internationalized domains still pass.
+  for (const url of ["https://0xdeadbeef.cloudflare.com/x", "https://s3.amazonaws.com/b",
+                     "https://web1.django.com/x", "https://xn--80ak6aa92e.xn--p1ai/x"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.deepEqual(researchProblems(r), [], `${url} is a legitimate DNS host`);
+  }
+});
+
+test("researchProblems: a backslash authority delimiter cannot smuggle a metadata IP past userinfo stripping (#41 SSRF audit)", () => {
+  // WHATWG treats "\" as "/" in http(s), so `http://169.254.169.254\@cloudflare.com/…` has host
+  // 169.254.169.254 — but a naive userinfo strip at the LAST "@" reads it as cloudflare.com, and a
+  // verifier then fetches the metadata IP. The authority must end at "\" exactly as it ends at "/".
+  // (JS string "\\" is a single backslash.)
+  for (const url of ["http://169.254.169.254\\@cloudflare.com/latest/meta-data",
+                     "https://127.0.0.1\\@realsite.com/", "http://[::1]\\@realsite.com/",
+                     "http://0xA9.0xFE.0xA9.0xFE\\@realsite.com/"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.ok(researchProblems(r).some((p) => /url|host/i.test(p)), `${url} must be rejected`);
+  }
+  // A backslash whose real (WHATWG) host is legitimate stays accepted — the metadata IP is in the path.
+  const benign = { ...good, findings: [{ ...good.findings[0], sourceUrl: "http://blog.cloudflare.com\\@169.254.169.254/x" }] };
+  assert.deepEqual(researchProblems(benign), [], "real host before the backslash is legitimate");
+});
+
+test("researchProblems: an out-of-range port is an invalid, unfetchable citation (#41 follow-up)", () => {
+  // The regex parser strips :port; a real URL parser (the old new URL()) rejects a port outside
+  // 1..65535 outright. Without a range check, `:99999` passed and an unfetchable citation reached
+  // the verifier. Non-numeric ports (`:abc`) are already caught by the ASCII-DNS charset rule.
+  for (const url of ["https://blog.cloudflare.com:99999/workerd", "http://a.cloudflare.com:70000/",
+                     "https://b.cloudflare.com:0/z"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.ok(researchProblems(r).some((p) => /url|host/i.test(p)), `${url} must be rejected`);
+  }
+  // Valid ports still pass.
+  for (const url of ["https://blog.cloudflare.com:8080/x", "https://blog.cloudflare.com:443/x"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.deepEqual(researchProblems(r), [], `${url} has a valid port`);
+  }
+});
+
+test("researchProblems: host parsing works WITHOUT a URL constructor (issue #41 — the Workflow sandbox has none)", () => {
+  // THE root-cause bug. The sealed Workflow runtime has no global URL (probed: `typeof URL` is
+  // "undefined", `new URL()` throws ReferenceError). So host came back null for EVERY finding and
+  // 100% of real research was false-rejected as "not a fetched http(s) URL". This went uncaught
+  // because the node test harness DOES have URL — so we rebuild the helpers with URL shadowed to
+  // undefined, reproducing the sandbox, and assert real citations pass and the security checks hold.
+  const sandbox = new Function(
+    "const URL = undefined;\n" + block + "\nreturn { researchProblems };"
+  )();
+  assert.deepEqual(sandbox.researchProblems(good), [],
+    "a real https citation must pass in a runtime with no URL constructor");
+  // Every security property must still hold with URL unavailable — same rejections, no constructor.
+  for (const url of ["https://evil@example.com/x", "https://example.com./x", "https://EXAMPLE.COM/x",
+                     "http://169.254.169.254/x", "http://[::1]/", "https://example.invalid/fake",
+                     "ftp://x/y", "internal-knowledge", "https://"]) {
+    const r = { ...good, findings: [{ ...good.findings[0], sourceUrl: url }] };
+    assert.ok(sandbox.researchProblems(r).length > 0, `${url} must still be rejected without URL`);
+  }
+  // …and a real host that merely contains a placeholder substring is still not over-rejected.
+  const legit = { ...good, findings: [{ ...good.findings[0], sourceUrl: "https://example.community/x" }] };
+  assert.deepEqual(sandbox.researchProblems(legit), [], "example.community is a real host, even without URL");
+});
+
 test("researchProblems: placeholder and stub claims are rejected", () => {
   for (const claim of ["TODO", "TBD", "placeholder", "Lorem ipsum dolor sit", "Example claim here", "short"]) {
     const r = { ...good, findings: [{ ...good.findings[0], claim }] };

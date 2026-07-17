@@ -129,11 +129,69 @@ const PLACEHOLDER_PREFIXES = ["todo", "tbd", "n/a"];
  * @returns {boolean}
  */
 function isPlaceholderHost(host) {
-  // IPv6 arrives bracketed from URL.hostname ("[::1]"); IPv4 is all-digits-and-dots.
+  // IPv6 arrives bracketed from hostFromUrl ("[::1]"); IPv4 is all-digits-and-dots.
   if (host.startsWith("[") || /^[\d.]+$/.test(host)) return true;
+  // Alternate host encodings that a real fetcher WOULD normalize to a blocked target, but the regex
+  // parser does not (new URL() did — issue #41). A legitimate research citation is plain ASCII DNS.
+  //   - any char outside [a-z0-9.-]: percent-encoding (`%31%36%39.254.169.254`) or a non-ASCII
+  //     homograph (`example%E3%80%82com` = ideographic full stop -> "example.com");
+  //   - a dotless host: a hex/octal/decimal IP literal (`0xA9FEA9FE` -> 169.254.169.254) or a bare
+  //     intranet name — never a real public citation. (Bracketed IPv6 already returned above.)
+  if (/[^a-z0-9.-]/.test(host) || !host.includes(".")) return true;
   const tld = host.split(".").pop();
   if (RESERVED_TLDS.includes(tld)) return true;
+  // A real TLD is alphabetic (or punycode `xn--…`, which starts with a letter). EVERY alternate IPv4
+  // notation — dotted hex (`0xA9.0xFE.0xA9.0xFE`), dotted octal (`0250.0376.…`), mixed (`0x7f.0.0.1`),
+  // short-form (`127.1`) — ends in a numeric/hex label, so a non-letter TLD is an IP in disguise.
+  // This is what makes the guard robust without re-implementing new URL()'s inet_aton canonicalization.
+  if (!tld || !/^[a-z]/.test(tld)) return true;
   return PLACEHOLDER_HOSTS.some((p) => host === p || host.endsWith(`.${p}`));
+}
+
+/**
+ * Canonical host of an http(s) URL, or null if the URL is not http(s) or has no host.
+ *
+ * Why not `new URL()`: the sealed Workflow runtime has NO global URL constructor — `new URL()`
+ * throws ReferenceError there, which false-rejected every finding as "not a fetched http(s) URL"
+ * (issue #41). The node test harness DOES have URL, so the break was invisible to the suite. This
+ * parses with RegExp only (which the sandbox does have) and reproduces the exact canonicalization
+ * the old code relied on, so the security checks below are unchanged:
+ *   - scheme must be http/https (case-insensitive) — anything else was never fetched;
+ *   - userinfo is stripped at the LAST "@" so `https://evil@example.com/x` reads as host example.com;
+ *   - a bracketed IPv6 literal keeps its brackets (isPlaceholderHost keys off the leading "[");
+ *   - an :port suffix is dropped; the host is lowercased and its trailing FQDN dot removed, so
+ *     `EXAMPLE.COM` and `example.com.` both canonicalize to `example.com`.
+ *
+ * @param {string} url
+ * @returns {string|null}
+ */
+function hostFromUrl(url) {
+  // The authority ends at the first "/", "?" or "#" — and also "\", which WHATWG treats as "/" in
+  // http(s). Without excluding "\", `http://169.254.169.254\@cloudflare.com/` would keep the IP inside
+  // the authority, strip it as userinfo at the last "@", and read the host as cloudflare.com while a
+  // real fetcher targets the metadata IP (issue #41 audit — SSRF).
+  const m = /^(https?):\/\/([^/\\?#]*)/i.exec(url);
+  if (!m) return null; // no http(s) scheme → never fetched
+  let authority = m[2];
+  const at = authority.lastIndexOf("@");
+  if (at !== -1) authority = authority.slice(at + 1); // drop userinfo
+  let host;
+  if (authority.startsWith("[")) {
+    const end = authority.indexOf("]");
+    host = end === -1 ? authority : authority.slice(0, end + 1); // keep the [..] IPv6 literal
+  } else {
+    const port = /:(\d+)$/.exec(authority);
+    // A real URL parser rejects a port outside 1..65535; the old new URL() path did too. Without this
+    // an unfetchable citation (`…:99999`) would reach the verifier. (`:abc` is caught by the charset
+    // rule in isPlaceholderHost; this handles the numeric-but-out-of-range case.)
+    if (port) {
+      const n = Number(port[1]);
+      if (n < 1 || n > 65535) return null;
+    }
+    host = authority.replace(/:\d*$/, ""); // drop :port
+  }
+  host = host.toLowerCase().replace(/\.$/, "");
+  return host === "" ? null : host;
 }
 
 /**
@@ -208,19 +266,9 @@ function researchProblems(research, angle) {
 
     // Parse the host properly. A hand-rolled split on "/" treats `https://evil@example.com/x` as host
     // "evil@example.com", which is not in the blocklist — so the userinfo trick smuggles a placeholder
-    // URL straight through. URL.hostname handles userinfo, ports, IPv6 and case.
-    let host = null;
-    try {
-      const u = new URL(url);
-      if (u.protocol === "http:" || u.protocol === "https:") {
-        // Canonicalize. `https://example.com./x` parses to hostname "example.com." — a fully-qualified
-        // DNS name that resolves identically and is NOT equal to "example.com", so a bare equality
-        // check waves it straight through.
-        host = u.hostname.toLowerCase().replace(/\.$/, "");
-      }
-    } catch {
-      host = null; // not a parseable URL at all
-    }
+    // URL straight through. hostFromUrl handles userinfo, ports, IPv6 and case — without `new URL()`,
+    // which the sandbox lacks (issue #41).
+    const host = hostFromUrl(url);
 
     if (host === null) {
       problems.push(`finding ${n}: sourceUrl is not a fetched http(s) URL (${JSON.stringify(url)})`);
