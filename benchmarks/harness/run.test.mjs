@@ -97,3 +97,21 @@ test("hermetic smoke: stub adapter end-to-end, then full cache hit", async () =>
   assert.ok(lines2.every((rec) => rec.cacheHit === true));
   rmSync(resultsDir, { recursive: true, force: true });
 });
+
+test("non-positive trial counts are rejected — zero cells must not score as a green run", () => {
+  assert.throws(() => parseRunArgs(["--trials", "0"]), /positive integer/);
+  assert.throws(() => parseRunArgs(["--codex-trials", "-1"]), /positive integer/);
+  assert.throws(() => parseRunArgs(["--trials", "1.5"]), /positive integer/);
+  assert.throws(() => parseRunArgs(["--sample", "0"]), /positive integer/);
+});
+
+test("duplicate item ids across corpus dirs abort the run", async () => {
+  const resultsDir = mkdtempSync(join(tmpdir(), "bench-dupe-"));
+  const stub = { ADAPTER_ID: "stub", version: () => "v", review: async () => { throw new Error("unreached"); } };
+  const config = parseRunArgs(["--adapters", "stub", "--trials", "1", "--results", resultsDir]);
+  config.corpusDirs = [DEFAULT_CORPUS, DEFAULT_CORPUS]; // same dir twice = guaranteed collision
+  const r = await runHarness(config, { adapters: { stub } });
+  assert.equal(r.exitCode, 2);
+  assert.equal(r.scorecard, null);
+  rmSync(resultsDir, { recursive: true, force: true });
+});

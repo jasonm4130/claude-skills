@@ -105,6 +105,14 @@ export function parseRunArgs(argv) {
       default: throw new Error(`unknown arg: ${a}`);
     }
   }
+  for (const [flag, v] of [["--trials", config.trials], ["--codex-trials", config.codexTrials]]) {
+    if (!Number.isInteger(v) || v < 1) {
+      throw new Error(`${flag} must be a positive integer, got ${v} — zero cells would score as a green run`);
+    }
+  }
+  if (config.sample !== null && (!Number.isInteger(config.sample) || config.sample < 1)) {
+    throw new Error(`--sample must be a positive integer, got ${config.sample}`);
+  }
   return config;
 }
 
@@ -168,6 +176,11 @@ export async function runHarness(config, deps = {}) {
     truth: JSON.parse(readFileSync(join(r.itemDir, "truth.json"), "utf8")),
     brief: readFileSync(join(r.itemDir, "brief.md"), "utf8"),
   }));
+  const dupes = [...new Set(items.map((i) => i.id).filter((id, i, a) => a.indexOf(id) !== i))];
+  if (dupes.length) {
+    console.error(`duplicate item id(s) across corpus dirs: ${dupes.join(", ")} — aborting run (colliding truths would score against the wrong oracle).`);
+    return { scorecard: null, resultsDir: null, exitCode: 2 };
+  }
   if (config.sample) items = sampleItems(items, config.sample, config.seed);
 
   const truthsById = {};

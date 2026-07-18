@@ -5,6 +5,7 @@
 // clone can still validate structure; runs (run.mjs) treat them as failures.
 // Usage: node benchmarks/harness/validate.mjs [corpusDir...] [--require-repos]
 import { existsSync, readFileSync, readdirSync, mkdtempSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -43,11 +44,24 @@ export function validateItemDir(itemDir, { requireRepos = false } = {}) {
     errors.push("base/: missing for synthetic item");
     return { errors, warnings };
   }
-  const resolvable = meta.tranche === "synthetic"
-    || existsSync(join(meta.repo.replace(/^~(?=\/)/, process.env.HOME ?? "~"), ".git"));
+  const repoPath = meta.tranche === "mined"
+    ? meta.repo.replace(/^~(?=\/)/, process.env.HOME ?? "~") : null;
+  const resolvable = meta.tranche === "synthetic" || existsSync(join(repoPath, ".git"));
   if (!resolvable) {
     (requireRepos ? errors : warnings).push(`repo unresolvable, structural checks only: ${meta.repo}`);
     return { errors, warnings };
+  }
+  if (repoPath) {
+    // A pruned baseSha is the same missing-corpus class as a missing repo —
+    // it must honor requireRepos/--allow-missing, not masquerade as a
+    // patch-application failure.
+    try {
+      execFileSync("git", ["-C", repoPath, "rev-parse", "--verify", `${meta.baseSha}^{commit}`],
+        { stdio: ["ignore", "pipe", "pipe"] });
+    } catch {
+      (requireRepos ? errors : warnings).push(`baseSha unresolvable in ${meta.repo}: ${meta.baseSha}`);
+      return { errors, warnings };
+    }
   }
 
   const scratch = mkdtempSync(join(tmpdir(), "bench-validate-"));

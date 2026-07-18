@@ -34,14 +34,14 @@ The scorecard markdown also prints to stdout. Flags (`run.mjs`'s `parseRunArgs`)
 |---|---|---|
 | `--adapters a,b,c` | all registered | which adapters to run |
 | `--arms a,b` | `clean,seeded` | which arms to run |
-| `--trials N` | `3` | trials per cell for Claude adapters |
-| `--codex-trials N` | `1` | trials per cell for the codex adapter (quota-bounded) |
+| `--trials N` | `3` | trials per cell for Claude adapters (≥ 1 — zero is rejected, it would score as a green run) |
+| `--codex-trials N` | `1` | trials per cell for the codex adapter (quota-bounded; ≥ 1) |
 | `--seed N` | `42` | RNG seed for `--sample`'s selection |
 | `--model NAME` | `sonnet` | model passed to Claude adapters (never codex) |
 | `--effort LEVEL` | `medium` | reasoning effort passed to the codex adapter |
-| `--sample N` | off (all items) | run a random-but-seeded subset of items |
+| `--sample N` | off (all items) | run a random-but-seeded subset of items (≥ 1) |
 | `--no-cache` | off | bypass the cell cache; adapter cells re-run (mechanism-judge verdicts are still reused — they are content-addressed pure functions of finding+truth text, so re-judging identical text buys nothing) |
-| `--allow-missing` | off | downgrade a missing corpus repo/SHA to a warning |
+| `--allow-missing` | off | downgrade a missing corpus repo or pruned baseSha to a warning |
 | `--results DIR` | `benchmarks/results` | where to write cache + run output |
 | `--baselines PATH` | `benchmarks/baselines.json` | which baselines file to bind against |
 
@@ -80,7 +80,9 @@ separate corpus repo at `~/Work/Git/claude-skills-bench-corpus`; `run.mjs`
 includes it automatically whenever that path exists on disk, with no flag
 needed. **Never commit a privately-mined diff into this repo's
 `benchmarks/corpus/`** — if an item's source repo isn't public, it belongs in
-the private corpus repo instead.
+the private corpus repo instead. Item ids must be unique across every
+configured corpus dir: a collision aborts the run (colliding truths would
+score against the wrong oracle), so prefix private items distinctly.
 
 ## Cost and quota notes
 

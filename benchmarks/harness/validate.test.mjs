@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, cpSync, writeFileSync, unlinkSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
 import { validateItemDir, validateCorpusDirs, DEFAULT_CORPUS } from "./validate.mjs";
 
 const GOOD = join(DEFAULT_CORPUS, "synthetic-0001");
@@ -55,4 +56,24 @@ test("unresolvable mined repo: warning by default, error with requireRepos", () 
   assert.ok(dflt.warnings.some((w) => w.includes("unresolvable")));
   assert.ok(validateItemDir(dir, { requireRepos: true }).errors.some((e) => e.includes("unresolvable")));
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("pruned baseSha in an existing repo: warning by default, error with requireRepos — not a patch failure", () => {
+  const scratch = mkdtempSync(join(tmpdir(), "bench-pruned-"));
+  const repo = join(scratch, "repo");
+  execFileSync("git", ["init", "-q", repo]);
+  execFileSync("git", ["-C", repo, "-c", "user.email=b@l", "-c", "user.name=b", "commit", "-q", "--no-verify", "--allow-empty", "-m", "c1"]);
+  const dir = corruptedCopy((d) => {
+    writeFileSync(join(d, "item.json"), JSON.stringify({
+      id: "mined-pruned", tranche: "mined", repo,
+      baseSha: "a".repeat(40), private: true, language: "js",
+    }));
+    rmSync(join(d, "base"), { recursive: true, force: true });
+  });
+  const dflt = validateItemDir(dir);
+  assert.deepEqual(dflt.errors, []);
+  assert.ok(dflt.warnings.some((w) => w.includes("baseSha unresolvable")));
+  assert.ok(validateItemDir(dir, { requireRepos: true }).errors.some((e) => e.includes("baseSha unresolvable")));
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(scratch, { recursive: true, force: true });
 });
