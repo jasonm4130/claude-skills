@@ -105,6 +105,12 @@ test("non-positive trial counts are rejected — zero cells must not score as a 
   assert.throws(() => parseRunArgs(["--sample", "0"]), /positive integer/);
 });
 
+test("duplicate --adapters/--arms selectors are rejected", () => {
+  assert.throws(() => parseRunArgs(["--adapters", "code-review,code-review"]), /duplicate entries/);
+  assert.throws(() => parseRunArgs(["--arms", "clean,clean"]), /duplicate entries/);
+  assert.deepEqual(parseRunArgs(["--adapters", "code-review,codex"]).adapters, ["code-review", "codex"]);
+});
+
 test("a sampled run is stamped INFORMATIONAL even with no baselines", async () => {
   const resultsDir = mkdtempSync(join(tmpdir(), "bench-sampled-"));
   const stub = {

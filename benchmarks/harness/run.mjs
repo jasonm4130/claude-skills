@@ -113,6 +113,11 @@ export function parseRunArgs(argv) {
   if (config.sample !== null && (!Number.isInteger(config.sample) || config.sample < 1)) {
     throw new Error(`--sample must be a positive integer, got ${config.sample}`);
   }
+  for (const [flag, list] of [["--adapters", config.adapters], ["--arms", config.arms]]) {
+    if (list && new Set(list).size !== list.length) {
+      throw new Error(`${flag} has duplicate entries: ${list.join(",")} — duplicate cells would corrupt majority scoring and double-spend`);
+    }
+  }
   return config;
 }
 

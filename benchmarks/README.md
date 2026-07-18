@@ -32,8 +32,8 @@ The scorecard markdown also prints to stdout. Flags (`run.mjs`'s `parseRunArgs`)
 
 | flag | default | meaning |
 |---|---|---|
-| `--adapters a,b,c` | all registered | which adapters to run |
-| `--arms a,b` | `clean,seeded` | which arms to run |
+| `--adapters a,b,c` | all registered | which adapters to run (duplicates rejected) |
+| `--arms a,b` | `clean,seeded` | which arms to run (duplicates rejected) |
 | `--trials N` | `3` | trials per cell for Claude adapters (≥ 1 — zero is rejected, it would score as a green run) |
 | `--codex-trials N` | `1` | trials per cell for the codex adapter (quota-bounded; ≥ 1) |
 | `--seed N` | `42` | RNG seed for `--sample`'s selection |
