@@ -477,7 +477,7 @@ test("self mode: deterministic shas, committed arm, non-empty range", () => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-test("repo mode: worktree at baseSha, arm committed, cleanup detaches", () => {
+test("repo mode: clone at baseSha, arm committed, source repo untouched", () => {
   const scratch = mkdtempSync(join(tmpdir(), "bench-test-"));
   const repo = join(scratch, "mined");
   mkdirSync(repo);
@@ -498,28 +498,42 @@ test("repo mode: worktree at baseSha, arm committed, cleanup detaches", () => {
   assert.equal(m.baseSha, baseSha);
   assert.notEqual(m.armSha, baseSha);
   m.cleanup();
+  assert.equal(git(["worktree", "list"]).split("\n").length, 1); // nothing registered in source
+  // failure path: a non-applying patch throws and still leaves the source repo untouched
+  writeFileSync(join(itemDir, "seeded.patch"), [
+    "diff --git a/f.txt b/f.txt", "index 0000000..1111111 100644",
+    "--- a/f.txt", "+++ b/f.txt", "@@ -1 +1 @@", "-NOT-THE-CONTENT", "+nope", "",
+  ].join("\n"));
+  assert.throws(() => materializeArm({ itemDir, meta: minedMeta, arm: "seeded", scratchRoot: scratch }));
   assert.equal(git(["worktree", "list"]).split("\n").length, 1);
+  assert.equal(git(["status", "--porcelain"]), "");
   rmSync(scratch, { recursive: true, force: true });
 });
 
-test("hooks in the source repo never fire during materialization", () => {
+test("hooks AND clean/smudge filters in the source repo never fire during materialization", () => {
   const scratch = mkdtempSync(join(tmpdir(), "bench-test-"));
   const repo = join(scratch, "hooked");
   mkdirSync(repo);
   const git = (args) => execFileSync("git", args, { cwd: repo, encoding: "utf8", env: { ...process.env, ...FIXED_GIT_ENV } }).trim();
   git(["init", "-q"]);
-  writeFileSync(join(repo, "f.txt"), "one\n");
-  git(["add", "-A"]); git(["commit", "-q", "--no-verify", "-m", "c1"]);
-  const baseSha = git(["rev-parse", "HEAD"]);
-  const marker = join(scratch, "hook-ran");
+  const marker = join(scratch, "evil-ran");
+  // In-tree .gitattributes wires f.txt to a filter defined in the SOURCE
+  // repo's config — checkout would smudge, `git add` would clean. The clone
+  // has fresh config, so the filter name resolves to nothing (pass-through).
+  writeFileSync(join(scratch, "evil.sh"), `#!/bin/sh\ntouch ${marker}\ncat\n`, { mode: 0o755 });
+  writeFileSync(join(repo, ".gitattributes"), "f.txt filter=evil\n");
+  git(["config", "filter.evil.clean", join(scratch, "evil.sh")]);
+  git(["config", "filter.evil.smudge", join(scratch, "evil.sh")]);
   const hookDir = join(repo, "hooks");
   mkdirSync(hookDir);
-  // post-checkout fires on `worktree add`; pre-commit fires on the arm commit.
-  // Both must be suppressed.
   for (const hook of ["pre-commit", "post-checkout"]) {
     writeFileSync(join(hookDir, hook), `#!/bin/sh\ntouch ${marker}\n`, { mode: 0o755 });
   }
   git(["config", "core.hooksPath", hookDir]);
+  writeFileSync(join(repo, "f.txt"), "one\n");
+  git(["add", "-A"]); git(["commit", "-q", "--no-verify", "-m", "c1"]);
+  rmSync(marker, { force: true }); // source-repo staging may have run it; the harness must not
+  const baseSha = git(["rev-parse", "HEAD"]);
   const itemDir = join(scratch, "item");
   mkdirSync(itemDir);
   writeFileSync(join(itemDir, "seeded.patch"), [
@@ -528,7 +542,7 @@ test("hooks in the source repo never fire during materialization", () => {
   ].join("\n"));
   const minedMeta = { id: "mined-h", tranche: "mined", repo, baseSha, language: "txt", private: true };
   const m = materializeArm({ itemDir, meta: minedMeta, arm: "seeded", scratchRoot: scratch });
-  assert.ok(!existsSync(marker), "configured hooks (post-checkout, pre-commit) must not run");
+  assert.ok(!existsSync(marker), "source-repo hooks and filters must not run in the clone");
   m.cleanup();
   rmSync(scratch, { recursive: true, force: true });
 });
@@ -583,16 +597,17 @@ export function materializeArm({ itemDir, meta, arm, scratchRoot }) {
     cleanup = () => rmSync(scratch, { recursive: true, force: true });
   } else {
     const repo = meta.repo.replace(/^~(?=\/)/, process.env.HOME ?? "~");
-    git(["rev-parse", "--verify", `${meta.baseSha}^{commit}`], repo); // throws if pruned
     worktree = join(scratch, "repo");
-    // noHook on worktree add too: checkout runs post-checkout, and a mined
-    // repo's configured core.hooksPath would execute before our commits.
-    git([...noHook, "worktree", "add", "--detach", "-q", worktree, meta.baseSha], repo);
+    // LOCAL CLONE, not `worktree add`: a fresh clone has fresh config, so the
+    // mined repo's hooks, clean/smudge filters, and textconv drivers simply do
+    // not exist here (in-tree .gitattributes referencing an undefined filter is
+    // pass-through). It also makes cleanup a plain directory delete — nothing
+    // is ever registered in the source repo, even when a patch fails to apply.
+    git(["clone", "-q", "--no-checkout", repo, worktree]);
+    git(["rev-parse", "--verify", `${meta.baseSha}^{commit}`], worktree); // throws if pruned
+    git([...noHook, "checkout", "-q", "--detach", meta.baseSha], worktree);
     baseSha = meta.baseSha;
-    cleanup = () => {
-      try { git(["worktree", "remove", "--force", worktree], repo); } catch { /* already gone */ }
-      rmSync(scratch, { recursive: true, force: true });
-    };
+    cleanup = () => rmSync(scratch, { recursive: true, force: true });
   }
 
   const patch = join(itemDir, `${arm}.patch`);
@@ -1639,6 +1654,7 @@ Expected: FAIL — module not found.
 // the prompt; codex runs read-only and never touches the worktree.
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { normalizeSeverity, applyVerdictPolicy } from "../model.mjs";
@@ -1684,6 +1700,9 @@ export function version() {
   return createHash("sha256")
     .update(buildPrompt({ brief: "V", diffText: "V" }))
     .update(`${DEFAULT_MODEL}/${DEFAULT_EFFORT}/${MAX_DIFF_BYTES}`)
+    // Imported behavior is load-bearing: a parseEventStream/runCodex fix must
+    // invalidate cached codex cells, not silently reuse old normalizations.
+    .update(readFileSync(CODEX_MOD))
     .digest("hex").slice(0, 12);
 }
 
