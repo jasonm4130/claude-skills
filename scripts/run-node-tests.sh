@@ -13,7 +13,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 files=()
-while IFS= read -r f; do files+=("$f"); done < <(find plugins scripts -name '*.test.mjs' | sort)
+while IFS= read -r f; do files+=("$f"); done < <(find plugins scripts benchmarks -name '*.test.mjs' 2>/dev/null | sort)
 
 if [ ${#files[@]} -eq 0 ]; then
   echo "no *.test.mjs files found under plugins/" >&2
