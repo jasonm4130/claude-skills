@@ -194,6 +194,11 @@ test("truth rejects unknown class, bad span, thin mechanism", () => {
   assert.ok(validateTruth({ ...goodTruth, mechanism: "bad" }).length === 1);
 });
 
+test("knownIssues entries need a file and a valid span", () => {
+  assert.equal(validateTruth({ ...goodTruth, knownIssues: [{}] }).length, 1);
+  assert.deepEqual(validateTruth({ ...goodTruth, knownIssues: [{ file: "f.js", span: [1, 2] }] }), []);
+});
+
 test("taxonomy and severities are closed lists", () => {
   assert.ok(TAXONOMY.includes("weakened-test"));
   assert.deepEqual(SEVERITIES, ["Critical", "Important", "Minor"]);
@@ -269,6 +274,12 @@ export function validateTruth(truth) {
     errors.push("truth.json: mechanism must describe the defect (>=20 chars)");
   }
   if (!Array.isArray(truth.knownIssues ?? [])) errors.push("truth.json: knownIssues must be an array");
+  else for (const [i, k] of (truth.knownIssues ?? []).entries()) {
+    if (!k || typeof k.file !== "string" || !k.file || !Array.isArray(k.span) || k.span.length !== 2
+        || !k.span.every((n) => Number.isInteger(n) && n > 0) || k.span[0] > k.span[1]) {
+      errors.push(`truth.json: knownIssues[${i}] needs a file and a valid [start, end] span`);
+    }
+  }
   return errors;
 }
 
@@ -299,7 +310,7 @@ export function spanCovered(patchText, file, span) {
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `node --test benchmarks/harness/schema.test.mjs`
-Expected: PASS (5 tests).
+Expected: PASS (6 tests).
 
 - [ ] **Step 6: Write `benchmarks/taxonomy.md`**
 
@@ -374,9 +385,10 @@ the unit table and the accepted-unit pattern; existing units stay unchanged.
 Generate the two patches with git (never hand-write hunks). From the repo root:
 
 ```bash
+root=$(pwd)   # repo root — capture BEFORE any cd ($OLDPWD moves with each cd)
 tmp=$(mktemp -d) && cd "$tmp" && git init -q work && cd work
 mkdir -p src
-cp "$OLDPWD/benchmarks/corpus/reviewer/synthetic-0001/base/src/parse-duration.mjs" src/
+cp "$root/benchmarks/corpus/reviewer/synthetic-0001/base/src/parse-duration.mjs" src/
 git add -A && git -c user.email=b@l -c user.name=b commit -qm base
 # clean arm: correct hours support
 cat > src/parse-duration.mjs <<'EOF'
@@ -389,7 +401,7 @@ export function parseDuration(input) {
   return Number(m[1]) * UNITS[m[2]];
 }
 EOF
-git diff --no-textconv --no-ext-diff > "$OLDPWD/benchmarks/corpus/reviewer/synthetic-0001/clean.patch"
+git diff --no-textconv --no-ext-diff > "$root/benchmarks/corpus/reviewer/synthetic-0001/clean.patch"
 git checkout -q -- .
 # seeded arm: same feature, wrong-constant bug
 cat > src/parse-duration.mjs <<'EOF'
@@ -402,8 +414,8 @@ export function parseDuration(input) {
   return Number(m[1]) * UNITS[m[2]];
 }
 EOF
-git diff --no-textconv --no-ext-diff > "$OLDPWD/benchmarks/corpus/reviewer/synthetic-0001/seeded.patch"
-cd "$OLDPWD" && rm -rf "$tmp"
+git diff --no-textconv --no-ext-diff > "$root/benchmarks/corpus/reviewer/synthetic-0001/seeded.patch"
+cd "$root" && rm -rf "$tmp"
 ```
 
 Verify: `grep -c "h: 600_000" benchmarks/corpus/reviewer/synthetic-0001/seeded.patch` → `1`, and `grep -c "h: 3_600_000" benchmarks/corpus/reviewer/synthetic-0001/clean.patch` → `1`.
@@ -502,7 +514,11 @@ test("hooks in the source repo never fire during materialization", () => {
   const marker = join(scratch, "hook-ran");
   const hookDir = join(repo, "hooks");
   mkdirSync(hookDir);
-  writeFileSync(join(hookDir, "pre-commit"), `#!/bin/sh\ntouch ${marker}\n`, { mode: 0o755 });
+  // post-checkout fires on `worktree add`; pre-commit fires on the arm commit.
+  // Both must be suppressed.
+  for (const hook of ["pre-commit", "post-checkout"]) {
+    writeFileSync(join(hookDir, hook), `#!/bin/sh\ntouch ${marker}\n`, { mode: 0o755 });
+  }
   git(["config", "core.hooksPath", hookDir]);
   const itemDir = join(scratch, "item");
   mkdirSync(itemDir);
@@ -512,7 +528,7 @@ test("hooks in the source repo never fire during materialization", () => {
   ].join("\n"));
   const minedMeta = { id: "mined-h", tranche: "mined", repo, baseSha, language: "txt", private: true };
   const m = materializeArm({ itemDir, meta: minedMeta, arm: "seeded", scratchRoot: scratch });
-  assert.ok(!existsSync(marker), "configured pre-commit hook must not run");
+  assert.ok(!existsSync(marker), "configured hooks (post-checkout, pre-commit) must not run");
   m.cleanup();
   rmSync(scratch, { recursive: true, force: true });
 });
@@ -569,7 +585,9 @@ export function materializeArm({ itemDir, meta, arm, scratchRoot }) {
     const repo = meta.repo.replace(/^~(?=\/)/, process.env.HOME ?? "~");
     git(["rev-parse", "--verify", `${meta.baseSha}^{commit}`], repo); // throws if pruned
     worktree = join(scratch, "repo");
-    git(["worktree", "add", "--detach", "-q", worktree, meta.baseSha], repo);
+    // noHook on worktree add too: checkout runs post-checkout, and a mined
+    // repo's configured core.hooksPath would execute before our commits.
+    git([...noHook, "worktree", "add", "--detach", "-q", worktree, meta.baseSha], repo);
     baseSha = meta.baseSha;
     cleanup = () => {
       try { git(["worktree", "remove", "--force", worktree], repo); } catch { /* already gone */ }
@@ -1270,9 +1288,11 @@ import {
   ADAPTER_ID, NEUTRAL_REPORT, SDD_SCHEMA, buildPrompt, generatePackage, version, review,
 } from "./sdd-reviewer.mjs";
 
-test("schema requires the spec verdict on top of findings", () => {
-  assert.ok(SDD_SCHEMA.required.includes("spec"));
+test("schema mirrors the reviewer's NATIVE return contract (reviewer.md 'Return')", () => {
+  assert.deepEqual(SDD_SCHEMA.required, ["spec", "findings", "cannotVerify", "quality", "ponytail"]);
   assert.deepEqual(SDD_SCHEMA.properties.spec, { enum: ["pass", "fail"] });
+  assert.deepEqual(SDD_SCHEMA.properties.findings.items.required,
+    ["severity", "class", "file", "line", "what", "planMandated"]);
 });
 
 test("prompt: reviewer.md first, then brief, neutral report, package path — no arm hints", () => {
@@ -1302,18 +1322,40 @@ test("generatePackage drives the real hardened script against a fixture repo", (
   rmSync(scratch, { recursive: true, force: true });
 });
 
+const native = (over = {}) => ({
+  spec: "pass", findings: [], cannotVerify: [], quality: "solid",
+  ponytail: { net: 0, items: [] }, ...over,
+});
+
 test("verdict: spec fail rejects even with zero findings; spec pass + minor passes", async () => {
   const scratch = mkdtempSync(join(tmpdir(), "bench-sddadapter-"));
   const fakeRun = (structured) => async () => ({ ok: true, structured, tokens: { input: 1, output: 1 }, wallMs: 1 });
   const fakePkg = () => {}; // review() must accept a generatePackage override in deps for this test
   const rFail = await review(
     { worktree: "/tmp", diffRange: "a..b", brief: "B", scratchDir: scratch },
-    { runClaude: fakeRun({ spec: "fail", findings: [] }), generatePackage: fakePkg });
+    { runClaude: fakeRun(native({ spec: "fail" })), generatePackage: fakePkg });
   assert.equal(rFail.verdict, "reject");
   const rPass = await review(
     { worktree: "/tmp", diffRange: "a..b", brief: "B", scratchDir: scratch },
-    { runClaude: fakeRun({ spec: "pass", findings: [{ file: "f", line: 1, severity: "Minor", summary: "s", mechanism: "m" }] }), generatePackage: fakePkg });
+    { runClaude: fakeRun(native({ findings: [{ severity: "Minor", class: "style", file: "f", line: 1, what: "w", planMandated: false }] })), generatePackage: fakePkg });
   assert.equal(rPass.verdict, "pass");
+  rmSync(scratch, { recursive: true, force: true });
+});
+
+test("native findings normalize (what → summary+mechanism); ponytail items are not findings", async () => {
+  const scratch = mkdtempSync(join(tmpdir(), "bench-sddadapter-"));
+  const fakeRun = (structured) => async () => ({ ok: true, structured, tokens: { input: 1, output: 1 }, wallMs: 1 });
+  const r = await review(
+    { worktree: "/tmp", diffRange: "a..b", brief: "B", scratchDir: scratch },
+    { runClaude: fakeRun(native({
+        findings: [{ severity: "Critical", class: "logic", file: "f.js", line: 3, what: "retry counter resets every iteration so the loop never exits", planMandated: false }],
+        ponytail: { net: -4, items: ["shrink: inline the helper"] },
+      })), generatePackage: () => {} });
+  assert.equal(r.findings.length, 1);
+  assert.equal(r.findings[0].summary, "retry counter resets every iteration so the loop never exits");
+  assert.equal(r.findings[0].mechanism, r.findings[0].summary);
+  assert.equal(r.verdict, "reject");
+  assert.equal(r.raw.ponytail.net, -4); // preserved raw, never scored
   rmSync(scratch, { recursive: true, force: true });
 });
 
@@ -1354,10 +1396,38 @@ const REVIEW_PACKAGE_BIN = join(REPO_ROOT, "plugins", "subagent-driven-developme
 export const NEUTRAL_REPORT =
   "Implementation complete per the brief. Tests for the change were written and run. No further notes.";
 
+// The reviewer's NATIVE return contract (reviewer.md "Return" section) —
+// forcing the harness's generic findings shape would benchmark a hybrid
+// prompt, not the real SDD reviewer. Normalization to the harness model
+// happens in code, after the fact.
 export const SDD_SCHEMA = {
-  ...FINDINGS_SCHEMA,
-  properties: { ...FINDINGS_SCHEMA.properties, spec: { enum: ["pass", "fail"] } },
-  required: [...FINDINGS_SCHEMA.required, "spec"],
+  type: "object",
+  properties: {
+    spec: { enum: ["pass", "fail"] },
+    findings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          severity: { enum: ["Critical", "Important", "Minor"] },
+          class: { type: "string" },
+          file: { type: "string" },
+          line: { type: "integer" },
+          what: { type: "string" },
+          planMandated: { type: "boolean" },
+        },
+        required: ["severity", "class", "file", "line", "what", "planMandated"],
+      },
+    },
+    cannotVerify: { type: "array", items: { type: "string" } },
+    quality: { type: "string" },
+    ponytail: {
+      type: "object",
+      properties: { net: { type: "integer" }, items: { type: "array", items: { type: "string" } } },
+      required: ["net", "items"],
+    },
+  },
+  required: ["spec", "findings", "cannotVerify", "quality", "ponytail"],
 };
 
 const ALLOWED_TOOLS = ["Read", "Grep", "Glob", "Bash(git diff:*)", "Bash(git log:*)"];
@@ -1380,9 +1450,9 @@ export function buildPrompt({ reviewerMd, brief, packagePath }) {
     "## Review package",
     `The diff package is at ${packagePath} — Read it once, as instructed above.`,
     "",
-    "Emit your review via the structured output schema: `spec` is your Verdict 1;",
-    "each finding carries file, new-side line, severity, summary, and mechanism.",
-    'Zero findings with spec "pass" is a valid, respected result.',
+    "Emit your review via the structured output schema — your normal return",
+    "contract: spec, findings (severity, class, file, new-side line, what,",
+    "planMandated), cannotVerify, quality, ponytail.",
   ].join("\n");
 }
 
@@ -1390,6 +1460,7 @@ export function version() {
   const reviewerMd = readFileSync(REVIEWER_PROMPT_PATH, "utf8");
   return createHash("sha256")
     .update(reviewerMd)
+    .update(readFileSync(REVIEW_PACKAGE_BIN)) // package-assembly code is part of the reviewed bytes
     .update(NEUTRAL_REPORT)
     .update(JSON.stringify(SDD_SCHEMA))
     .update(JSON.stringify(ALLOWED_TOOLS))
@@ -1413,7 +1484,13 @@ export async function review(
   });
   const res = await run(args, { cwd: worktree });
   if (!res.ok) return { status: "error", error: res.error };
-  const findings = (res.structured.findings ?? []).map((f) => ({ ...f, severity: normalizeSeverity(f.severity) }));
+  // Normalize native findings: `what` serves as both summary and mechanism for
+  // the matcher. Ponytail items and quality prose are advisory in SDD's own
+  // flow — kept in raw, never scored as findings.
+  const findings = (res.structured.findings ?? []).map((f) => ({
+    file: f.file, line: f.line, severity: normalizeSeverity(f.severity),
+    summary: f.what, mechanism: f.what,
+  }));
   return {
     status: "ok",
     verdict: applyVerdictPolicy({ explicitReject: res.structured.spec === "fail", findings, threshold: "Critical" }),
@@ -1426,7 +1503,7 @@ export async function review(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `node --test benchmarks/harness/adapters/sdd-reviewer.test.mjs`
-Expected: PASS (6 tests).
+Expected: PASS (7 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -1485,10 +1562,23 @@ test("extractJson pulls the object out of prose or fences", () => {
   assert.equal(extractJson("no json here"), null);
 });
 
-test("prompt embeds brief and diff, demands JSON-only response", () => {
+test("prompt embeds brief and diff, demands JSON-only response, mandates safe diff flags", () => {
   const p = buildPrompt({ brief: "B", diffText: "DIFFTEXT" });
   assert.ok(p.includes("B") && p.includes("DIFFTEXT"));
   assert.ok(p.includes("ONLY a JSON object"));
+  assert.ok(p.includes("--no-textconv --no-ext-diff"));
+});
+
+test("schema-invalid findings (missing file/line) → error, not a scored result", async () => {
+  const { scratch, repo, base, head } = fixtureRepo();
+  const fake = async () => ({
+    stdout: EVENTS('{"findings":[{"severity":"Critical"}]}'),
+    stderr: "", timedOut: false, spawnError: false,
+  });
+  const r = await review({ worktree: repo, diffRange: `${base}..${head}`, brief: "B" }, { runCodex: fake });
+  assert.equal(r.status, "error");
+  assert.ok(r.error.includes("schema validation"));
+  rmSync(scratch, { recursive: true, force: true });
 });
 
 test("review: happy path normalizes findings and records usage", async () => {
@@ -1576,6 +1666,8 @@ export function buildPrompt({ brief, diffText }) {
     "",
     "Report only defects introduced by this change — not pre-existing issues or style.",
     "Zero findings is a valid result if the change is correct.",
+    "If you re-derive any diff yourself, use EXACTLY: git diff --no-textconv --no-ext-diff <range> --",
+    "(textconv/external-diff drivers execute repo-configured programs; never run an unflagged git diff).",
     "Respond with ONLY a JSON object, no prose, in exactly this shape:",
     '{"findings": [{"file": "path", "line": 1, "severity": "Critical|Important|Minor", "summary": "one sentence", "mechanism": "what goes wrong at runtime and why"}]}',
   ].join("\n");
@@ -1624,6 +1716,11 @@ export async function review(
   if (!parsed || !Array.isArray(parsed.findings)) {
     return { status: "error", error: "codex output had no parseable findings JSON" };
   }
+  const validFinding = (f) => f && typeof f.file === "string" && Number.isInteger(f.line)
+    && typeof f.summary === "string" && typeof f.mechanism === "string";
+  if (!parsed.findings.every(validFinding)) {
+    return { status: "error", error: "codex findings failed schema validation (need file, integer line, summary, mechanism)" };
+  }
   const findings = parsed.findings.map((f) => ({ ...f, severity: normalizeSeverity(f.severity) }));
   return {
     status: "ok",
@@ -1640,7 +1737,7 @@ export async function review(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `node --test benchmarks/harness/adapters/codex.test.mjs`
-Expected: PASS (6 tests).
+Expected: PASS (7 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -1922,7 +2019,7 @@ git commit -m "feat(benchmarks): two-stage matcher with cached sonnet mechanism 
 
 **Interfaces:**
 - Consumes: `SEVERITY_WEIGHT` (Task 6), `cacheKey` (Task 5), `locationMatch` (Task 10, for knownIssues exclusion). Input records carry `record.match` on seeded ok-cells (attached by Task 12).
-- Produces: `COVERAGE_FLOOR = 0.95`, `ERROR_CEILING = 0.20`, `median(xs) → number|null`, `populationId({manifestHash, config}) → hex`, `computeScorecard({records, truthsById, manifestHash, config, baseline}) → scorecard`, `renderMarkdown(scorecard) → string`. The scorecard object carries `{status: "OK"|"INFORMATIONAL"|"UNRELIABLE", exitCode, adapters, strata, floors}`.
+- Produces: `COVERAGE_FLOOR = 0.95`, `ERROR_CEILING = 0.20`, `median(xs) → number|null`, `populationId({manifestHash, config}) → hex`, `computeScorecard({records, truthsById, manifestHash, config, baseline, baselinesExist}) → scorecard`, `renderMarkdown(scorecard) → string`. The scorecard object carries `{status: "OK"|"INFORMATIONAL"|"UNRELIABLE", exitCode, adapters, strata, floors}`.
 
 **Scoring policy (implement exactly):**
 - An item is *scored* for an adapter×arm when at least `ceil(trials/2)` of its cells are `status:"ok"`; its catch verdict is the majority of ok trials.
@@ -1932,7 +2029,7 @@ git commit -m "feat(benchmarks): two-stage matcher with cached sonnet mechanism 
 - Mechanism accuracy (per adapter): Σ catches ÷ (Σ catches + Σ near-misses) over seeded ok cells; null when denominator 0.
 - Flip rate (per adapter, trials > 1): items whose ok-cell catch verdicts disagree ÷ scored seeded items.
 - Error rate (per adapter): error cells ÷ attempted cells.
-- `status`: `UNRELIABLE` (exit 2) if any adapter error rate > `ERROR_CEILING`, or if a baseline with matching `populationId` covers a stratum that is `notScored`. `INFORMATIONAL` (exit 0, floors skipped) if a baseline exists but `populationId` differs. Otherwise `OK`; floors evaluated only here.
+- `status`: `UNRELIABLE` (exit 2) if any adapter error rate > `ERROR_CEILING`, or if a baseline with matching `populationId` covers a stratum that is `notScored`. `INFORMATIONAL` (exit 0, floors skipped) if a baseline is provided but its `populationId` differs, OR if `baselinesExist` is true and no matching baseline was provided (a recorded baseline that can't bind must be visible, not silently ignored). Otherwise `OK`; floors evaluated only here.
 - Floors: per adapter, `catchRate >= baseline.catchRate - 0.10` and `overRejection <= baseline.overRejection * 1.5`; any breach ⇒ exit 1.
 
 - [ ] **Step 1: Write the failing tests** — build records with a helper; cover each policy line:
@@ -2003,7 +2100,9 @@ test("verdict-only clean rejection weighs 3; knownIssue findings excluded", () =
 
 test("error cells: stratum under coverage floor is notScored; >20% errors → UNRELIABLE exit 2", () => {
   const records = fullRun();
-  for (let t = 0; t < 3; t++) {
+  // fullRun is 12 cells; 4 errors → 4/16 = 25% > ERROR_CEILING (3 would be
+  // exactly 20%, which the policy's strict > does NOT trip).
+  for (let t = 0; t < 4; t++) {
     records.push(cell({ item: "item-a", trial: t + 10, status: "error", error: "boom", verdict: null }));
   }
   const sc = computeScorecard({ records, truthsById: TRUTHS, manifestHash: "m1", config: CONFIG, baseline: null });
@@ -2017,6 +2116,12 @@ test("population mismatch → INFORMATIONAL, floors skipped, exit 0", () => {
   assert.equal(sc.status, "INFORMATIONAL");
   assert.equal(sc.exitCode, 0);
   assert.deepEqual(sc.floors.breaches, []);
+});
+
+test("baselines exist but none match → INFORMATIONAL, floors skipped", () => {
+  const sc = computeScorecard({ records: fullRun(), truthsById: TRUTHS, manifestHash: "m1", config: CONFIG, baseline: null, baselinesExist: true });
+  assert.equal(sc.status, "INFORMATIONAL");
+  assert.equal(sc.exitCode, 0);
 });
 
 test("matching population with breached catch floor → exit 1", () => {
@@ -2089,7 +2194,7 @@ The comment-only bodies above are structure hints — the implementer writes the
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `node --test benchmarks/harness/scorecard.test.mjs`
-Expected: PASS (8 tests).
+Expected: PASS (9 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -2109,7 +2214,7 @@ git commit -m "feat(benchmarks): stratified scorecard with floors and coverage g
 
 **Interfaces:**
 - Consumes: everything above by the exact names each task's Interfaces block declares.
-- Produces: `parseRunArgs(argv) → config`, `mulberry32(seed) → () => float`, `sampleItems(items, n, seed) → items`, `hashItemContent(itemDir) → hex`, `expandCells({items, arms, adapterIds, trialsFor}) → cells`, `runHarness(config, deps?) → Promise<{scorecard, resultsDir, exitCode}>`, CLI main guard.
+- Produces: `parseRunArgs(argv) → config`, `mulberry32(seed) → () => float`, `sampleItems(items, n, seed) → items`, `hashItemContent(itemDir) → hex`, `expandCells({items, arms, adapterIds, trialsFor}) → cells`, `loadBaseline(path, pid) → {baseline: object|null, baselinesExist: boolean}`, `runHarness(config, deps?) → Promise<{scorecard, resultsDir, exitCode}>`, CLI main guard.
 
 **Runner policy (implement exactly):**
 - Default corpus dirs: `benchmarks/corpus/reviewer` plus `~/Work/Git/claude-skills-bench-corpus/reviewer` when that directory exists.
@@ -2118,6 +2223,7 @@ git commit -m "feat(benchmarks): stratified scorecard with floors and coverage g
 - Cache key per cell: `{itemContent: hashItemContent(itemDir), arm, adapter, adapterVersion, model, effort, trial}`. Only `status:"ok"` results are cached (errors are transient).
 - Concurrency lanes: `codex` lane width 1; all other adapters share a lane of width 4.
 - Every cell materializes fresh and `cleanup()`s in a `finally`.
+- **Baselines are loaded by the runner** (`--baselines`, default `benchmarks/baselines.json`): compute `populationId({manifestHash, config})` first, then `loadBaseline(path, pid)` selects the entry whose `populationId` matches (`baseline: null` when none does; `baselinesExist` reflects whether the file has any entries). Both are passed to `computeScorecard` — a recorded baseline must never be silently bypassable.
 - After cells: `matchCell` for every seeded ok-record (judge cache = same `CellCache`); then `computeScorecard`; write `records.jsonl`, `scorecard.json`, `scorecard.md` under `benchmarks/results/runs/<ISO-stamp>/`; print the markdown; return the scorecard's exit code.
 
 - [ ] **Step 1: Write the failing tests**
@@ -2173,6 +2279,22 @@ test("expandCells honors per-adapter trial counts", () => {
   });
   assert.equal(cells.filter((c) => c.adapter === "code-review").length, 6);
   assert.equal(cells.filter((c) => c.adapter === "codex").length, 2);
+});
+
+test("loadBaseline selects by populationId; reports whether entries exist", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bench-baseline-"));
+  const path = join(dir, "baselines.json");
+  const { writeFileSync } = await import("node:fs");
+  const { loadBaseline } = await import("./run.mjs");
+  writeFileSync(path, JSON.stringify({ baselines: [
+    { label: "v1", populationId: "pid-a", adapters: { rev: { catchRate: 1, overRejection: 0 } } },
+    { label: "v2", populationId: "pid-b", adapters: { rev: { catchRate: 0.9, overRejection: 1 } } },
+  ] }));
+  assert.equal(loadBaseline(path, "pid-b").baseline.label, "v2");
+  assert.equal(loadBaseline(path, "pid-x").baseline, null);
+  assert.equal(loadBaseline(path, "pid-x").baselinesExist, true);
+  assert.deepEqual(loadBaseline(join(dir, "missing.json"), "pid-a"), { baseline: null, baselinesExist: false });
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("hermetic smoke: stub adapter end-to-end, then full cache hit", async () => {
@@ -2256,7 +2378,7 @@ export function expandCells({ items, arms, adapterIds, trialsFor }) {
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `node --test benchmarks/harness/run.test.mjs`
-Expected: PASS (5 tests).
+Expected: PASS (6 tests).
 
 - [ ] **Step 5: Gitignore the results tree**
 
@@ -2296,6 +2418,9 @@ git commit -m "feat(benchmarks): cached lane-pooled runner CLI with hermetic smo
   "baselines": []
 }
 ```
+
+Entry schema (documented in the README, enforced by `loadBaseline`'s selection): each entry is
+`{"label": "first-freeze", "frozenAt": "2026-07-20", "populationId": "<from scorecard.json>", "adapters": {"<adapter-id>": {"catchRate": 0.0, "overRejection": 0.0}}}` — copied by hand from a real run's `scorecard.json`, never written by the harness itself.
 
 - [ ] **Step 2: Write `benchmarks/README.md`** covering, in this order (a paragraph or short list each — write real prose, not headings-only): what the harness measures (catch rate / over-rejection / mechanism accuracy on paired clean+seeded diffs — link the spec `docs/superpowers/specs/2026-07-18-eval-harness-design.md`); quickstart (`node benchmarks/harness/run.mjs` and the flag table from Task 12's policy); corpus item anatomy (the six files, JSON not YAML, `base/` for synthetic); the public/private corpus split (`~/Work/Git/claude-skills-bench-corpus` auto-included when present; never commit private diffs here); cost + quota notes (codex trials default 1, `--sample`, cache semantics — what re-runs are free); baseline workflow (first real full run → copy `scorecard.json`'s `populationId` + per-adapter `catchRate`/`overRejection` into a `baselines.json` entry by hand; floors are health floors, ratcheted only by explicit decision); adjudication workflow (persistent clean-arm findings → human review → `knownIssues` in the item's `truth.json`; note it changes cache keys and baseline identity); judge calibration (`node benchmarks/harness/matcher.mjs --self-eval`, manual, real API); authoring new corpus items (miner/seeder agent pipeline summary from the spec + `node benchmarks/harness/validate.mjs` before committing).
 

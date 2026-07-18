@@ -54,14 +54,16 @@ benchmarks/
   taxonomy.md               # versioned bug-class list
   corpus/reviewer/
     <item-id>/              # e.g. brok-stacks-0042
-      item.yaml             # repo path, baseSha, language, tranche (mined|synthetic)
+      item.json             # repo path, baseSha, language, tranche (mined|synthetic)
+                            #  (JSON, not YAML: the repo is zero-dependency and
+                            #   Node has no built-in YAML parser)
       clean.patch           # real merged diff — clean arm
       seeded.patch          # same diff + exactly one planted bug — buggy arm
       brief.md              # neutral task brief: the change's intent, written
                             #  from the CLEAN diff and identical across arms
                             #  (must not hint at the seeded bug)
-      truth.yaml            # bug class, file, line span, mechanism, severity;
-                            #  plus adjudicated known_issues on the clean arm
+      truth.json            # bug class, file, line span, mechanism, severity;
+                            #  plus adjudicated knownIssues on the clean arm
   harness/
     run.mjs                 # CLI entry
     adapters/               # sdd-reviewer.mjs, code-review.mjs, codex.mjs
@@ -70,11 +72,11 @@ benchmarks/
     cache.mjs
     *.test.mjs
   results/                  # gitignored — run JSONL, scorecards, cache
-  baselines.yaml            # checked-in health floors
+  baselines.json            # checked-in health floors
 ```
 
 Corpus items reference a **repo + base SHA**. Public-mined items additionally
-record the **public remote URL** in `item.yaml`, so the corpus is acquirable
+record the **public remote URL** in `item.json`, so the corpus is acquirable
 from a fresh clone; private-tranche items may reference local paths only. The
 runner materializes a throwaway worktree at `baseSha`, applies the arm's
 patch, and **commits it** (fixed identity author/date, so the commit is
@@ -97,7 +99,7 @@ reports coverage against the expected manifest explicitly.
    self-contained merged diffs.
 2. **Human cull** of the shortlist.
 3. **Seeder agents** plant exactly one taxonomy bug per item; write
-   `seeded.patch` + `truth.yaml`. `brief.md` is written at mining time from
+   `seeded.patch` + `truth.json`. `brief.md` is written at mining time from
    the real commit/PR message (synthetic items author it with the item),
    before seeding, so it can't leak the bug.
 4. **`validate.mjs`** — deterministic, part of the test suite — checks every
@@ -187,7 +189,7 @@ can carry a genuine latent defect, and penalizing a reviewer for correctly
 flagging one would corrupt the over-rejection metric. Mitigation:
 **adjudication.** A clean-arm finding that persists (raised by ≥2 adapters, or
 by one adapter across a majority of trials) is queued for human adjudication;
-if confirmed real it is recorded under `known_issues` in `truth.yaml` and
+if confirmed real it is recorded under `knownIssues` in `truth.json` and
 excluded from over-rejection counts from then on. Adjudications are corpus
 changes (they alter item content, hence cache keys and baseline identity) —
 never silent.
@@ -199,7 +201,7 @@ rate (severity-weighted findings per clean diff; weights Critical=3,
 Important=2, Minor=1); mechanism accuracy; median tokens and wall-clock.
 Output: markdown + JSON per run.
 
-`baselines.yaml` holds health floors (e.g. catch rate ≥ baseline − 10 pts,
+`baselines.json` holds health floors (e.g. catch rate ≥ baseline − 10 pts,
 over-rejection ≤ baseline + 50%); a broken floor exits non-zero. Floors are set
 from the first baseline run and ratchet only by explicit decision.
 
