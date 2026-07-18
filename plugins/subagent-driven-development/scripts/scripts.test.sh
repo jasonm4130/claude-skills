@@ -6,6 +6,9 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir "$tmp/repo" && cd "$tmp/repo"
 git init -q && git config user.email t@t && git config user.name t
+# Suppress any global hooks (e.g. a maintainer's gitleaks pre-commit hook) so
+# this test's commits are hermetic regardless of the host's git config.
+mkdir "$tmp/nohooks" && git config core.hooksPath "$tmp/nohooks"
 
 # sdd-workspace creates a self-ignoring workspace
 ws=$("$dir/sdd-workspace")
