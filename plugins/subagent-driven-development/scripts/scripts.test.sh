@@ -26,6 +26,23 @@ head=$(git rev-parse HEAD)
 pkg=$("$dir/review-package" "$base" "$head" | sed 's/^wrote //; s/:.*//')
 grep -q "## Diff" "$pkg" || { echo "FAIL: package missing diff section"; exit 1; }
 
+# review-package must not execute textconv/external-diff drivers (host-side code
+# execution risk when packaging untrusted trees — e.g. harness-seeded corpus arms).
+cat > "$tmp/evil.sh" <<EOF
+#!/bin/sh
+touch "$tmp/pwned"
+cat "\$1"
+EOF
+chmod +x "$tmp/evil.sh"
+echo "f diff=evil" > .gitattributes
+git config diff.evil.textconv "$tmp/evil.sh"
+echo d >> f && git commit -qam d
+head2=$(git rev-parse HEAD)
+pkg2=$("$dir/review-package" "$base" "$head2" | sed 's/^wrote //; s/:.*//')
+[ ! -e "$tmp/pwned" ] || { echo "FAIL: textconv driver executed during packaging"; exit 1; }
+grep -q "^+d" "$pkg2" || { echo "FAIL: package missing raw diff content"; exit 1; }
+git config --unset diff.evil.textconv && rm .gitattributes
+
 # sdd-worktree: fresh create on the sdd/tN branch
 repo=$(pwd -P)
 base=$(git rev-parse HEAD)

@@ -24,8 +24,8 @@ else dir=$("$(cd "$(dirname "$0")" && pwd)/sdd-workspace" ${workdir:+"$workdir"}
 {
   echo "# Review package: ${base}..${head}"; echo
   echo "## Commits"; g log --oneline "${base}..${head}"; echo
-  echo "## Files changed"; g diff --stat "${base}..${head}"; echo
-  echo "## Diff"; g diff -U10 "${base}..${head}"
+  echo "## Files changed"; g diff --no-textconv --no-ext-diff --stat "${base}..${head}"; echo
+  echo "## Diff"; g diff --no-textconv --no-ext-diff -U10 "${base}..${head}"
 } > "$out"
 commits=$(g rev-list --count "${base}..${head}")
 echo "wrote ${out}: ${commits} commit(s), $(wc -c < "$out" | tr -d ' ') bytes"
