@@ -57,7 +57,11 @@ benchmarks/
       item.yaml             # repo path, baseSha, language, tranche (mined|synthetic)
       clean.patch           # real merged diff — clean arm
       seeded.patch          # same diff + exactly one planted bug — buggy arm
-      truth.yaml            # bug class, file, line span, mechanism, severity
+      brief.md              # neutral task brief: the change's intent, written
+                            #  from the CLEAN diff and identical across arms
+                            #  (must not hint at the seeded bug)
+      truth.yaml            # bug class, file, line span, mechanism, severity;
+                            #  plus adjudicated known_issues on the clean arm
   harness/
     run.mjs                 # CLI entry
     adapters/               # sdd-reviewer.mjs, code-review.mjs, codex.mjs
@@ -69,10 +73,23 @@ benchmarks/
   baselines.yaml            # checked-in health floors
 ```
 
-Corpus items reference a **local sibling repo + base SHA**; the runner
-materializes a throwaway worktree and applies the arm's patch. No snapshot
-tarballs — a pruned SHA degrades the item to skipped-with-reason (a `git
-bundle` escape hatch is documented, not built).
+Corpus items reference a **repo + base SHA**. Public-mined items additionally
+record the **public remote URL** in `item.yaml`, so the corpus is acquirable
+from a fresh clone; private-tranche items may reference local paths only. The
+runner materializes a throwaway worktree at `baseSha`, applies the arm's
+patch, and **commits it** (fixed identity author/date, so the commit is
+byte-stable for caching) — every adapter then uniformly consumes the commit
+range `baseSha..armSha`. This matters because the reviewer interfaces are
+range-based (`review-package` requires `BASE HEAD`; Codex diff mode resolves
+commit ranges): an uncommitted patched worktree would present an **empty
+diff** and be silently scored on it.
+
+**Missing corpus is a run failure, not a shrunken sample.** The runner builds
+an expected manifest from the configured corpus dirs; an unresolvable repo or
+pruned SHA fails the run (non-zero) listing the missing items, rather than
+silently skipping them — otherwise a fresh machine "passes" on synthetic items
+alone. `--allow-missing` downgrades this to a warning, but the scorecard then
+reports coverage against the expected manifest explicitly.
 
 ## Authoring pipeline (per corpus expansion; agents author, code validates)
 
@@ -80,10 +97,13 @@ bundle` escape hatch is documented, not built).
    self-contained merged diffs.
 2. **Human cull** of the shortlist.
 3. **Seeder agents** plant exactly one taxonomy bug per item; write
-   `seeded.patch` + `truth.yaml`.
+   `seeded.patch` + `truth.yaml`. `brief.md` is written at mining time from
+   the real commit/PR message (synthetic items author it with the item),
+   before seeding, so it can't leak the bug.
 4. **`validate.mjs`** — deterministic, part of the test suite — checks every
    committed item: both patches apply cleanly at `baseSha`, seeded differs from
-   clean, truth schema complete, seeded span exists in the patch.
+   clean, truth schema complete, seeded span exists in the patch, `brief.md`
+   present and non-empty.
 
 Synthetic items skip steps 1–2.
 
@@ -95,17 +115,46 @@ explicit list; `--sample N` runs a random-but-seeded subset — the
 quota-bounding path for Codex passes)
 
 The run expands into **cells** — (item × arm × adapter × trial). Per cell:
-cache check → materialize worktree at `baseSha` → apply arm patch → invoke
-adapter → normalize → append JSONL record. Cells are independent; one failure
-never aborts the run.
+cache check → materialize worktree at `baseSha` → apply + commit arm patch →
+invoke adapter with `baseSha..armSha` → normalize → append JSONL record. Cells
+are independent; one failure never aborts the run.
 
-**Adapter interface:** `{worktree, diffRange, effort, model}` →
-`{findings: [{file, line, severity, summary, mechanism}], tokens, wallMs, raw}`.
+**Adapter interface:** `{worktree, diffRange, brief, effort, model}` →
+`{verdict: pass|reject, findings: [{file, line, severity, summary, mechanism}],
+tokens, wallMs, raw}`.
 
-- *sdd-reviewer* / *code-review*: `claude -p` with `--output-format json
-  --json-schema` (verified available in the installed CLI), a read-only tool
-  allowlist, cwd = worktree, prompt = the reviewer prompt file (its content
-  hash is the adapter's version).
+**One canonical gate-outcome model.** Reviewers can reject without an
+actionable finding (the SDD reviewer's `spec: "fail"` is exactly that), so
+findings alone under-count rejections. Every adapter maps its native verdict
+into `verdict`: SDD → reject iff `spec: "fail"` or any Critical;
+code-review/codex → reject iff any finding at or above the configured
+severity threshold. The mapping is part of the adapter's version. A clean-arm
+**reject with zero findings still counts as an over-rejection event** —
+verdict-level, weighted as Critical.
+
+**Equal context across adapters.** All three receive `brief.md` as
+change-intent context — otherwise results conflate reviewer capability with
+access to intent. Adapter-specific extras (SDD's neutral implementer report)
+are deliberate, documented, and recorded in the adapter version.
+
+- *sdd-reviewer*: must reproduce the reviewer's real operating inputs, not
+  just its prompt — `reviewer.md` reads a `review-package` diff file, judges
+  spec compliance against a task brief, and expects an implementer report. The
+  adapter therefore (a) generates the package with the actual
+  `review-package` script over `baseSha..armSha` — **after hardening that
+  script's `git diff` calls with `--no-textconv --no-ext-diff`** (matching
+  `codex-review.mjs`): without them, a mined repo's configured textconv/diff
+  driver — or a patch touching `.gitattributes` — executes host-side while
+  assembling the package over seeded content; the hardening lands in the SDD
+  plugin so its own reviews get the same protection — (b) passes the item's
+  `brief.md`, and (c) supplies a **fixed neutral implementer report** —
+  identical boilerplate for every cell, so it can neither leak hints nor vary
+  between arms. The prompt file, the neutral report, and the package-assembly
+  code all hash into the adapter version (and hence the cache key).
+- *code-review*: `claude -p` with `--output-format json --json-schema`
+  (verified available in the installed CLI), a read-only tool allowlist,
+  cwd = worktree, reviewing `baseSha..armSha`; prompt content hash is the
+  adapter's version.
 - *codex*: imports `runCodex()` and diff construction from the codex-review
   plugin's `codex-review.mjs` (verified: `codex exec --json --sandbox
   read-only … --skip-git-repo-check`), inheriting `--no-textconv
@@ -133,6 +182,16 @@ event, weighted by claimed severity. The judge prompt is versioned into the
 cache key and regression-tested by a fixture micro-eval of
 (finding, truth, expected-verdict) triples.
 
+**The clean arm is presumed clean, not certified clean** — a real merged diff
+can carry a genuine latent defect, and penalizing a reviewer for correctly
+flagging one would corrupt the over-rejection metric. Mitigation:
+**adjudication.** A clean-arm finding that persists (raised by ≥2 adapters, or
+by one adapter across a majority of trials) is queued for human adjudication;
+if confirmed real it is recorded under `known_issues` in `truth.yaml` and
+excluded from over-rejection counts from then on. Adjudications are corpus
+changes (they alter item content, hence cache keys and baseline identity) —
+never silent.
+
 ## Scorecard, floors, repeatability
 
 Per adapter: catch rate (overall, by bug class, by severity); over-rejection
@@ -144,6 +203,17 @@ Output: markdown + JSON per run.
 over-rejection ≤ baseline + 50%); a broken floor exits non-zero. Floors are set
 from the first baseline run and ratchet only by explicit decision.
 
+**Floors bind only to a matching population.** Each baseline records its
+corpus-manifest hash, arm/trial policy, adapter config (prompt version,
+model, effort), **and the full matcher/oracle config** — stage-1 span
+tolerance, judge prompt hash, judge model, and the verdict-mapping policy.
+The oracle determines what counts as a catch; changing it silently would move
+scores while runs still looked floor-comparable. Floor enforcement runs only when the current run matches;
+otherwise — notably any `--sample` run — the scorecard is stamped
+**INFORMATIONAL** and floors are not evaluated (a lucky subsample must not be
+able to "pass" a full-suite floor). A sampled population can get its own
+baseline by explicit decision.
+
 Trials: default 3 for Claude adapters, 1 for Codex. Medians everywhere;
 per-item **flip rate** (verdict variance across trials) is reported — high
 flip rate is itself a finding about the reviewer.
@@ -151,10 +221,18 @@ flip rate is itself a finding about the reviewer.
 ## Error handling
 
 Per-cell isolation. Spawn failure, timeout, or schema-invalid output →
-`status: error` in JSONL — excluded from rates, surfaced in an errors column.
-Missing SHA → item skipped-with-reason. If an adapter errors on >20% of its
-cells, the scorecard is stamped **UNRELIABLE** rather than reporting rates from
-a gutted sample.
+`status: error` in JSONL — surfaced in an errors column, never silently
+dropped. Rates are always reported **alongside coverage** (scored cells ÷
+attempted cells, per adapter × arm), because error exclusion alone can inflate
+scores — an adapter that schema-fails on the hard 19% of seeded diffs would
+otherwise clear floors on the easy rest. Coverage is enforced **per stratum —
+adapter × arm × bug class — not just in aggregate**, because 95% overall can
+coexist with 0% on one bug class. A stratum below 95% coverage is marked
+**NOT-SCORED**: its rates are withheld, aggregates that would include it are
+flagged, and if a baseline covers that stratum the run is stamped
+**UNRELIABLE and exits non-zero** (same exit class as a broken floor; >20%
+errors overall also triggers it). Missing repos/SHAs are a manifest failure
+(see Layout), not a per-cell skip.
 
 ## Testing
 
@@ -162,6 +240,11 @@ a gutted sample.
 derivation, scorecard math, adapter argument-construction as pure functions.
 One end-to-end smoke test drives a single synthetic item through a **stub
 adapter** (no API, no cost) in CI. Real-API runs are manual and deliberate.
+
+**`scripts/run-node-tests.sh` must be extended** — its `find plugins scripts`
+discovery would silently never run anything under `benchmarks/`; add
+`benchmarks` to the find roots so the validator and smoke test actually gate
+CI.
 
 ## Out of scope (this slice)
 
