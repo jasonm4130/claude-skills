@@ -1162,9 +1162,24 @@ git commit -m "feat(benchmarks): normalized result model + claude -p wrapper"
 
 **Interfaces:**
 - Consumes: `FINDINGS_SCHEMA`, `normalizeSeverity`, `applyVerdictPolicy` (Task 6); `buildClaudeArgs`, `runClaude` (Task 6).
-- Produces: `ADAPTER_ID = "code-review"`, `buildPrompt({brief, diffRange}) → string`, `version() → 12-hex string`, `review({worktree, diffRange, brief, model?, scratchDir?}, deps?) → Promise<{status:"ok", verdict, findings, tokens, wallMs, raw} | {status:"error", error}>`. Task 12 registers adapters by `{ADAPTER_ID, version, review}` — all three adapters share this exact surface.
+- Produces: `ADAPTER_ID` (`"code-review"` or `"claude-review"` — the probe below decides), `buildPrompt({brief, diffRange}) → string`, `version() → 12-hex string`, `review({worktree, diffRange, brief, model?, scratchDir?}, deps?) → Promise<{status:"ok", verdict, findings, tokens, wallMs, raw} | {status:"error", error}>`. Task 12 registers adapters by `{ADAPTER_ID, version, review}` — all three adapters share this exact surface, and Task 12 imports ids rather than hardcoding strings.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Probe whether `/code-review` runs headless with a forced schema**
+
+One cheap real call from the repo root (this decides what the adapter honestly measures):
+
+```bash
+claude -p "/code-review low" --model sonnet --output-format json \
+  --json-schema '{"type":"object","properties":{"findings":{"type":"array"}},"required":["findings"]}' \
+  --allowed-tools "Read" "Grep" "Glob" "Bash(git diff:*)"
+```
+
+Judge the result: did the code-review *skill* actually load and review the working diff (a grounded `structured_output.findings`), or did the model just answer the literal text? Record the probe output and the chosen path in the task report.
+
+- **SKILL PATH** (probe succeeded): keep `ADAPTER_ID = "code-review"`; `buildPrompt` returns `"/code-review low\n\n## Change intent (task brief)\n" + brief.trim() + "\n\nReview the committed change \`" + diffRange + "\`."` — everything else below unchanged.
+- **DIRECT PATH** (probe failed): implement exactly the code below but with `ADAPTER_ID = "claude-review"` — the honest name; a baseline must never claim to measure the `/code-review` skill via a prompt that isn't it.
+
+- [ ] **Step 2: Write the failing tests**
 
 `benchmarks/harness/adapters/code-review.test.mjs`:
 
@@ -1204,25 +1219,31 @@ test("review passes through wrapper errors as status error", async () => {
   assert.deepEqual(r, { status: "error", error: "boom" });
 });
 
-test("adapter id", () => assert.equal(ADAPTER_ID, "code-review"));
+test("adapter id reflects the probed path", () =>
+  assert.ok(["code-review", "claude-review"].includes(ADAPTER_ID)));
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 3: Run tests to verify they fail**
 
 Run: `node --test benchmarks/harness/adapters/code-review.test.mjs`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement `benchmarks/harness/adapters/code-review.mjs`**
+- [ ] **Step 4: Implement `benchmarks/harness/adapters/code-review.mjs`**
 
 ```js
 // Generic Claude code reviewer over a committed range. Deliberately a direct
 // review prompt (not the /code-review skill headless — see the plan's Open
 // Questions); the clean-pass license line mirrors the Gap #3 calibration.
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { FINDINGS_SCHEMA, normalizeSeverity, applyVerdictPolicy } from "../model.mjs";
 import { buildClaudeArgs, runClaude } from "../claude-cli.mjs";
 
-export const ADAPTER_ID = "code-review";
+export const ADAPTER_ID = "code-review"; // or "claude-review" — per the Step 1 probe
+const HERE = fileURLToPath(new URL(".", import.meta.url));
+const SELF = fileURLToPath(import.meta.url);
 const ALLOWED_TOOLS = ["Read", "Grep", "Glob", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)"];
 
 export function buildPrompt({ brief, diffRange }) {
@@ -1241,10 +1262,13 @@ export function buildPrompt({ brief, diffRange }) {
 }
 
 export function version() {
+  // Hash the COMPLETE behavior: this module (prompt template, tools,
+  // normalization) plus the shared model + CLI wrapper code it depends on —
+  // a change to any of them must invalidate cached cells.
   return createHash("sha256")
-    .update(buildPrompt({ brief: "V", diffRange: "V..V" }))
-    .update(JSON.stringify(FINDINGS_SCHEMA))
-    .update(JSON.stringify(ALLOWED_TOOLS))
+    .update(readFileSync(SELF))
+    .update(readFileSync(join(HERE, "..", "model.mjs")))
+    .update(readFileSync(join(HERE, "..", "claude-cli.mjs")))
     .digest("hex").slice(0, 12);
 }
 
@@ -1264,16 +1288,16 @@ export async function review({ worktree, diffRange, brief, model = "sonnet" }, d
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 5: Run tests to verify they pass**
 
 Run: `node --test benchmarks/harness/adapters/code-review.test.mjs`
 Expected: PASS (5 tests).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add benchmarks/harness/adapters/code-review.mjs benchmarks/harness/adapters/code-review.test.mjs
-git commit -m "feat(benchmarks): generic claude code-review adapter"
+git commit -m "feat(benchmarks): claude review adapter (path per headless probe)"
 ```
 
 ---
@@ -1404,6 +1428,7 @@ import { buildClaudeArgs, runClaude } from "../claude-cli.mjs";
 
 export const ADAPTER_ID = "sdd-reviewer";
 const HERE = fileURLToPath(new URL(".", import.meta.url));
+const SELF = fileURLToPath(import.meta.url);
 const REPO_ROOT = join(HERE, "..", "..", "..");
 const REVIEWER_PROMPT_PATH = join(REPO_ROOT, "plugins", "subagent-driven-development", "prompts", "reviewer.md");
 const REVIEW_PACKAGE_BIN = join(REPO_ROOT, "plugins", "subagent-driven-development", "scripts", "review-package");
@@ -1472,14 +1497,16 @@ export function buildPrompt({ reviewerMd, brief, packagePath }) {
 }
 
 export function version() {
-  const reviewerMd = readFileSync(REVIEWER_PROMPT_PATH, "utf8");
+  // Complete behavior hash: this module (prompt assembly, NEUTRAL_REPORT,
+  // schema, tools, normalization), shared model + CLI wrapper code, the real
+  // reviewer prompt, and the package-assembly script whose bytes shape what
+  // gets reviewed.
   return createHash("sha256")
-    .update(reviewerMd)
-    .update(readFileSync(REVIEW_PACKAGE_BIN)) // package-assembly code is part of the reviewed bytes
-    .update(NEUTRAL_REPORT)
-    .update(JSON.stringify(SDD_SCHEMA))
-    .update(JSON.stringify(ALLOWED_TOOLS))
-    .update(buildPrompt({ reviewerMd: "V", brief: "V", packagePath: "V" }))
+    .update(readFileSync(SELF))
+    .update(readFileSync(join(HERE, "..", "model.mjs")))
+    .update(readFileSync(join(HERE, "..", "claude-cli.mjs")))
+    .update(readFileSync(REVIEWER_PROMPT_PATH))
+    .update(readFileSync(REVIEW_PACKAGE_BIN))
     .digest("hex").slice(0, 12);
 }
 
@@ -1660,6 +1687,7 @@ import { join } from "node:path";
 import { normalizeSeverity, applyVerdictPolicy } from "../model.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
+const SELF = fileURLToPath(import.meta.url);
 const CODEX_MOD = join(HERE, "..", "..", "..", "plugins", "codex-review", "skills", "codex-plan-review", "scripts", "codex-review.mjs");
 const { runCodex, parseEventStream } = await import(CODEX_MOD);
 
@@ -1697,11 +1725,12 @@ export function extractJson(text) {
 }
 
 export function version() {
+  // Complete behavior hash: this module (prompt, defaults, extraction,
+  // normalization), the shared model code, and the imported codex-review
+  // module — a parseEventStream/runCodex fix must invalidate cached cells.
   return createHash("sha256")
-    .update(buildPrompt({ brief: "V", diffText: "V" }))
-    .update(`${DEFAULT_MODEL}/${DEFAULT_EFFORT}/${MAX_DIFF_BYTES}`)
-    // Imported behavior is load-bearing: a parseEventStream/runCodex fix must
-    // invalidate cached codex cells, not silently reuse old normalizations.
+    .update(readFileSync(SELF))
+    .update(readFileSync(join(HERE, "..", "model.mjs")))
     .update(readFileSync(CODEX_MOD))
     .digest("hex").slice(0, 12);
 }
@@ -2047,7 +2076,7 @@ git commit -m "feat(benchmarks): two-stage matcher with cached sonnet mechanism 
 - Over-rejection (clean arm, per adapter): per item, mean over ok cells of (Σ `SEVERITY_WEIGHT[f.severity]` over findings not location-matching any `truth.knownIssues` entry, + 3 if `verdict === "reject"` with zero findings); adapter value = mean over scored items.
 - Mechanism accuracy (per adapter): Σ catches ÷ (Σ catches + Σ near-misses) over seeded ok cells; null when denominator 0.
 - Flip rate (per adapter, trials > 1): items whose ok-cell catch verdicts disagree ÷ scored seeded items.
-- Error rate (per adapter): error cells ÷ attempted cells.
+- Error rate (per adapter): cells with any `status` ≠ `"ok"` (including `"oracle-error"`) ÷ attempted cells.
 - `status`: `UNRELIABLE` (exit 2) if any adapter error rate > `ERROR_CEILING`, or if a baseline with matching `populationId` covers a stratum that is `notScored`. `INFORMATIONAL` (exit 0, floors skipped) if a baseline is provided but its `populationId` differs, OR if `baselinesExist` is true and no matching baseline was provided (a recorded baseline that can't bind must be visible, not silently ignored). Otherwise `OK`; floors evaluated only here.
 - Floors: per adapter, `catchRate >= baseline.catchRate - 0.10` and `overRejection <= baseline.overRejection * 1.5`; any breach ⇒ exit 1.
 
@@ -2238,12 +2267,14 @@ git commit -m "feat(benchmarks): stratified scorecard with floors and coverage g
 **Runner policy (implement exactly):**
 - Default corpus dirs: `benchmarks/corpus/reviewer` plus `~/Work/Git/claude-skills-bench-corpus/reviewer` when that directory exists.
 - Abort (exit 2, listing problems) when the validator reports any error; `--allow-missing` maps to the validator's default (warnings for unresolvable repos), its absence maps to `requireRepos: true`.
-- Defaults: `--adapters sdd-reviewer,code-review,codex`, `--arms clean,seeded`, `--trials 3`, `--codex-trials 1`, `--seed 42`, `--model sonnet`, `--effort medium`; `--sample N` picks a seeded-random subset; `--no-cache` bypasses reads (still writes).
+- Defaults: `--adapters` unset → `null`, meaning *all registered adapters* (resolved against the registry inside `runHarness`, never hardcoded strings — Task 7's probe decides that adapter's final id); `--arms clean,seeded`, `--trials 3`, `--codex-trials 1`, `--seed 42`, `--model sonnet`, `--effort medium`; `--sample N` picks a seeded-random subset; `--no-cache` bypasses reads (still writes).
+- **Model routing is per adapter:** Claude-family adapters (and the judge) receive `config.model`; the codex adapter always uses its own `DEFAULT_MODEL` with `config.effort`. The runner must never pass a Claude model name to codex. Each cell's cache key carries that cell's *effective* model/effort values.
+- **Per-cell scratch:** the runner creates a `scratch/` dir beside each cell's worktree and passes it as `scratchDir` to `adapter.review` — the SDD package file can never race across the four-wide lane.
 - Cache key per cell: `{itemContent: hashItemContent(itemDir), arm, adapter, adapterVersion, model, effort, trial}`. Only `status:"ok"` results are cached (errors are transient).
 - Concurrency lanes: `codex` lane width 1; all other adapters share a lane of width 4.
 - Every cell materializes fresh and `cleanup()`s in a `finally`.
 - **Baselines are loaded by the runner** (`--baselines`, default `benchmarks/baselines.json`): compute `populationId({manifestHash, config})` first, then `loadBaseline(path, pid)` selects the entry whose `populationId` matches (`baseline: null` when none does; `baselinesExist` reflects whether the file has any entries). Both are passed to `computeScorecard` — a recorded baseline must never be silently bypassable.
-- After cells: `matchCell` for every seeded ok-record (judge cache = same `CellCache`); then `computeScorecard`; write `records.jsonl`, `scorecard.json`, `scorecard.md` under `benchmarks/results/runs/<ISO-stamp>/`; print the markdown; return the scorecard's exit code.
+- After cells: `matchCell` for every seeded ok-record (judge cache = same `CellCache`). A seeded record whose match returned `errors` and no catch is **reclassified `status: "oracle-error"`** — it drops out of scored cells and joins the error-rate/coverage gates; a judge outage must surface as harness unreliability, never as a reviewer miss. Then `computeScorecard`; write `records.jsonl`, `scorecard.json`, `scorecard.md` under `benchmarks/results/runs/<ISO-stamp>/`; print the markdown; return the scorecard's exit code.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2261,7 +2292,7 @@ import { DEFAULT_CORPUS } from "./validate.mjs";
 
 test("parseRunArgs defaults and overrides", () => {
   const d = parseRunArgs([]);
-  assert.deepEqual(d.adapters, ["sdd-reviewer", "code-review", "codex"]);
+  assert.equal(d.adapters, null); // null = all registered adapters, resolved in runHarness
   assert.equal(d.trials, 3);
   assert.equal(d.codexTrials, 1);
   assert.equal(d.seed, 42);
@@ -2465,7 +2496,7 @@ git commit -m "docs(benchmarks): operator guide, baselines template, README poin
 
 ## Open Questions / Unresolved Assumptions
 
-- **The code-review adapter is a direct review prompt, not the literal `/code-review` skill run headless** (Task 7). Headless slash-skill loading combined with forced `--json-schema` output is unverified; the spec names `/code-review` as a system under test, so this is a declared deviation. The adapter-version cache keying makes swapping the prompt for a verified skill invocation cheap later.
+- **Which path Task 7's probe lands on is unknown until it runs.** The probe (one real call) decides whether the adapter invokes the actual `/code-review` skill or ships an honestly-named `claude-review` direct prompt; either way the shipped id and probe output are recorded in the task report, and no baseline can claim to measure the skill it doesn't.
 - **`--allowed-tools` in `-p` mode is assumed to pre-authorize exactly those tools without interactive prompting** (Tasks 7–8). The smoke test stubs `runClaude`, so the first real corpus run is the verification point.
 - **Codex token usage may be null** when `turn.completed` carries no usage (Task 9); the scorecard must tolerate null token medians for an adapter.
 - **The mechanism judge is a single yes/no call**, no self-consistency vote (Task 10). Revisit if judged-catch flip rates come back high.
