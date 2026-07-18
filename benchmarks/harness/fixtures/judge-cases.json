@@ -1,0 +1,38 @@
+[
+  {
+    "name": "exact same mechanism, different words",
+    "truth": { "file": "src/parse-duration.mjs", "span": [2, 2], "mechanism": "The hours multiplier added to UNITS is 600000 (ten minutes in ms) instead of 3600000, so every hour-denominated duration parses to one-sixth of its correct value." },
+    "finding": { "summary": "Hours constant is wrong", "mechanism": "h maps to 600000 ms which is 10 minutes, not one hour; '2h' returns 1200000 instead of 7200000." },
+    "expected": true
+  },
+  {
+    "name": "same line, style complaint",
+    "truth": { "file": "src/parse-duration.mjs", "span": [2, 2], "mechanism": "The hours multiplier added to UNITS is 600000 instead of 3600000, so hour durations parse to one-sixth of their value." },
+    "finding": { "summary": "Use named constants", "mechanism": "Magic numbers in the UNITS table hurt readability; extract MS_PER_HOUR." },
+    "expected": false
+  },
+  {
+    "name": "same line, different bug theory",
+    "truth": { "file": "src/parse-duration.mjs", "span": [2, 2], "mechanism": "The hours multiplier added to UNITS is 600000 instead of 3600000, so hour durations parse to one-sixth of their value." },
+    "finding": { "summary": "Regex misses uppercase units", "mechanism": "The pattern only accepts lowercase h so '2H' throws unexpectedly." },
+    "expected": false
+  },
+  {
+    "name": "vague this-looks-wrong",
+    "truth": { "file": "src/retry.mjs", "span": [14, 16], "mechanism": "The retry counter is reset inside the catch block, so a persistently failing call retries forever instead of stopping after maxRetries." },
+    "finding": { "summary": "Retry logic looks suspicious", "mechanism": "Something about the loop bounds here seems off and should be double-checked." },
+    "expected": false
+  },
+  {
+    "name": "same infinite-retry mechanism, consequence-first phrasing",
+    "truth": { "file": "src/retry.mjs", "span": [14, 16], "mechanism": "The retry counter is reset inside the catch block, so a persistently failing call retries forever instead of stopping after maxRetries." },
+    "finding": { "summary": "Infinite retry loop on persistent failure", "mechanism": "attempts is zeroed every iteration inside the error handler, so the maxRetries bound can never be reached and the loop never exits." },
+    "expected": true
+  },
+  {
+    "name": "correct mechanism class, wrong direction",
+    "truth": { "file": "src/paginate.mjs", "span": [8, 8], "mechanism": "The slice end index omits the final element of each page (off by one short), so every page silently drops its last row." },
+    "finding": { "summary": "Page overlap", "mechanism": "The slice bounds double-count the boundary element, so the last row of each page repeats as the first row of the next." },
+    "expected": false
+  }
+]
