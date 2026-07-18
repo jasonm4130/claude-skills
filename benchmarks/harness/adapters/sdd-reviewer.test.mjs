@@ -47,6 +47,15 @@ const native = (over = {}) => ({
   ponytail: { net: 0, items: [] }, ...over,
 });
 
+test("review passes the extended 20-min timeout to runClaude — the shared 10-min default timed out 39/156 cells", async () => {
+  const scratch = mkdtempSync(join(tmpdir(), "bench-sddtimeout-"));
+  let seenOpts = null;
+  const run = async (_args, opts) => { seenOpts = opts; return { ok: true, structured: native(), tokens: { input: 1, output: 1 }, wallMs: 1 }; };
+  await review({ worktree: "/tmp", diffRange: "a..b", brief: "B", scratchDir: scratch }, { runClaude: run, generatePackage: () => {} });
+  assert.equal(seenOpts.timeoutMs, 1_200_000);
+  rmSync(scratch, { recursive: true, force: true });
+});
+
 test("verdict: spec fail rejects even with zero findings; spec pass + minor passes", async () => {
   const scratch = mkdtempSync(join(tmpdir(), "bench-sddadapter-"));
   const fakeRun = (structured) => async () => ({ ok: true, structured, tokens: { input: 1, output: 1 }, wallMs: 1 });

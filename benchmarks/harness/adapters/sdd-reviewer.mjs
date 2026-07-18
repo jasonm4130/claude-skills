@@ -109,7 +109,11 @@ export async function review(
     prompt: buildPrompt({ reviewerMd, brief, packagePath }), model,
     schema: SDD_SCHEMA, allowedTools: ALLOWED_TOOLS,
   });
-  const res = await run(args, { cwd: worktree });
+  // The SDD rubric's median cell is ~5 min and its honest slow tail passes
+  // 10 — the shared runClaude default timed out 39/156 cells in the first
+  // full run, breaching the error ceiling. 20 min covers the tail without
+  // letting a truly hung CLI stall a lane all day.
+  const res = await run(args, { cwd: worktree, timeoutMs: 1_200_000 });
   if (!res.ok) return { status: "error", error: res.error };
   // Normalize native findings: `what` serves as both summary and mechanism for
   // the matcher. Ponytail items and quality prose are advisory in SDD's own

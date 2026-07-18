@@ -47,7 +47,11 @@ The scorecard markdown also prints to stdout. Flags (`run.mjs`'s `parseRunArgs`)
 
 A real run costs real API calls (Claude adapters + the mechanism judge, and
 Codex quota). There is no dry-run mode; use `--sample` or `--adapters` to
-scope a first run down.
+scope a first run down. Cell latencies differ sharply by adapter:
+`code-review` cells run ~1–2 min, `codex` ~1 min (serialized), while
+`sdd-reviewer` cells median ~5 min and get an extended 20-min CLI timeout
+(the shared 10-min default timed out a quarter of its cells in the first
+full run) — budget a full-corpus run in hours, not minutes.
 
 ## Corpus item anatomy
 
