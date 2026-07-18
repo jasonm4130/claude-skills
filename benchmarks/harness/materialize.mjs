@@ -1,7 +1,7 @@
 // Materialize one corpus arm as a committed throwaway worktree.
-// Self mode inits a repo from the item's base/ tree; repo mode adds a detached
-// worktree to the mined repo at baseSha. Both then apply + commit the arm patch
-// with hooks and diff drivers suppressed, and fixed identity/dates so shas are
+// Self mode inits a repo from the item's base/ tree; repo mode local-clones
+// the mined repo at baseSha. Both then apply + commit the arm patch with
+// hooks and diff drivers suppressed, and fixed identity/dates so shas are
 // byte-stable (they feed cache keys).
 import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
@@ -15,14 +15,21 @@ export const FIXED_GIT_ENV = {
 };
 
 function git(args, cwd) {
+  // stdio explicit so a deliberately-failing child's stderr is captured on the
+  // thrown error, not echoed into the caller's (or a test run's) output.
   return execFileSync("git", args, {
     cwd, encoding: "utf8", env: { ...process.env, ...FIXED_GIT_ENV },
+    stdio: ["ignore", "pipe", "pipe"],
   }).trim();
 }
 
 export function materializeArm({ itemDir, meta, arm, scratchRoot }) {
   if (!["clean", "seeded"].includes(arm)) throw new Error(`bad arm: ${arm}`);
   const scratch = mkdtempSync(join(scratchRoot, `bench-${meta.id}-${arm}-`));
+  // Any throw below (pruned sha, non-applying patch — a designed occurrence
+  // for mined items) must not leak the scratch dir, which in repo mode holds
+  // a full clone: the caller never receives a cleanup() to invoke.
+  try {
   const nohooks = join(scratch, "nohooks");
   mkdirSync(nohooks);
   const noHook = ["-c", `core.hooksPath=${nohooks}`];
@@ -58,4 +65,8 @@ export function materializeArm({ itemDir, meta, arm, scratchRoot }) {
   git([...noHook, "commit", "-q", "--no-verify", "-m", `arm:${arm}`], worktree);
   const armSha = git(["rev-parse", "HEAD"], worktree);
   return { worktree, baseSha, armSha, cleanup };
+  } catch (err) {
+    rmSync(scratch, { recursive: true, force: true });
+    throw err;
+  }
 }

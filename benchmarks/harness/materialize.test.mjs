@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, cpSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, cpSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -55,6 +55,8 @@ test("repo mode: clone at baseSha, arm committed, source repo untouched", () => 
   assert.throws(() => materializeArm({ itemDir, meta: minedMeta, arm: "seeded", scratchRoot: scratch }));
   assert.equal(git(["worktree", "list"]).split("\n").length, 1);
   assert.equal(git(["status", "--porcelain"]), "");
+  // and the failed materialization swept its own scratch (no cloned-repo leak)
+  assert.deepEqual(readdirSync(scratch).filter((n) => n.startsWith("bench-")), []);
   rmSync(scratch, { recursive: true, force: true });
 });
 

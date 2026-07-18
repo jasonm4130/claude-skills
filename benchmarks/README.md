@@ -40,7 +40,7 @@ The scorecard markdown also prints to stdout. Flags (`run.mjs`'s `parseRunArgs`)
 | `--model NAME` | `sonnet` | model passed to Claude adapters (never codex) |
 | `--effort LEVEL` | `medium` | reasoning effort passed to the codex adapter |
 | `--sample N` | off (all items) | run a random-but-seeded subset of items |
-| `--no-cache` | off | bypass the cell cache; force every cell to re-run |
+| `--no-cache` | off | bypass the cell cache; adapter cells re-run (mechanism-judge verdicts are still reused — they are content-addressed pure functions of finding+truth text, so re-judging identical text buys nothing) |
 | `--allow-missing` | off | downgrade a missing corpus repo/SHA to a warning |
 | `--results DIR` | `benchmarks/results` | where to write cache + run output |
 | `--baselines PATH` | `benchmarks/baselines.json` | which baselines file to bind against |

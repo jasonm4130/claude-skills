@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -9,15 +9,21 @@ import { ADAPTER_ID, MAX_DIFF_BYTES, buildPrompt, extractJson, version, review }
 function fixtureRepo() {
   const scratch = mkdtempSync(join(tmpdir(), "bench-codex-"));
   const repo = join(scratch, "r");
+  // Isolate from the developer machine's global hooksPath (e.g. a gitleaks
+  // pre-commit hook) — fixture commits must be hermetic, per the repo pattern.
+  const nohooks = join(scratch, "nohooks");
+  mkdirSync(nohooks);
   execFileSync("git", ["init", "-q", repo]);
-  const git = (args) => execFileSync("git", ["-C", repo, "-c", "user.email=b@l", "-c", "user.name=b", ...args], { encoding: "utf8" }).trim();
+  const git = (args) => execFileSync("git",
+    ["-C", repo, "-c", "user.email=b@l", "-c", "user.name=b", "-c", `core.hooksPath=${nohooks}`, ...args],
+    { encoding: "utf8" }).trim();
   writeFileSync(join(repo, "f.txt"), "one\n");
-  git(["add", "-A"]); git(["commit", "-qm", "c1"]);
+  git(["add", "-A"]); git(["commit", "-q", "--no-verify", "-m", "c1"]);
   const base = git(["rev-parse", "HEAD"]);
   writeFileSync(join(repo, "f.txt"), "two\n");
-  git(["add", "-A"]); git(["commit", "-qm", "c2"]);
+  git(["add", "-A"]); git(["commit", "-q", "--no-verify", "-m", "c2"]);
   const head = git(["rev-parse", "HEAD"]);
-  return { scratch, repo, base, head };
+  return { scratch, repo, base, head, git };
 }
 
 const EVENTS = (text) => [
@@ -76,10 +82,9 @@ test("review: failed terminal or unparseable message → error", async () => {
 });
 
 test("oversized diff is refused, not truncated", async () => {
-  const { scratch, repo, base } = fixtureRepo();
-  const git = (args) => execFileSync("git", ["-C", repo, "-c", "user.email=b@l", "-c", "user.name=b", ...args], { encoding: "utf8" }).trim();
+  const { scratch, repo, base, git } = fixtureRepo();
   writeFileSync(join(repo, "big.txt"), "x".repeat(MAX_DIFF_BYTES + 1024) + "\n");
-  git(["add", "-A"]); git(["commit", "-qm", "big"]);
+  git(["add", "-A"]); git(["commit", "-q", "--no-verify", "-m", "big"]);
   const bigHead = git(["rev-parse", "HEAD"]);
   const fake = async () => { throw new Error("must not be called"); };
   const r = await review({ worktree: repo, diffRange: `${base}..${bigHead}`, brief: "B" }, { runCodex: fake });
