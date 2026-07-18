@@ -48,6 +48,7 @@ plugins/<name>/
   scripts/ tests/                 # stdlib-only .mjs + node:test suites
 docs/superpowers/{specs,plans}/   # design specs and implementation plans
 scripts/run-node-tests.sh         # CI test runner
+benchmarks/                       # offline evaluation harness for the owned review stack (see benchmarks/README.md)
 ```
 
 ## Development
