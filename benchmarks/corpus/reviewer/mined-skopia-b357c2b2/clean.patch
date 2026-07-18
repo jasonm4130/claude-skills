@@ -1,0 +1,52 @@
+diff --git a/src/dashboard/index.ts b/src/dashboard/index.ts
+index f1ec914..3acddf1 100644
+--- a/src/dashboard/index.ts
++++ b/src/dashboard/index.ts
+@@ -835,6 +835,13 @@ function liveScript(siteId: string, nonce: string): string {
+   function connect(){
+     var proto=location.protocol==='https:'?'wss':'ws';
+     var ws=new WebSocket(proto+'://'+location.host+'/live?site='+encodeURIComponent(siteId));
++    // Drive liveness refresh from the client: eviction is lazy server-side
++    // (site-live.ts currentSnapshot()), so absent new site-wide traffic a
++    // connected dashboard would otherwise show a stale count forever once a
++    // visitor leaves. A periodic ping costs no DO storage write.
++    var pingTimer=setInterval(function(){
++      if(ws.readyState===WebSocket.OPEN) ws.send('ping');
++    },15000);
+     ws.onmessage=function(e){
+       try{
+         var d=JSON.parse(e.data);
+@@ -865,7 +872,7 @@ function liveScript(siteId: string, nonce: string): string {
+         }
+       }catch(err){}
+     };
+-    ws.onclose=function(){setTimeout(connect,3000);};
++    ws.onclose=function(){clearInterval(pingTimer);setTimeout(connect,3000);};
+   }
+   connect();
+ })();
+diff --git a/test/dashboard/dashboard.test.ts b/test/dashboard/dashboard.test.ts
+index 9f2d78f..e0a953f 100644
+--- a/test/dashboard/dashboard.test.ts
++++ b/test/dashboard/dashboard.test.ts
+@@ -699,4 +699,20 @@ describe("live top-pages panel", () => {
+     );
+     expect(text).not.toContain('id="live-pages-list"');
+   });
++
++  it("live script pings the socket on an interval to refresh a stale live count", async () => {
++    // Eviction is lazy server-side (site-live.ts currentSnapshot()): without a
++    // client-driven ping, a dashboard left open would show a stale count
++    // forever once a visitor leaves and no further site-wide traffic arrives.
++    const cookieVal = await authedCookie();
++    const { text } = await fetch_(
++      req("/app", { headers: { Cookie: `skopia_session=${cookieVal}` } }),
++    );
++    const script = text.slice(text.indexOf("function connect()"));
++    expect(script).toContain("setInterval(function(){");
++    expect(script).toContain("ws.send('ping')");
++    // The timer must be torn down on close so a reconnect doesn't leak a
++    // second ping loop stacked on top of the old one.
++    expect(script).toContain("clearInterval(pingTimer)");
++  });
+ });

@@ -1,0 +1,94 @@
+diff --git a/apps/web/astro.config.mjs b/apps/web/astro.config.mjs
+index 2354981..cbb3adf 100644
+--- a/apps/web/astro.config.mjs
++++ b/apps/web/astro.config.mjs
+@@ -4,6 +4,7 @@ import sitemap from '@astrojs/sitemap';
+ import tailwindcss from '@tailwindcss/vite';
+ import rehypeSlug from 'rehype-slug';
+ import rehypeAutolinkHeadings from 'rehype-autolink-headings';
++import remarkRewriteDraftLinks from './src/plugins/remark-rewrite-draft-links.mjs';
+ 
+ export default defineConfig({
+   site: 'https://jasonmatthew.dev',
+@@ -16,6 +17,7 @@ export default defineConfig({
+     responsiveStyles: false,
+   },
+   markdown: {
++    remarkPlugins: [remarkRewriteDraftLinks],
+     rehypePlugins: [
+       rehypeSlug,
+       [
+diff --git a/apps/web/src/plugins/remark-rewrite-draft-links.mjs b/apps/web/src/plugins/remark-rewrite-draft-links.mjs
+new file mode 100644
+index 0000000..8f9c077
+--- /dev/null
++++ b/apps/web/src/plugins/remark-rewrite-draft-links.mjs
+@@ -0,0 +1,68 @@
++import { readdirSync, readFileSync } from 'node:fs';
++import { fileURLToPath } from 'node:url';
++import { join } from 'node:path';
++
++const ARTICLES_DIR = fileURLToPath(new URL('../../../../packages/content/articles/', import.meta.url));
++
++// Brisbane is UTC+10 year-round. publishDate is bare-date YYYY-MM-DD which Date()
++// parses as UTC midnight; authors mean midnight AEST, so shift "now" forward.
++// Mirrors apps/web/src/utils/data-utils.ts.
++const BRISBANE_OFFSET_MS = 10 * 60 * 60 * 1000;
++
++function parseFrontmatter(source) {
++  const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---/);
++  if (!match) return { draft: false, publishDate: null };
++  const block = match[1];
++  const draft = /^draft:\s*true\b/m.test(block);
++  const dateMatch = block.match(/^publishDate:\s*['"]?(\d{4}-\d{2}-\d{2})/m);
++  const publishDate = dateMatch ? new Date(dateMatch[1]) : null;
++  return { draft, publishDate };
++}
++
++function loadArticles() {
++  const map = new Map();
++  for (const file of readdirSync(ARTICLES_DIR)) {
++    if (!/\.(mdx?|md)$/.test(file)) continue;
++    const slug = file.replace(/\.(mdx?|md)$/, '');
++    map.set(slug, parseFrontmatter(readFileSync(join(ARTICLES_DIR, file), 'utf8')));
++  }
++  return map;
++}
++
++function isPublished(article) {
++  if (article.draft) return false;
++  if (!article.publishDate) return true;
++  return article.publishDate.getTime() <= Date.now() + BRISBANE_OFFSET_MS;
++}
++
++function stripLinksToDrafts(node, articles, downgraded) {
++  if (!Array.isArray(node.children)) return;
++  for (let i = 0; i < node.children.length; i++) {
++    const child = node.children[i];
++    if (child.type === 'link') {
++      const match = (child.url || '').match(/^\/blog\/([^/?#]+)/);
++      if (match && !isPublished(articles.get(match[1]))) {
++        node.children.splice(i, 1, ...child.children);
++        downgraded.push(match[1]);
++        i--;
++        continue;
++      }
++    }
++    stripLinksToDrafts(child, articles, downgraded);
++  }
++}
++
++export default function remarkRewriteDraftLinks() {
++  return (tree, file) => {
++    const articles = loadArticles();
++    const downgraded = [];
++    stripLinksToDrafts(tree, articles, downgraded);
++    if (downgraded.length > 0) {
++      const sourcePath = file?.history?.[file.history.length - 1] || file?.path || 'unknown';
++      const fileName = sourcePath.split('/').pop() || sourcePath;
++      console.warn(
++        `[draft-links] ${fileName}: stripped ${downgraded.length} link(s) to unpublished post(s): ${downgraded.join(', ')}`,
++      );
++    }
++  };
++}

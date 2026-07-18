@@ -1,0 +1,8 @@
+{
+  "id": "mined-lora-42a962b5",
+  "tranche": "mined",
+  "repo": "~/Work/Git/formrecap-lora-classifier",
+  "remote": "https://github.com/jasonm4130/formrecap-lora-classifier.git",
+  "baseSha": "fe7400af4cd350a36953ebda81bdff1412788bae",
+  "language": "python"
+}

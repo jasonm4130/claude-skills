@@ -1,0 +1,8 @@
+{
+  "class": "null-path",
+  "file": "apps/web/src/plugins/remark-rewrite-draft-links.mjs",
+  "span": [32, 33],
+  "severity": "Critical",
+  "mechanism": "isPublished no longer guards against a missing article before reading article.draft, so a link to a slug that isn't in the loaded articles map (a typo'd slug, or a link to content outside the articles directory) throws a TypeError during the markdown transform instead of being treated as unpublished, crashing the site build.",
+  "knownIssues": []
+}

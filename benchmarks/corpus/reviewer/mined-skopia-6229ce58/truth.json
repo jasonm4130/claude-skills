@@ -1,0 +1,8 @@
+{
+  "class": "off-by-one",
+  "file": "src/dashboard/index.ts",
+  "span": [214, 214],
+  "severity": "Important",
+  "mechanism": "The \"7d\" preset's from-date is computed as daysAgo(7) instead of daysAgo(6); with the inclusive [from, to] SQL window and `to` always being today, \"Last 7 days\" actually spans 8 calendar days instead of the 7 its label promises, over-counting one extra day of data in every 7-day dashboard view.",
+  "knownIssues": []
+}

@@ -1,0 +1,8 @@
+{
+  "id": "mined-skopia-6229ce58",
+  "tranche": "mined",
+  "repo": "~/Work/Git/skopia-app",
+  "remote": "https://github.com/jasonm4130/skopia.git",
+  "baseSha": "2fa2c68753b950aa4e529b20da497380d0fabe6a",
+  "language": "ts"
+}

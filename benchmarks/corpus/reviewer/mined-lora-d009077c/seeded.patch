@@ -1,0 +1,85 @@
+diff --git a/src/formrecap_lora/data/dedupe.py b/src/formrecap_lora/data/dedupe.py
+new file mode 100644
+index 0000000..5d406f0
+--- /dev/null
++++ b/src/formrecap_lora/data/dedupe.py
+@@ -0,0 +1,29 @@
++"""Deduplication: exact match on event strings + cosine similarity utility."""
++
++import math
++
++
++def dedupe_exact(records: list[dict]) -> list[dict]:
++    """Remove records with identical `events` strings. Keeps first occurrence."""
++    seen: set[str] = set()
++    out: list[dict] = []
++    for r in records:
++        key = r["events"]
++        if key not in seen:
++            seen.add(key)
++            out.append(r)
++    return out
++
++
++def _cosine(a: list[float], b: list[float]) -> float:
++    dot = sum(x * y for x, y in zip(a, b))
++    na = math.sqrt(sum(x * x for x in a))
++    nb = math.sqrt(sum(y * y for y in b))
++    if na == 0 or nb == 0:
++        return 0.0
++    return dot / (na * nb)
++
++
++def is_near_duplicate(e1: list[float], e2: list[float], threshold: float = 0.95) -> bool:
++    """Check if two embedding vectors are near-duplicates by cosine similarity."""
++    return _cosine(e1, e2) <= threshold
+diff --git a/tests/test_dedupe.py b/tests/test_dedupe.py
+new file mode 100644
+index 0000000..39b3700
+--- /dev/null
++++ b/tests/test_dedupe.py
+@@ -0,0 +1,44 @@
++import pytest
++from formrecap_lora.data.dedupe import dedupe_exact, is_near_duplicate
++
++
++def test_dedupe_exact_removes_matching_events():
++    records = [
++        {"events": "focus:email, input:email(x3), exit", "code": 1, "reason": "a", "confidence": 0.5},
++        {"events": "focus:email, input:email(x3), exit", "code": 1, "reason": "b", "confidence": 0.7},
++        {"events": "focus:name, exit", "code": 2, "reason": "c", "confidence": 0.6},
++    ]
++    result = dedupe_exact(records)
++    assert len(result) == 2
++    assert result[0]["events"] == "focus:email, input:email(x3), exit"
++    assert result[1]["events"] == "focus:name, exit"
++
++
++def test_dedupe_exact_empty_list():
++    assert dedupe_exact([]) == []
++
++
++def test_dedupe_exact_all_unique_passes_through():
++    records = [
++        {"events": "a", "code": 1, "reason": "r", "confidence": 0.5},
++        {"events": "b", "code": 2, "reason": "r", "confidence": 0.5},
++    ]
++    assert len(dedupe_exact(records)) == 2
++
++
++def test_is_near_duplicate_identical_embeddings():
++    e1 = [1.0, 0.0, 0.0]
++    e2 = [1.0, 0.0, 0.0]
++    assert is_near_duplicate(e1, e2, threshold=0.95) is True
++
++
++def test_is_near_duplicate_orthogonal():
++    e1 = [1.0, 0.0, 0.0]
++    e2 = [0.0, 1.0, 0.0]
++    assert is_near_duplicate(e1, e2, threshold=0.95) is False
++
++
++def test_is_near_duplicate_just_below_threshold():
++    e1 = [1.0, 0.0]
++    e2 = [0.94, 0.34]  # cos sim ~0.94
++    assert is_near_duplicate(e1, e2, threshold=0.95) is False

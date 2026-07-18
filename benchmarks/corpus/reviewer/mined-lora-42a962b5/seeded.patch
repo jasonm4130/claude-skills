@@ -1,0 +1,112 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index 636cbb1..6cc297e 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -12,6 +12,7 @@ dependencies = [
+ 
+     "scikit-learn>=1.5",
+     "numpy>=2.0",
++    "scipy>=1.13",
+     "pandas>=2.2",
+     "matplotlib>=3.9",
+     "pydantic>=2.8",
+diff --git a/src/formrecap_lora/eval/calibration.py b/src/formrecap_lora/eval/calibration.py
+new file mode 100644
+index 0000000..2c5e7e2
+--- /dev/null
++++ b/src/formrecap_lora/eval/calibration.py
+@@ -0,0 +1,42 @@
++"""Post-hoc temperature scaling calibration."""
++
++import numpy as np
++from scipy.optimize import minimize_scalar
++
++
++def apply_temperature(logits: np.ndarray, T: float) -> np.ndarray:
++    """Apply temperature scaling: softmax(logits / T). logits shape (N, C)."""
++    scaled = logits / T
++    scaled = scaled - scaled.max(axis=1, keepdims=True)  # numeric stability
++    exp = np.exp(scaled)
++    return exp / exp.sum(axis=1, keepdims=True)
++
++
++def _nll(T: float, logits: np.ndarray, labels: np.ndarray) -> float:
++    probs = apply_temperature(logits, T)
++    eps = 1e-12
++    return float(-np.mean(np.log(probs[np.arange(len(labels)), labels] + eps)))
++
++
++def fit_temperature(logits: np.ndarray, labels: np.ndarray) -> float:
++    """Fit temperature scalar by minimising NLL on held-out set. logits shape (N, C), labels (N,)."""
++    res = minimize_scalar(
++        _nll,
++        bounds=(0.5, 2.0),
++        method="bounded",
++        args=(logits, labels),
++        options={"xatol": 1e-3},
++    )
++    return float(res.x)
++
++
++def calibrate_and_persist(logits: np.ndarray, labels: np.ndarray, out_path: str) -> dict:
++    """Fit + write to JSON file."""
++    import json
++    from pathlib import Path
++
++    T = fit_temperature(logits, labels)
++    result = {"temperature": T, "fit_size": int(len(labels))}
++    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
++    Path(out_path).write_text(json.dumps(result, indent=2))
++    return result
+diff --git a/tests/test_calibration.py b/tests/test_calibration.py
+new file mode 100644
+index 0000000..621e914
+--- /dev/null
++++ b/tests/test_calibration.py
+@@ -0,0 +1,46 @@
++import pytest
++import numpy as np
++
++from formrecap_lora.eval.calibration import fit_temperature, apply_temperature
++
++
++def test_apply_temperature_identity():
++    logits = np.array([[1.0, 2.0, 3.0]])
++    probs = apply_temperature(logits, T=1.0)
++    expected = np.exp([1, 2, 3])
++    expected = expected / expected.sum()
++    assert np.allclose(probs[0], expected)
++
++
++def test_apply_temperature_softens():
++    logits = np.array([[10.0, 1.0]])
++    probs_low_t = apply_temperature(logits, T=1.0)
++    probs_high_t = apply_temperature(logits, T=10.0)
++    assert probs_high_t[0, 0] < probs_low_t[0, 0]
++
++
++def test_fit_temperature_on_perfectly_calibrated_returns_near_1():
++    np.random.seed(0)
++    n_classes = 3
++    n = 500
++    true_labels = np.random.randint(0, n_classes, size=n)
++    logits = np.zeros((n, n_classes))
++    for i, y in enumerate(true_labels):
++        logits[i, y] = 2.0
++    T = fit_temperature(logits, true_labels)
++    assert 0.5 < T < 3.0
++
++
++def test_fit_temperature_on_overconfident_returns_greater_than_1():
++    np.random.seed(0)
++    n_classes = 3
++    n = 200
++    true_labels = np.random.randint(0, n_classes, size=n)
++    pred_labels = true_labels.copy()
++    flip_mask = np.random.rand(n) < 0.5
++    pred_labels[flip_mask] = (pred_labels[flip_mask] + 1) % n_classes
++    logits = np.zeros((n, n_classes))
++    for i, p in enumerate(pred_labels):
++        logits[i, p] = 10.0
++    T = fit_temperature(logits, true_labels)
++    assert T > 1.5

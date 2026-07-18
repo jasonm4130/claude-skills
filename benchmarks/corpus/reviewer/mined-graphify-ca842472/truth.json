@@ -1,0 +1,8 @@
+{
+  "class": "wrong-constant",
+  "file": "graphify/extract.py",
+  "span": [1708, 1708],
+  "severity": "Important",
+  "mechanism": "In extract_rust's AST-resolved calls edge, confidence was correctly updated to \"EXTRACTED\" but weight was left at 0.8 (the INFERRED-tier value) instead of 1.0, so Rust call edges carry an internally inconsistent confidence/weight pair and are under-weighted relative to every other language's deterministically-extracted call edges.",
+  "knownIssues": []
+}

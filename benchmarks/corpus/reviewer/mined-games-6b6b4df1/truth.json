@@ -1,0 +1,8 @@
+{
+  "class": "missing-await",
+  "file": "scripts/ingest.ts",
+  "span": [249, 249],
+  "severity": "Critical",
+  "mechanism": "The final flush() call after the loop is not awaited, so embedAll's `return vectors;` executes before the trailing partial batch's embedBatch request resolves and pushes its vectors, silently dropping the embeddings for the last (often only) batch and desyncing the returned vector array from the chunk list callers zip it against.",
+  "knownIssues": []
+}

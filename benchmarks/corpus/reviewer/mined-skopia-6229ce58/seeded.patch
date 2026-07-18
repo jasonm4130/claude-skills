@@ -1,0 +1,70 @@
+diff --git a/src/dashboard/index.ts b/src/dashboard/index.ts
+index 2fcfdc9..26bd828 100644
+--- a/src/dashboard/index.ts
++++ b/src/dashboard/index.ts
+@@ -205,11 +205,15 @@ function daysAgo(n: number): string {
+   return d.toISOString().slice(0, 10);
+ }
+ 
+-function parseRange(param: string | null | undefined): DateRange & { label: string; key: string } {
++export function parseRange(
++  param: string | null | undefined,
++): DateRange & { label: string; key: string } {
++  // `to` is today and the SQL window is inclusive on both ends, so "Last N days"
++  // = today and the N-1 days before it. daysAgo(N) would span N+1 days.
+   const ranges: Record<string, { from: () => string; label: string }> = {
+     "7d": { from: () => daysAgo(7), label: "Last 7 days" },
+-    "30d": { from: () => daysAgo(30), label: "Last 30 days" },
+-    "90d": { from: () => daysAgo(90), label: "Last 90 days" },
++    "30d": { from: () => daysAgo(29), label: "Last 30 days" },
++    "90d": { from: () => daysAgo(89), label: "Last 90 days" },
+   };
+   const key = param && ranges[param] ? param : "30d";
+   const selected = ranges[key] ?? ranges["30d"]!;
+diff --git a/test/range.test.ts b/test/range.test.ts
+new file mode 100644
+index 0000000..dd2a8c2
+--- /dev/null
++++ b/test/range.test.ts
+@@ -0,0 +1,41 @@
++/**
++ * Tests for parseRange (src/dashboard/index.ts).
++ *
++ * The picker labels promise an exact window — "Last 7 days" must cover 7
++ * calendar days, not 8. The SQL filter is inclusive on both ends
++ * (day >= from AND day <= to), so `from` must be today-(n-1), not today-n.
++ */
++
++import { describe, expect, it } from "vitest";
++import { parseRange } from "../src/dashboard/index";
++
++/** Inclusive day count between the from/to YYYY-MM-DD bounds. */
++function spanDays(r: { from: string; to: string }): number {
++  const ms = Date.parse(`${r.to}T00:00:00Z`) - Date.parse(`${r.from}T00:00:00Z`);
++  return ms / 86_400_000 + 1;
++}
++
++describe("parseRange", () => {
++  it("'7d' spans exactly 7 calendar days", () => {
++    expect(spanDays(parseRange("7d"))).toBe(7);
++  });
++
++  it("'30d' spans exactly 30 calendar days", () => {
++    expect(spanDays(parseRange("30d"))).toBe(30);
++  });
++
++  it("'90d' spans exactly 90 calendar days", () => {
++    expect(spanDays(parseRange("90d"))).toBe(90);
++  });
++
++  it("defaults to 30d for unknown/empty input", () => {
++    expect(parseRange(undefined).key).toBe("30d");
++    expect(parseRange("nonsense").key).toBe("30d");
++    expect(spanDays(parseRange(null))).toBe(30);
++  });
++
++  it("'to' is today (UTC)", () => {
++    const today = new Date().toISOString().slice(0, 10);
++    expect(parseRange("7d").to).toBe(today);
++  });
++});

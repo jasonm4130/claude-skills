@@ -1,0 +1,8 @@
+{
+  "class": "wrong-constant",
+  "file": "src/formrecap_lora/eval/calibration.py",
+  "span": [25, 25],
+  "severity": "Important",
+  "mechanism": "The upper bound of the temperature search range in fit_temperature was narrowed from 20.0 to 2.0, so the optimizer silently clips at T=2.0 for any model whose overconfidence actually requires a higher temperature, producing under-corrected (still overconfident) probabilities with no error or warning.",
+  "knownIssues": []
+}

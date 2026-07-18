@@ -1,0 +1,8 @@
+{
+  "class": "unsafe-input",
+  "file": "scripts/lib/clean.py",
+  "span": [35, 39],
+  "severity": "Important",
+  "mechanism": "The HTML-comment strip now runs before html.unescape instead of after, so any HTML-entity-encoded comment markers (e.g. \"&lt;!--\" ... \"--&gt;\") are not literal <!-- --> yet when the strip regex runs and pass through unstripped; the subsequent unescape() then turns them into literal HTML comment text that survives into group_broken_paragraphs, which is exactly the shredding-into-noise failure this pipeline step was added to prevent.",
+  "knownIssues": []
+}

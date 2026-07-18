@@ -1,0 +1,8 @@
+{
+  "class": "unsafe-input",
+  "file": "graphify/ingest.py",
+  "span": [87, 87],
+  "severity": "Important",
+  "mechanism": "The tweet author name from Twitter's oEmbed response is quoted but interpolated into the YAML frontmatter without the _yaml_str() escaping applied to every other field, so an author display name containing a double quote or backslash breaks out of the quoted scalar and lets an attacker inject arbitrary YAML frontmatter keys into the saved Markdown file.",
+  "knownIssues": []
+}

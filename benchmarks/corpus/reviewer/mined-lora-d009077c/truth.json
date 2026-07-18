@@ -1,0 +1,8 @@
+{
+  "class": "logic-inversion",
+  "file": "src/formrecap_lora/data/dedupe.py",
+  "span": [29, 29],
+  "severity": "Critical",
+  "mechanism": "is_near_duplicate compares cosine similarity with <= threshold instead of >=, so it reports near-identical embeddings as not-duplicates and reports dissimilar/orthogonal embeddings as duplicates, inverting the dedup decision and letting true near-duplicates through while dropping distinct records.",
+  "knownIssues": []
+}

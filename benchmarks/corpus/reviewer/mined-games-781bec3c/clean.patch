@@ -1,0 +1,80 @@
+diff --git a/scripts/convert-pdfs.py b/scripts/convert-pdfs.py
+index cc40d38..1307df4 100644
+--- a/scripts/convert-pdfs.py
++++ b/scripts/convert-pdfs.py
+@@ -25,10 +25,20 @@ R2_BUCKET = "ggg-rulebooks"
+ 
+ 
+ def convert_docling(pdf: Path) -> str:
+-    from docling.document_converter import DocumentConverter
+-
+-    result = DocumentConverter().convert(str(pdf))
+-    return result.document.export_to_markdown()
++    from docling.datamodel.base_models import InputFormat
++    from docling.datamodel.pipeline_options import PdfPipelineOptions
++    from docling.document_converter import DocumentConverter, PdfFormatOption
++
++    # Our rulebooks are born-digital PDFs with a real text layer (the problem we heal is mangled
++    # extraction, NOT a missing layer). Docling defaults do_ocr=True, which runs RapidOCR on every
++    # page, returns empty results, and adds minutes per file for zero gain. Disable it; keep table
++    # structure on (rulebooks have tables). Escalate to --engine marker for any truly scanned file.
++    opts = PdfPipelineOptions()
++    opts.do_ocr = False
++    converter = DocumentConverter(
++        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)}
++    )
++    return converter.convert(str(pdf)).document.export_to_markdown()
+ 
+ 
+ def convert_marker(pdf: Path) -> str:
+diff --git a/scripts/lib/clean.py b/scripts/lib/clean.py
+index 00800e2..5a2de5a 100644
+--- a/scripts/lib/clean.py
++++ b/scripts/lib/clean.py
+@@ -3,6 +3,7 @@
+ Order matters: NFKC first (folds compatibility chars/ligatures), then unstructured bricks,
+ then the spaced-letter collapse (which NFKC cannot do — letter-spacing is real U+0020 spaces).
+ """
++import html
+ import re
+ import unicodedata
+ 
+@@ -13,9 +14,13 @@ from unstructured.cleaners.core import (
+     replace_unicode_quotes,
+ )
+ 
+-# A run of single-spaced capitals like "K L A U S  T E U B E R" -> "KLAUS TEUBER".
+-# Match 3+ capitals each followed by a single space (or end), collapse the inner spaces.
+-_SPACED_CAPS = re.compile(r"\b(?:[A-Z] ){2,}[A-Z]\b")
++# A run of letter-spaced capitals -> joined token, e.g. "K  L  A  U  S T  E  U  B  E  R" ->
++# "KLAUSTEUBER". Docling encodes letter-spacing with VARIABLE gaps (often 2 spaces between
++# letters, 1 between words — the inverse of typographic intuition), so match 1+ spaces between
++# each capital. 3-cap minimum avoids touching "D 6" or single caps in prose. The joined token is
++# a title/credit proper noun (not rules body), so dropping the intra-run word break is harmless;
++# the heal pass restores spacing if it ever matters.
++_SPACED_CAPS = re.compile(r"\b(?:[A-Z] +){2,}[A-Z]\b")
+ 
+ 
+ def _collapse_spaced_caps(text: str) -> str:
+@@ -24,10 +29,20 @@ def _collapse_spaced_caps(text: str) -> str:
+ 
+ def clean_markdown(text: str) -> str:
+     text = unicodedata.normalize("NFKC", text)
++    # Docling's markdown export HTML-escapes literal & < > (e.g. "Cities &amp; Knights"); unescape
++    # so the embedded text is human-readable. Runs before quote normalization so any entity-encoded
++    # quotes (&quot;, &#8217;) resolve to real chars that replace_unicode_quotes then folds.
++    text = html.unescape(text)
++    # Docling emits a "<!-- image -->" placeholder per figure (138 in Catan T&B). Strip all HTML
++    # comments BEFORE group_broken_paragraphs, which otherwise shreds them across lines into "<!-",
++    # "-", "image -", ... noise. Rulebook markdown carries no meaningful HTML comments.
++    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+     text = replace_unicode_quotes(text)
+     text = clean_ligatures(text)          # covers ae/oe ligatures NFKC leaves alone
+     text = group_broken_paragraphs(text)
+     text = _collapse_spaced_caps(text)
+     # clean_extra_whitespace collapses runs of 2+ spaces but is applied per LINE so markdown
+     # structure (blank lines between blocks) survives.
+-    return "\n".join(clean_extra_whitespace(line) if line.strip() else "" for line in text.split("\n"))
++    text = "\n".join(clean_extra_whitespace(line) if line.strip() else "" for line in text.split("\n"))
++    # Collapse the runs of blank lines left by stripped image comments to a single blank line.
++    return re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"

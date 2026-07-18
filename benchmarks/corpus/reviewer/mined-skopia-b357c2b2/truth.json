@@ -1,0 +1,8 @@
+{
+  "class": "resource-leak",
+  "file": "src/dashboard/index.ts",
+  "span": [842, 843],
+  "severity": "Important",
+  "mechanism": "pingTimer is declared but never assigned the setInterval return value, so the periodic ping timer's handle is discarded; the ws.onclose handler's clearInterval(pingTimer) call runs but has nothing valid to clear, so the ping interval keeps firing every 15 seconds for the life of the page even across reconnects, stacking a new uncancellable interval on every reconnect.",
+  "knownIssues": []
+}

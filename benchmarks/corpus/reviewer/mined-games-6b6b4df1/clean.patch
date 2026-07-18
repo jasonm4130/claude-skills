@@ -1,0 +1,66 @@
+diff --git a/scripts/ingest.ts b/scripts/ingest.ts
+index 001450d..5286d8e 100644
+--- a/scripts/ingest.ts
++++ b/scripts/ingest.ts
+@@ -45,6 +45,10 @@ const VECTORIZE_INDEX = "ggg-rules-index";
+ const R2_BUCKET = "ggg-rulebooks";
+ const D1_DATABASE = "ggg-db";
+ const EMBED_BATCH = 100; // Workers AI bge-m3 caps simple-embedding input at 100 strings/call.
++// …and at 60000 summed tokens/call. This is a LOCAL-tokenizer budget: the Xenova/bge-m3
++// tokenizer we count with undercounts vs Workers AI's server-side count by ~2.5x (53 contextual
++// chunks measured ~33k local but 82680 server), so keep the local budget well below 60000/2.5.
++const EMBED_MAX_TOKENS = 15000;
+ const DELETE_BATCH = 1000; // ids per `wrangler vectorize delete-vectors --ids` call (argv-length safety).
+ const CONTEXTUAL_MODEL = "kimi-k2.7-code";
+ const CONTEXTUAL_MAX_TOKENS = 1024; // headroom: k2.7 thinks before emitting the 1-2 sentence blurb.
+@@ -211,11 +215,38 @@ async function embedBatch(
+   return json.result.data;
+ }
+ 
+-async function embedAll(texts: string[], accountId: string, aiToken: string): Promise<number[][]> {
++// bge-m3 caps a simple-embedding request at both 100 strings AND 60000 summed tokens. A
++// contextual blurb + heading prefix can push chunks near the 1024-token cap, so a fixed
++// 100-string batch can exceed the token ceiling (53 contextual chunks summed to ~82k). Pack
++// each call up to whichever limit hits first, counting tokens with the same bge-m3 tokenizer
++// used for chunking. A single chunk is always well under EMBED_MAX_TOKENS, so it never strands.
++async function embedAll(
++  texts: string[],
++  countTokens: (text: string) => number,
++  accountId: string,
++  aiToken: string,
++): Promise<number[][]> {
+   const vectors: number[][] = [];
+-  for (let i = 0; i < texts.length; i += EMBED_BATCH) {
+-    vectors.push(...(await embedBatch(texts.slice(i, i + EMBED_BATCH), accountId, aiToken)));
++  let batch: string[] = [];
++  let batchTokens = 0;
++  const flush = async (): Promise<void> => {
++    if (batch.length === 0) return;
++    vectors.push(...(await embedBatch(batch, accountId, aiToken)));
++    batch = [];
++    batchTokens = 0;
++  };
++  for (const text of texts) {
++    const tokens = countTokens(text);
++    if (
++      batch.length >= EMBED_BATCH ||
++      (batch.length > 0 && batchTokens + tokens > EMBED_MAX_TOKENS)
++    ) {
++      await flush();
++    }
++    batch.push(text);
++    batchTokens += tokens;
+   }
++  await flush();
+   return vectors;
+ }
+ 
+@@ -360,7 +391,7 @@ async function main(): Promise<void> {
+       contextual && blurbs[i] ? `${blurbs[i]}\n${chunk.embedText}` : chunk.embedText,
+     );
+     console.log(`→ embedding ${embedTexts.length} chunks (bge-m3)`);
+-    const vectors = await embedAll(embedTexts, accountId, aiToken);
++    const vectors = await embedAll(embedTexts, countTokens, accountId, aiToken);
+ 
+     const chunkIds = chunks.map(() => randomUUID());
+ 

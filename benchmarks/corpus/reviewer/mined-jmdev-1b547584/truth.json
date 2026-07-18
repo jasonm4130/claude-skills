@@ -1,0 +1,8 @@
+{
+  "class": "resource-leak",
+  "file": "apps/web/src/components/Nav.astro",
+  "span": [68, 72],
+  "severity": "Important",
+  "mechanism": "closeMenu no longer removes the click listener that openMenu registers via document.addEventListener('click', onClickOutside), so a new document-level click listener accumulates on every open/close cycle of the mobile menu, each stale one still firing and comparing against the (possibly stale) menu/toggle elements.",
+  "knownIssues": []
+}

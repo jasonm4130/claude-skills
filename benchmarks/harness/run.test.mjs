@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, cpSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -64,8 +64,18 @@ test("loadBaseline selects by populationId; reports whether entries exist", asyn
   rmSync(dir, { recursive: true, force: true });
 });
 
+// Single-item fixture corpus for the stub-adapter tests: the real corpus
+// grows over time (the stub only knows synthetic-0001's planted bug), and its
+// mined items need local source repos a CI checkout doesn't have.
+function fixtureCorpus() {
+  const dir = mkdtempSync(join(tmpdir(), "bench-fixture-corpus-"));
+  cpSync(join(DEFAULT_CORPUS, "synthetic-0001"), join(dir, "synthetic-0001"), { recursive: true });
+  return dir;
+}
+
 test("hermetic smoke: stub adapter end-to-end, then full cache hit", async () => {
   const resultsDir = mkdtempSync(join(tmpdir(), "bench-run-"));
+  const corpusDir = fixtureCorpus();
   const stub = {
     ADAPTER_ID: "stub",
     version: () => "stub-v1",
@@ -82,7 +92,7 @@ test("hermetic smoke: stub adapter end-to-end, then full cache hit", async () =>
     judgeRunClaude: async () => ({ ok: true, structured: { match: true, reason: "stub" } }),
   };
   const config = parseRunArgs(["--adapters", "stub", "--trials", "1", "--results", resultsDir]);
-  config.corpusDirs = [DEFAULT_CORPUS];
+  config.corpusDirs = [corpusDir];
   const r1 = await runHarness(config, deps);
   assert.equal(r1.exitCode, 0);
   assert.equal(r1.scorecard.adapters.stub.catchRate, 1);
@@ -96,6 +106,7 @@ test("hermetic smoke: stub adapter end-to-end, then full cache hit", async () =>
   const lines2 = readFileSync(join(r2.resultsDir, "records.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
   assert.ok(lines2.every((rec) => rec.cacheHit === true));
   rmSync(resultsDir, { recursive: true, force: true });
+  rmSync(corpusDir, { recursive: true, force: true });
 });
 
 test("non-positive trial counts are rejected — zero cells must not score as a green run", () => {
@@ -124,13 +135,15 @@ test("a sampled run is stamped INFORMATIONAL even with no baselines", async () =
     version: () => "stub-v1",
     review: async () => ({ status: "ok", verdict: "pass", findings: [], tokens: { input: 0, output: 0 }, wallMs: 1, raw: {} }),
   };
+  const corpusDir = fixtureCorpus();
   const config = parseRunArgs(["--adapters", "stub", "--trials", "1", "--sample", "1", "--results", resultsDir,
     "--baselines", join(resultsDir, "missing.json")]);
-  config.corpusDirs = [DEFAULT_CORPUS];
+  config.corpusDirs = [corpusDir];
   const r = await runHarness(config, { adapters: { stub }, judgeRunClaude: async () => ({ ok: true, structured: { match: false, reason: "stub" } }) });
   assert.equal(r.scorecard.status, "INFORMATIONAL");
   assert.equal(r.exitCode, 0);
   rmSync(resultsDir, { recursive: true, force: true });
+  rmSync(corpusDir, { recursive: true, force: true });
 });
 
 test("malformed baselines file is a hard abort, not silent no-baselines", async () => {
@@ -143,21 +156,25 @@ test("malformed baselines file is a hard abort, not silent no-baselines", async 
   // …and runHarness aborts before spending any adapter call.
   writeFileSync(bad, "{not json");
   const stub = { ADAPTER_ID: "stub", version: () => "v", review: async () => { throw new Error("unreached"); } };
+  const corpusDir = fixtureCorpus();
   const config = parseRunArgs(["--adapters", "stub", "--trials", "1", "--results", dir, "--baselines", bad]);
-  config.corpusDirs = [DEFAULT_CORPUS];
+  config.corpusDirs = [corpusDir];
   const r = await runHarness(config, { adapters: { stub } });
   assert.equal(r.exitCode, 2);
   assert.equal(r.scorecard, null);
   rmSync(dir, { recursive: true, force: true });
+  rmSync(corpusDir, { recursive: true, force: true });
 });
 
 test("duplicate item ids across corpus dirs abort the run", async () => {
   const resultsDir = mkdtempSync(join(tmpdir(), "bench-dupe-"));
   const stub = { ADAPTER_ID: "stub", version: () => "v", review: async () => { throw new Error("unreached"); } };
+  const corpusDir = fixtureCorpus();
   const config = parseRunArgs(["--adapters", "stub", "--trials", "1", "--results", resultsDir]);
-  config.corpusDirs = [DEFAULT_CORPUS, DEFAULT_CORPUS]; // same dir twice = guaranteed collision
+  config.corpusDirs = [corpusDir, corpusDir]; // same dir twice = guaranteed collision
   const r = await runHarness(config, { adapters: { stub } });
   assert.equal(r.exitCode, 2);
   assert.equal(r.scorecard, null);
   rmSync(resultsDir, { recursive: true, force: true });
+  rmSync(corpusDir, { recursive: true, force: true });
 });

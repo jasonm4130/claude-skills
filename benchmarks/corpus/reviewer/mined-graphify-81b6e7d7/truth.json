@@ -1,0 +1,8 @@
+{
+  "class": "null-path",
+  "file": "graphify/security.py",
+  "span": [201, 201],
+  "severity": "Critical",
+  "mechanism": "sanitize_label's None-guard uses a bare `return` instead of `return \"\"`, so it implicitly returns None (violating the declared `-> str` contract) instead of an empty string; callers that wrap the result in html.escape() (e.g. export.py's community-legend label rendering) crash with AttributeError when a node/community label is explicitly None.",
+  "knownIssues": []
+}

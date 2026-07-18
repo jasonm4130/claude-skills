@@ -1,0 +1,31 @@
+diff --git a/apps/web/src/components/Nav.astro b/apps/web/src/components/Nav.astro
+index b12a0e7..ce3be2e 100644
+--- a/apps/web/src/components/Nav.astro
++++ b/apps/web/src/components/Nav.astro
+@@ -60,15 +60,26 @@ import Signature from '@icons/Signature.astro';
+       menuEl.classList.add('is-open');
+       toggleEl.setAttribute('aria-expanded', 'true');
+       document.addEventListener('keydown', onKeyDown);
++      document.addEventListener('click', onClickOutside);
++      const firstFocusable = menuEl.querySelector<HTMLElement>('a, button');
++      firstFocusable?.focus();
+     }
+ 
+     function closeMenu() {
+       menuEl.classList.remove('is-open');
+       toggleEl.setAttribute('aria-expanded', 'false');
+       document.removeEventListener('keydown', onKeyDown);
++      document.removeEventListener('click', onClickOutside);
+       toggleEl.focus();
+     }
+ 
++    function onClickOutside(e: MouseEvent) {
++      const target = e.target as Node;
++      if (!menuEl.contains(target) && !toggleEl.contains(target)) {
++        closeMenu();
++      }
++    }
++
+     function onKeyDown(e: KeyboardEvent) {
+       if (e.key === 'Escape') {
+         closeMenu();

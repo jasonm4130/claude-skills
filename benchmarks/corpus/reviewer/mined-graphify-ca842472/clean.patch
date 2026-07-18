@@ -1,0 +1,162 @@
+diff --git a/graphify/extract.py b/graphify/extract.py
+index 0ea50ef..0fdd4fd 100644
+--- a/graphify/extract.py
++++ b/graphify/extract.py
+@@ -956,10 +956,10 @@ def _extract_generic(path: Path, config: LanguageConfig) -> dict:
+                             "source": caller_nid,
+                             "target": tgt_nid,
+                             "relation": "calls",
+-                            "confidence": "INFERRED",
++                            "confidence": "EXTRACTED",
+                             "source_file": str_path,
+                             "source_location": f"L{line}",
+-                            "weight": 0.8,
++                            "weight": 1.0,
+                         })
+ 
+         for child in node.children:
+@@ -1533,10 +1533,10 @@ def extract_go(path: Path) -> dict:
+                             "source": caller_nid,
+                             "target": tgt_nid,
+                             "relation": "calls",
+-                            "confidence": "INFERRED",
++                            "confidence": "EXTRACTED",
+                             "source_file": str_path,
+                             "source_location": f"L{line}",
+-                            "weight": 0.8,
++                            "weight": 1.0,
+                         })
+         for child in node.children:
+             walk_calls(child, caller_nid)
+@@ -1702,10 +1702,10 @@ def extract_rust(path: Path) -> dict:
+                             "source": caller_nid,
+                             "target": tgt_nid,
+                             "relation": "calls",
+-                            "confidence": "INFERRED",
++                            "confidence": "EXTRACTED",
+                             "source_file": str_path,
+                             "source_location": f"L{line}",
+-                            "weight": 0.8,
++                            "weight": 1.0,
+                         })
+         for child in node.children:
+             walk_calls(child, caller_nid)
+@@ -1866,7 +1866,7 @@ def extract_zig(path: Path) -> dict:
+                         seen_call_pairs.add(pair)
+                         add_edge(caller_nid, tgt_nid, "calls",
+                                  node.start_point[0] + 1,
+-                                 confidence="INFERRED", weight=0.8)
++                                 confidence="EXTRACTED", weight=1.0)
+         for child in node.children:
+             walk_calls(child, caller_nid)
+ 
+@@ -2022,7 +2022,7 @@ def extract_powershell(path: Path) -> dict:
+                             seen_call_pairs.add(pair)
+                             add_edge(caller_nid, tgt_nid, "calls",
+                                      node.start_point[0] + 1,
+-                                     confidence="INFERRED", weight=0.8)
++                                     confidence="EXTRACTED", weight=1.0)
+         for child in node.children:
+             walk_calls(child, caller_nid)
+ 
+@@ -2359,7 +2359,7 @@ def extract_objc(path: Path) -> dict:
+                                 if pair not in seen_calls and caller_nid != candidate:
+                                     seen_calls.add(pair)
+                                     add_edge(caller_nid, candidate, "calls", body_node.start_point[0] + 1,
+-                                             confidence="INFERRED", weight=0.8)
++                                             confidence="EXTRACTED", weight=1.0)
+             for child in n.children:
+                 walk_calls(child)
+         walk_calls(body_node)
+@@ -2532,7 +2532,7 @@ def extract_elixir(path: Path) -> dict:
+                 if pair not in seen_call_pairs:
+                     seen_call_pairs.add(pair)
+                     add_edge(caller_nid, tgt_nid, "calls",
+-                             node.start_point[0] + 1, confidence="INFERRED", weight=0.8)
++                             node.start_point[0] + 1, confidence="EXTRACTED", weight=1.0)
+         for child in node.children:
+             walk_calls(child, caller_nid)
+ 
+diff --git a/tests/test_extract.py b/tests/test_extract.py
+index a852db9..3d5b9f5 100644
+--- a/tests/test_extract.py
++++ b/tests/test_extract.py
+@@ -115,12 +115,13 @@ def test_calls_edges_emitted():
+     assert len(calls) > 0, "Expected at least one calls edge"
+ 
+ 
+-def test_calls_edges_are_inferred():
++def test_calls_edges_are_extracted():
++    """AST-resolved call edges are deterministic and should be EXTRACTED/1.0."""
+     result = extract_python(FIXTURES / "sample_calls.py")
+     for edge in result["edges"]:
+         if edge["relation"] == "calls":
+-            assert edge["confidence"] == "INFERRED"
+-            assert edge["weight"] == 0.8
++            assert edge["confidence"] == "EXTRACTED"
++            assert edge["weight"] == 1.0
+ 
+ 
+ def test_calls_no_self_loops():
+diff --git a/tests/test_languages.py b/tests/test_languages.py
+index 9784dfa..0cf93c0 100644
+--- a/tests/test_languages.py
++++ b/tests/test_languages.py
+@@ -76,11 +76,11 @@ def test_c_emits_calls():
+     r = extract_c(FIXTURES / "sample.c")
+     assert any(e["relation"] == "calls" for e in r["edges"])
+ 
+-def test_c_calls_are_inferred():
++def test_c_calls_are_extracted():
+     r = extract_c(FIXTURES / "sample.c")
+     for e in r["edges"]:
+         if e["relation"] == "calls":
+-            assert e["confidence"] == "INFERRED"
++            assert e["confidence"] == "EXTRACTED"
+ 
+ 
+ # ── C++ ───────────────────────────────────────────────────────────────────────
+diff --git a/tests/test_multilang.py b/tests/test_multilang.py
+index e56fa0a..0a67f50 100644
+--- a/tests/test_multilang.py
++++ b/tests/test_multilang.py
+@@ -47,11 +47,11 @@ def test_ts_emits_calls():
+     # .post() calls .get()
+     assert any("post" in src and "get" in tgt for src, tgt in calls)
+ 
+-def test_ts_calls_are_inferred():
++def test_ts_calls_are_extracted():
+     r = extract_js(FIXTURES / "sample.ts")
+     for e in r["edges"]:
+         if e["relation"] == "calls":
+-            assert e["confidence"] == "INFERRED"
++            assert e["confidence"] == "EXTRACTED"
+ 
+ def test_ts_no_dangling_edges():
+     r = extract_js(FIXTURES / "sample.ts")
+@@ -83,9 +83,9 @@ def test_go_emits_calls():
+     # main() calls NewServer and Start
+     assert len(_call_pairs(r)) > 0
+ 
+-def test_go_has_inferred_calls():
++def test_go_has_extracted_calls():
+     r = extract_go(FIXTURES / "sample.go")
+-    assert "INFERRED" in _confidences(r)
++    assert "EXTRACTED" in _confidences(r)
+ 
+ def test_go_no_dangling_edges():
+     r = extract_go(FIXTURES / "sample.go")
+@@ -117,11 +117,11 @@ def test_rust_emits_calls():
+     calls = _call_pairs(r)
+     assert any("build_graph" in src for src, _ in calls)
+ 
+-def test_rust_calls_are_inferred():
++def test_rust_calls_are_extracted():
+     r = extract_rust(FIXTURES / "sample.rs")
+     for e in r["edges"]:
+         if e["relation"] == "calls":
+-            assert e["confidence"] == "INFERRED"
++            assert e["confidence"] == "EXTRACTED"
+ 
+ def test_rust_no_dangling_edges():
+     r = extract_rust(FIXTURES / "sample.rs")

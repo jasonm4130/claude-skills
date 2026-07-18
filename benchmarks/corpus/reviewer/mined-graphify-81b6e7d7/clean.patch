@@ -1,0 +1,57 @@
+diff --git a/graphify/cache.py b/graphify/cache.py
+index e122fb4..992e3d1 100644
+--- a/graphify/cache.py
++++ b/graphify/cache.py
+@@ -28,6 +28,8 @@ def file_hash(path: Path, root: Path = Path(".")) -> str:
+     so metadata-only changes (e.g. reviewed, status, tags) do not invalidate the cache.
+     """
+     p = Path(path)
++    if not p.is_file():
++        raise IsADirectoryError(f"file_hash requires a file, got: {p}")
+     raw = p.read_bytes()
+     content = _body_content(raw) if p.suffix.lower() == ".md" else raw
+     h = hashlib.sha256()
+@@ -163,7 +165,7 @@ def save_semantic_cache(
+         p = Path(fpath)
+         if not p.is_absolute():
+             p = Path(root) / p
+-        if p.exists():
++        if p.is_file():
+             save_cached(p, result, root)
+             saved += 1
+     return saved
+diff --git a/graphify/export.py b/graphify/export.py
+index 033ec66..cd00f1b 100644
+--- a/graphify/export.py
++++ b/graphify/export.py
+@@ -380,7 +380,7 @@ def to_html(
+             "title": _html.escape(label),
+             "community": cid,
+             "community_name": sanitize_label((community_labels or {}).get(cid, f"Community {cid}")),
+-            "source_file": sanitize_label(data.get("source_file", "")),
++            "source_file": sanitize_label(str(data.get("source_file") or "")),
+             "file_type": data.get("file_type", ""),
+             "degree": deg,
+         })
+diff --git a/graphify/security.py b/graphify/security.py
+index 86446ef..0d90601 100644
+--- a/graphify/security.py
++++ b/graphify/security.py
+@@ -191,13 +191,15 @@ _CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
+ _MAX_LABEL_LEN = 256
+ 
+ 
+-def sanitize_label(text: str) -> str:
++def sanitize_label(text: str | None) -> str:
+     """Strip control characters and cap length.
+ 
+     Safe for embedding in JSON data (inside <script> tags) and plain text.
+     For direct HTML injection, wrap the result with html.escape().
+     """
+-    text = _CONTROL_CHAR_RE.sub("", text)
++    if text is None:
++        return ""
++    text = _CONTROL_CHAR_RE.sub("", str(text))
+     if len(text) > _MAX_LABEL_LEN:
+         text = text[:_MAX_LABEL_LEN]
+     return text
