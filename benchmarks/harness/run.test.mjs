@@ -111,6 +111,12 @@ test("duplicate --adapters/--arms selectors are rejected", () => {
   assert.deepEqual(parseRunArgs(["--adapters", "code-review,codex"]).adapters, ["code-review", "codex"]);
 });
 
+test("unknown --arms values are rejected — the scorecard only scores clean/seeded", () => {
+  assert.throws(() => parseRunArgs(["--arms", "unknown"]), /must be clean, seeded/);
+  assert.throws(() => parseRunArgs(["--arms", "clean,sneeded"]), /must be clean, seeded/);
+  assert.deepEqual(parseRunArgs(["--arms", "seeded"]).arms, ["seeded"]);
+});
+
 test("a sampled run is stamped INFORMATIONAL even with no baselines", async () => {
   const resultsDir = mkdtempSync(join(tmpdir(), "bench-sampled-"));
   const stub = {

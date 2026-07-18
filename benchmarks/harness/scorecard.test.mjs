@@ -50,6 +50,26 @@ test("sampled → INFORMATIONAL, never OK, even with no baselines at all", () =>
   assert.equal(sc.floors.evaluated, false);
 });
 
+test("single-arm run → INFORMATIONAL — a partial population must not read as fully measured", () => {
+  const cfg = { ...CONFIG, arms: ["clean"] };
+  const records = fullRun().filter((r) => r.arm === "clean");
+  const sc = computeScorecard({ records, truthsById: TRUTHS, manifestHash: "m1", config: cfg, baseline: null });
+  assert.equal(sc.status, "INFORMATIONAL");
+  assert.equal(sc.exitCode, 0);
+});
+
+test("not-scored stratum with no baseline → INFORMATIONAL, never a freezable OK", () => {
+  // item-a seeded loses 2 of 3 cells (error) — under the score threshold, so
+  // its stratum is not scored, while overall errors (2/12) stay under the
+  // error ceiling.
+  const records = fullRun().map((r) =>
+    r.item === "item-a" && r.arm === "seeded" && r.trial < 2 ? { ...r, status: "error", match: undefined } : r);
+  const sc = computeScorecard({ records, truthsById: TRUTHS, manifestHash: "m1", config: CONFIG, baseline: null });
+  assert.ok(sc.strata.some((s) => s.notScored));
+  assert.equal(sc.status, "INFORMATIONAL");
+  assert.equal(sc.exitCode, 0);
+});
+
 test("majority catch + flip rate: 2-of-3 catches counts, and flips", () => {
   const sc = computeScorecard({ records: fullRun({ aCatches: 2 }), truthsById: TRUTHS, manifestHash: "m1", config: CONFIG, baseline: null });
   assert.equal(sc.adapters.rev.catchRate, 1);

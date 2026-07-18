@@ -181,9 +181,10 @@ export function computeScorecard({
   if (errorCeilingBreached || baselineCoversNotScored) {
     status = "UNRELIABLE";
     exitCode = 2;
-  } else if (sampled) {
-    // A --sample run is a subset population — never OK, never floor-evaluated,
-    // regardless of whether any baseline exists to (fail to) bind.
+  } else if (sampled || !(config.arms.includes("clean") && config.arms.includes("seeded"))) {
+    // A --sample run or a single-arm run is a subset population — never OK,
+    // never floor-evaluated, regardless of whether any baseline exists to
+    // (fail to) bind.
     status = "INFORMATIONAL";
     exitCode = 0;
   } else if (baseline && !matchingBaseline) {
@@ -193,6 +194,12 @@ export function computeScorecard({
     status = "INFORMATIONAL";
     exitCode = 0;
   } else if (!matchingBaseline && baselinesExist) {
+    status = "INFORMATIONAL";
+    exitCode = 0;
+  } else if (strata.some((s) => s.notScored)) {
+    // No baseline binds, but a stratum fell below the coverage floor — the
+    // data is incomplete, so this run must not read as freezable. OK always
+    // means every stratum cleared coverage.
     status = "INFORMATIONAL";
     exitCode = 0;
   } else {

@@ -9,6 +9,7 @@
 // shared with the other reviewer adapters.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { FINDINGS_SCHEMA, normalizeSeverity, applyVerdictPolicy } from "../model.mjs";
@@ -33,14 +34,33 @@ export function buildPrompt({ brief, diffRange }) {
   ].join("\n");
 }
 
+let cachedCliVersion;
+export function claudeCliVersion() {
+  // The /code-review skill this adapter measures is BUILT INTO the Claude
+  // Code CLI — its content isn't a file we own, so the CLI version string is
+  // the honest proxy: a CLI upgrade must invalidate cached cells.
+  if (cachedCliVersion === undefined) {
+    try {
+      cachedCliVersion = execFileSync("claude", ["--version"], {
+        encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    } catch {
+      cachedCliVersion = "cli-unavailable"; // cells can't run either; value never caches real results
+    }
+  }
+  return cachedCliVersion;
+}
+
 export function version() {
   // Hash the COMPLETE behavior: this module (prompt template, tools,
-  // normalization) plus the shared model + CLI wrapper code it depends on —
-  // a change to any of them must invalidate cached cells.
+  // normalization), the shared model + CLI wrapper code it depends on, and
+  // the installed CLI (carrier of the built-in /code-review skill) — a
+  // change to any of them must invalidate cached cells.
   return createHash("sha256")
     .update(readFileSync(SELF))
     .update(readFileSync(join(HERE, "..", "model.mjs")))
     .update(readFileSync(join(HERE, "..", "claude-cli.mjs")))
+    .update(claudeCliVersion())
     .digest("hex").slice(0, 12);
 }
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ADAPTER_ID, buildPrompt, version, review } from "./code-review.mjs";
+import { ADAPTER_ID, buildPrompt, version, claudeCliVersion, review } from "./code-review.mjs";
 
 test("prompt carries range, brief, introduced-only scope, and clean-pass license", () => {
   const p = buildPrompt({ brief: "Add hours support.", diffRange: "abc..def" });
@@ -13,6 +13,10 @@ test("prompt carries range, brief, introduced-only scope, and clean-pass license
 test("version is stable and 12 hex chars", () => {
   assert.match(version(), /^[0-9a-f]{12}$/);
   assert.equal(version(), version());
+  // The built-in /code-review skill ships with the CLI, so the CLI version
+  // must feed the hash (fallback string when the CLI is absent keeps this
+  // hermetic — cells can't run in that environment anyway).
+  assert.ok(claudeCliVersion().length > 0);
 });
 
 test("review normalizes severities and applies the verdict policy", async () => {

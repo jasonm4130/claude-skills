@@ -118,6 +118,10 @@ export function parseRunArgs(argv) {
       throw new Error(`${flag} has duplicate entries: ${list.join(",")} — duplicate cells would corrupt majority scoring and double-spend`);
     }
   }
+  const badArms = config.arms.filter((a) => a !== "clean" && a !== "seeded");
+  if (badArms.length || config.arms.length === 0) {
+    throw new Error(`--arms must be clean, seeded, or both — got ${config.arms.join(",") || "(empty)"}; the scorecard only scores those two arms`);
+  }
   return config;
 }
 

@@ -33,7 +33,7 @@ The scorecard markdown also prints to stdout. Flags (`run.mjs`'s `parseRunArgs`)
 | flag | default | meaning |
 |---|---|---|
 | `--adapters a,b,c` | all registered | which adapters to run (duplicates rejected) |
-| `--arms a,b` | `clean,seeded` | which arms to run (duplicates rejected) |
+| `--arms a,b` | `clean,seeded` | `clean`/`seeded` only, no duplicates; a single-arm run is stamped `INFORMATIONAL` |
 | `--trials N` | `3` | trials per cell for Claude adapters (≥ 1 — zero is rejected, it would score as a green run) |
 | `--codex-trials N` | `1` | trials per cell for the codex adapter (quota-bounded; ≥ 1) |
 | `--seed N` | `42` | RNG seed for `--sample`'s selection |
@@ -92,7 +92,10 @@ quota is the scarcer resource. Every cell is cached by a content-derived key
 (item content + arm + adapter + adapter version + model/effort + trial
 index) under `--results/cache`, so **re-running an unchanged corpus against
 an unchanged adapter costs nothing** — only a changed prompt, a changed item,
-or `--no-cache` triggers a re-spend. `--sample N` runs a seeded random subset
+or `--no-cache` triggers a re-spend. The `code-review` adapter's version also
+folds in the installed Claude CLI version, since the built-in `/code-review`
+skill it measures ships with the CLI — a CLI upgrade invalidates its cells.
+`--sample N` runs a seeded random subset
 of items, useful for a cheap first pass or a Codex-bounded smoke run; a
 sampled run is stamped `INFORMATIONAL` and never evaluated against floors
 (see below), so it's safe to run often.
@@ -105,7 +108,11 @@ Because it's hand-edited, the runner validates it before spending anything: a
 baselines file that exists but doesn't parse (or lacks a `baselines` array)
 aborts the run rather than being silently treated as "no baselines", which
 would skip the health floors.
-After the first real full run you trust, open its
+Freeze only from an `OK` run: `OK` now guarantees every stratum cleared the
+coverage floor, while a run with any NOT-SCORED stratum (or a `--sample` /
+single-arm run) is stamped `INFORMATIONAL` — floors frozen from incomplete
+data would structurally exclude a bug class. After the first real full run
+you trust, open its
 `scorecard.json` and copy two things into a new entry: the top-level
 `populationId` (which pins the exact corpus manifest + arm/trial policy +
 adapter versions + matcher/judge config this baseline is valid for) and, per
