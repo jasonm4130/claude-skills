@@ -1,0 +1,8 @@
+{
+  "class": "wrong-constant",
+  "file": "src/parse-duration.mjs",
+  "span": [2, 2],
+  "severity": "Critical",
+  "mechanism": "The hours multiplier added to UNITS is 600000 (ten minutes in ms) instead of 3600000, so every hour-denominated duration parses to one-sixth of its correct value.",
+  "knownIssues": []
+}

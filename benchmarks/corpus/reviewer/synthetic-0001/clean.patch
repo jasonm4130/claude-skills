@@ -1,0 +1,16 @@
+diff --git a/src/parse-duration.mjs b/src/parse-duration.mjs
+index f94e904..71feaf2 100644
+--- a/src/parse-duration.mjs
++++ b/src/parse-duration.mjs
+@@ -1,8 +1,8 @@
+-// Parse duration strings like "90s", "5m" into milliseconds.
+-const UNITS = { ms: 1, s: 1000, m: 60_000 };
++// Parse duration strings like "90s", "5m", "2h" into milliseconds.
++const UNITS = { ms: 1, s: 1000, m: 60_000, h: 3_600_000 };
+ 
+ export function parseDuration(input) {
+-  const m = /^(\d+(?:\.\d+)?)(ms|s|m)$/.exec(String(input).trim());
++  const m = /^(\d+(?:\.\d+)?)(ms|s|m|h)$/.exec(String(input).trim());
+   if (!m) throw new Error(`unparseable duration: ${input}`);
+   return Number(m[1]) * UNITS[m[2]];
+ }
