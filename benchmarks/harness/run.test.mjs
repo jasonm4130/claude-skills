@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { parseRunArgs, sampleItems, hashItemContent, expandCells, runHarness } from "./run.mjs";
+import { parseRunArgs, sampleItems, hashItemContent, expandCells, runHarness, loadBaseline } from "./run.mjs";
 import { DEFAULT_CORPUS } from "./validate.mjs";
 
 test("parseRunArgs defaults and overrides", () => {
@@ -103,6 +103,40 @@ test("non-positive trial counts are rejected — zero cells must not score as a 
   assert.throws(() => parseRunArgs(["--codex-trials", "-1"]), /positive integer/);
   assert.throws(() => parseRunArgs(["--trials", "1.5"]), /positive integer/);
   assert.throws(() => parseRunArgs(["--sample", "0"]), /positive integer/);
+});
+
+test("a sampled run is stamped INFORMATIONAL even with no baselines", async () => {
+  const resultsDir = mkdtempSync(join(tmpdir(), "bench-sampled-"));
+  const stub = {
+    ADAPTER_ID: "stub",
+    version: () => "stub-v1",
+    review: async () => ({ status: "ok", verdict: "pass", findings: [], tokens: { input: 0, output: 0 }, wallMs: 1, raw: {} }),
+  };
+  const config = parseRunArgs(["--adapters", "stub", "--trials", "1", "--sample", "1", "--results", resultsDir,
+    "--baselines", join(resultsDir, "missing.json")]);
+  config.corpusDirs = [DEFAULT_CORPUS];
+  const r = await runHarness(config, { adapters: { stub }, judgeRunClaude: async () => ({ ok: true, structured: { match: false, reason: "stub" } }) });
+  assert.equal(r.scorecard.status, "INFORMATIONAL");
+  assert.equal(r.exitCode, 0);
+  rmSync(resultsDir, { recursive: true, force: true });
+});
+
+test("malformed baselines file is a hard abort, not silent no-baselines", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bench-badbase-"));
+  const bad = join(dir, "baselines.json");
+  writeFileSync(bad, "{not json");
+  assert.throws(() => loadBaseline(bad, "pid-x"), /unreadable/);
+  writeFileSync(bad, JSON.stringify({ baselines: {} }));
+  assert.throws(() => loadBaseline(bad, "pid-x"), /malformed/);
+  // …and runHarness aborts before spending any adapter call.
+  writeFileSync(bad, "{not json");
+  const stub = { ADAPTER_ID: "stub", version: () => "v", review: async () => { throw new Error("unreached"); } };
+  const config = parseRunArgs(["--adapters", "stub", "--trials", "1", "--results", dir, "--baselines", bad]);
+  config.corpusDirs = [DEFAULT_CORPUS];
+  const r = await runHarness(config, { adapters: { stub } });
+  assert.equal(r.exitCode, 2);
+  assert.equal(r.scorecard, null);
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("duplicate item ids across corpus dirs abort the run", async () => {

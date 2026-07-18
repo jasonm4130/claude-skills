@@ -101,6 +101,10 @@ sampled run is stamped `INFORMATIONAL` and never evaluated against floors
 
 `benchmarks/baselines.json` starts empty (`{"baselines": []}`) and is never
 written by the harness itself — it's a checked-in file you edit by hand.
+Because it's hand-edited, the runner validates it before spending anything: a
+baselines file that exists but doesn't parse (or lacks a `baselines` array)
+aborts the run rather than being silently treated as "no baselines", which
+would skip the health floors.
 After the first real full run you trust, open its
 `scorecard.json` and copy two things into a new entry: the top-level
 `populationId` (which pins the exact corpus manifest + arm/trial policy +

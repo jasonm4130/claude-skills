@@ -52,6 +52,7 @@ function groupByAdapterArmItem(records) {
 
 export function computeScorecard({
   records, truthsById, manifestHash, config, baseline = null, baselinesExist = false,
+  sampled = false,
 }) {
   const grouped = groupByAdapterArmItem(records);
   const adapterIds = Object.keys(config.adapters);
@@ -180,6 +181,11 @@ export function computeScorecard({
   if (errorCeilingBreached || baselineCoversNotScored) {
     status = "UNRELIABLE";
     exitCode = 2;
+  } else if (sampled) {
+    // A --sample run is a subset population — never OK, never floor-evaluated,
+    // regardless of whether any baseline exists to (fail to) bind.
+    status = "INFORMATIONAL";
+    exitCode = 0;
   } else if (baseline && !matchingBaseline) {
     // Either baseline.populationId differs from this run's population, or
     // baselinesExist is true and nothing matched — either way a recorded

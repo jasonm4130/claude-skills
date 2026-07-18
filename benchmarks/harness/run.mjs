@@ -117,12 +117,18 @@ export function parseRunArgs(argv) {
 }
 
 export function loadBaseline(path, pid) {
+  // Only a genuinely absent file means "no baselines". A file that exists but
+  // can't be parsed must be a hard error — mapping it to baselinesExist:false
+  // would silently skip health floors on the next run.
+  if (!existsSync(path)) return { baseline: null, baselinesExist: false };
   let data;
   try { data = JSON.parse(readFileSync(path, "utf8")); }
-  catch { return { baseline: null, baselinesExist: false }; }
-  const baselines = Array.isArray(data.baselines) ? data.baselines : [];
-  const baseline = baselines.find((b) => b.populationId === pid) ?? null;
-  return { baseline, baselinesExist: baselines.length > 0 };
+  catch (e) { throw new Error(`baselines file unreadable: ${path} — ${e.message}. Fix or remove it.`); }
+  if (!Array.isArray(data.baselines)) {
+    throw new Error(`baselines file malformed: ${path} — expected {"baselines": [...]}. Fix or remove it.`);
+  }
+  const baseline = data.baselines.find((b) => b.populationId === pid) ?? null;
+  return { baseline, baselinesExist: data.baselines.length > 0 };
 }
 
 function defaultCorpusDirs() {
@@ -182,6 +188,15 @@ export async function runHarness(config, deps = {}) {
     return { scorecard: null, resultsDir: null, exitCode: 2 };
   }
   if (config.sample) items = sampleItems(items, config.sample, config.seed);
+
+  // Validate the baselines file before spending any adapter/judge calls — a
+  // malformed file must abort here, not crash (or be ignored) after the run.
+  const baselinesPath = config.baselines ?? DEFAULT_BASELINES_PATH;
+  try { loadBaseline(baselinesPath, null); }
+  catch (e) {
+    console.error(`${e.message} — aborting run.`);
+    return { scorecard: null, resultsDir: null, exitCode: 2 };
+  }
 
   const truthsById = {};
   for (const it of items) truthsById[it.id] = it.truth;
@@ -287,11 +302,11 @@ export async function runHarness(config, deps = {}) {
     matcher: MATCHER_CONFIG,
   };
   const pid = populationId({ manifestHash, config: scConfig });
-  const baselinesPath = config.baselines ?? DEFAULT_BASELINES_PATH;
   const { baseline, baselinesExist } = loadBaseline(baselinesPath, pid);
 
   const scorecard = computeScorecard({
     records, truthsById, manifestHash, config: scConfig, baseline, baselinesExist,
+    sampled: config.sample !== null,
   });
 
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");

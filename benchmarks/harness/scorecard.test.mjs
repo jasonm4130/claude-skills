@@ -43,6 +43,13 @@ test("clean full run: OK, catch rate 1, over-rejection 0, exit 0", () => {
   assert.equal(sc.adapters.rev.flipRate, 0);
 });
 
+test("sampled → INFORMATIONAL, never OK, even with no baselines at all", () => {
+  const sc = computeScorecard({ records: fullRun(), truthsById: TRUTHS, manifestHash: "m1", config: CONFIG, baseline: null, sampled: true });
+  assert.equal(sc.status, "INFORMATIONAL");
+  assert.equal(sc.exitCode, 0);
+  assert.equal(sc.floors.evaluated, false);
+});
+
 test("majority catch + flip rate: 2-of-3 catches counts, and flips", () => {
   const sc = computeScorecard({ records: fullRun({ aCatches: 2 }), truthsById: TRUTHS, manifestHash: "m1", config: CONFIG, baseline: null });
   assert.equal(sc.adapters.rev.catchRate, 1);
