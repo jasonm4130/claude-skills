@@ -59,7 +59,35 @@ bash scripts/run-node-tests.sh    # run every *.test.mjs in one process
 ```
 
 CI (`.github/workflows/ci.yml`) validates all JSON manifests, runs the node
-test suite on ubuntu+macos (Node 24), and runs the SDD bash smoke tests.
+test suite on ubuntu+macos (Node 24), runs the SDD bash smoke tests, and runs
+`version-bump-check` (see Releasing).
+
+## Updating an installed plugin
+
+Claude Code keys "update available" off a plugin's **version**, so an update only
+reaches you once the version is bumped (that's enforced — see Releasing). To pick up
+a new version:
+
+- **Usually nothing** — session-start autoUpdate pulls new versions of installed
+  plugins on the next launch.
+- **To force it now:** `/plugin marketplace add jasonm4130/claude-skills` (refresh the
+  marketplace metadata), then **either** open `/plugin` and update from the menu, **or**
+  run `claude plugin update <name>@jasonm4130-claude-skills` (restart to apply).
+
+Two traps worth knowing: `/reload-plugins` only re-reads the *installed* cache — it does
+**not** fetch new versions; and a bare `/plugin install <name>@jasonm4130-claude-skills`
+**no-ops** when the plugin is already installed.
+
+## Releasing (maintainer)
+
+1. Make the change under `plugins/<name>/`.
+2. Bump in one step: `node scripts/bump-plugin.mjs <name> <patch|minor|major>` — it updates
+   `plugins/<name>/.claude-plugin/plugin.json` **and** the matching `.claude-plugin/marketplace.json`
+   entry together (they must stay in sync).
+3. Pre-check locally: `node scripts/check-version-bumps.mjs main` (expect no violations).
+4. Open a PR. CI's **`version-bump-check`** fails the PR if any plugin's shipped content
+   changed without a strict semver increase — so the bump can't be forgotten.
+5. Merge with a merge commit once checks pass. Installed users get it per *Updating* above.
 
 ## License
 
