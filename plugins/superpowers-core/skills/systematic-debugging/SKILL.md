@@ -57,11 +57,23 @@ You MUST complete each phase before proceeding to the next.
    - Read stack traces completely
    - Note line numbers, file paths, error codes
 
-2. **Reproduce Consistently**
-   - Can you trigger it reliably?
-   - What are the exact steps?
-   - Does it happen every time?
-   - If not reproducible → gather more data, don't guess
+2. **Reproduce Consistently — build a red-capable loop**
+
+   Before hypothesizing, construct the tightest automated loop that *fails on the bug now*. This loop is the feedback signal for the rest of the investigation. Pick the cheapest option that fits — ranked most-automatable first:
+
+   1. **Failing automated test** — best; reuses the existing suite and becomes the Phase 4 regression test
+   2. **`curl` / HTTP call** against a running endpoint
+   3. **CLI invocation + output snapshot**
+   4. **Headless-browser script** (UI/DOM bugs)
+   5. **Trace / log replay** from a captured failing run
+   6. **Throwaway harness** that calls the broken code path directly
+   7. **Property / fuzz loop** (input-space bugs)
+   8. **Bisection harness** (regression — find the commit that broke it)
+   9. **Human-in-the-loop script** — last resort: you drive, it checks state
+
+   The loop is good enough when it is **red-capable** (fails on the bug right now), **deterministic** (for a flaky bug, loop the trigger until the hit-rate is high enough to debug against), **fast**, and **agent-runnable** (you can invoke it without a human). **Paste the exact invocation you actually ran** — a loop you haven't run doesn't count.
+
+   If no red-capable loop can be built, **say so explicitly and record why** — don't proceed to hypotheses on a bug you can't trigger.
 
 3. **Check Recent Changes**
    - What changed that could cause this?
@@ -72,6 +84,8 @@ You MUST complete each phase before proceeding to the next.
 4. **Gather Evidence in Multi-Component Systems**
 
    **WHEN system has multiple components (CI → build → signing, API → service → database):**
+
+   If you built a red-capable loop in step 2, attach this instrumentation to *that* loop rather than re-running a separate one — the loop is the harness you hang the boundary logging on.
 
    **BEFORE proposing fixes, add diagnostic instrumentation:**
    ```
@@ -143,6 +157,8 @@ You MUST complete each phase before proceeding to the next.
    - What assumptions does it make?
 
 ### Phase 3: Hypothesis and Testing
+
+**Gate:** Do not form or test a hypothesis until you have a **red-capable reproduction you have actually run** (Phase 1, step 2) — or you have explicitly recorded that the bug can't be reproduced and why. Theorizing before you can trigger the bug is guessing. If you catch yourself reading code to build a theory with no loop in hand, stop and build the loop first.
 
 **Scientific method:**
 
@@ -221,6 +237,7 @@ If you catch yourself thinking:
 - "Skip the test, I'll manually verify"
 - "It's probably X, let me fix that"
 - "I don't fully understand but this might work"
+- "Let me theorize about the cause" (before you can reproduce/trigger the bug)
 - "Pattern says X but I'll adapt it differently"
 - "Here are the main problems: [lists fixes without investigation]"
 - Proposing solutions before tracing data flow

@@ -248,6 +248,44 @@ TDD cycle:
 4. THEN claim complete
 ```
 
+## Anti-Pattern 6: Tautological Test
+
+**The violation:**
+```typescript
+// ❌ BAD: expected value is computed the same way the code computes it
+test('applies tax', () => {
+  const price = 100;
+  const rate = 0.2;
+  expect(applyTax(price, rate)).toBe(price + price * rate);
+});
+```
+
+**Why this is wrong:**
+- The assertion recomputes the implementation's own formula, so it passes for *any* formula the code and test happen to share
+- A bug copied into both sides (wrong operator, wrong rounding) is invisible — expected and actual move together
+- The test proves the code equals itself, not that it's correct
+
+**The fix:**
+```typescript
+// ✅ GOOD: independent, hand-verified expected value
+test('applies 20% tax to £100 → £120', () => {
+  expect(applyTax(100, 0.2)).toBe(120); // literal, checked by hand
+});
+```
+
+### Gate Function
+
+```
+BEFORE writing the expected value:
+  Ask: "Did I compute this the same way the code does?"
+
+  IF yes (same formula, shared helper, or re-derived from the inputs):
+    STOP - replace it with an independent literal you verified by hand
+    (or an oracle computed a genuinely different way)
+
+  The expected value must come from OUTSIDE the implementation's own logic.
+```
+
 ## When Mocks Become Too Complex
 
 **Warning signs:**
@@ -279,6 +317,7 @@ TDD cycle:
 | Mock without understanding | Understand dependencies first, mock minimally |
 | Incomplete mocks | Mirror real API completely |
 | Tests as afterthought | TDD - tests first |
+| Tautological test (recomputes the code's formula) | Assert an independent, hand-verified literal |
 | Over-complex mocks | Consider integration tests |
 
 ## Red Flags
@@ -289,6 +328,7 @@ TDD cycle:
 - Test fails when you remove mock
 - Can't explain why mock is needed
 - Mocking "just to be safe"
+- Expected value derived with the same formula or helper as the code
 
 ## The Bottom Line
 
