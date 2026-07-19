@@ -68,9 +68,12 @@ Claude Code keys "update available" off a plugin's **version**, so an update onl
 reaches you once the version is bumped (that's enforced — see Releasing). To pick up
 a new version:
 
+- **Fastest** — `bash scripts/update-plugins.sh`, then `/reload-plugins`. The script
+  refreshes the marketplace metadata and fetches new versions of your installed plugins
+  in one shot; `/reload-plugins` then applies them without a restart.
 - **Usually nothing** — session-start autoUpdate pulls new versions of installed
   plugins on the next launch.
-- **To force it now:** `/plugin marketplace add jasonm4130/claude-skills` (refresh the
+- **By hand:** `/plugin marketplace add jasonm4130/claude-skills` (refresh the
   marketplace metadata), then **either** open `/plugin` and update from the menu, **or**
   run `claude plugin update <name>@jasonm4130-claude-skills` (restart to apply).
 
