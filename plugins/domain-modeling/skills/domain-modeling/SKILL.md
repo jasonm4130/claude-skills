@@ -25,6 +25,8 @@ If a `CONTEXT-MAP.md` exists at the root, the repo has **multiple** contexts; th
 
 Create files **lazily** — only when you have something to write. If no `CONTEXT.md` exists, create one when the first term is resolved.
 
+**Wire it in for future sessions.** The payoff — consistent naming and fewer tokens *every* session — only lands if `CONTEXT.md` is loaded when future sessions start, not just when this skill fires. When you create `CONTEXT.md` (or update one and notice it is unreferenced), check the repo's `CLAUDE.md`: if it does not reference `CONTEXT.md`, **ask the user once** whether to wire it in — `@CONTEXT.md` for a small glossary, or a "consult `CONTEXT.md` for domain terms" line for a larger one — and add it on yes (don't re-ask on no). If there is no `CLAUDE.md` at all, mention the option rather than creating one uninvited.
+
 **Decisions are not vocabulary.** When a hard-to-reverse, non-obvious trade-off surfaces (not a term), record it as an ADR — use this repo's `adr` skill, which owns the ADR format (`docs/adr/YYYY-MM-DD-<slug>.md`). Do not invent a second ADR convention here.
 
 ## During the session
