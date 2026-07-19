@@ -1,0 +1,10 @@
+{
+  "name": "domain-modeling",
+  "description": "Actively build and sharpen a project's ubiquitous language — an opinionated CONTEXT.md glossary — by challenging terms, disambiguating overloaded words, and stress-testing domain relationships. Cross-references the adr skill for decision records. Adapted from mattpocock/skills (MIT).",
+  "version": "0.1.0",
+  "author": { "name": "Jason Matthew", "email": "jasonm4130@gmail.com" },
+  "homepage": "https://github.com/jasonm4130/claude-skills",
+  "repository": "https://github.com/jasonm4130/claude-skills",
+  "license": "MIT",
+  "keywords": ["domain-modeling", "ubiquitous-language", "context-md", "glossary", "domain-driven-design", "claude-code"]
+}
