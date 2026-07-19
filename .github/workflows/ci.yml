@@ -41,3 +41,29 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run SDD bash helper smoke tests
         run: bash plugins/subagent-driven-development/scripts/scripts.test.sh
+
+  version-bump-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Every changed plugin bumped its version
+        shell: bash
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          # PRs compare against the PR base; direct pushes to main are a backstop
+          # (branch protection makes them rare) and compare against the prior tip.
+          if [ -n "${PR_BASE:-}" ]; then
+            BASE="$PR_BASE"
+          else
+            BASE="${PUSH_BEFORE:-}"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "No base ref (new branch / initial push) — nothing to diff."
+            exit 0
+          fi
+          node scripts/check-version-bumps.mjs "$BASE"
