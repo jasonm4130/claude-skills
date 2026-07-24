@@ -4,8 +4,9 @@
 // status-and-flag.mjs script renders as Claude Code's statusLine.
 //
 // This script also writes a stable wrapper (~/.claude/handoff-statusline.mjs)
-// that auto-resolves to the highest installed plugin version at run time, so
-// upgrading the plugin never breaks the statusLine.
+// that resolves the installed plugin version at run time, so upgrading the
+// plugin never breaks the statusLine. See WRAPPER_CONTENT for the exact
+// upgrade/rollback contract.
 //
 // Usage:
 //   node /path/to/plugins/handoff/scripts/setup.mjs [--force]
@@ -37,15 +38,22 @@ const force = args.has("--force");
 
 // ---------------------------------------------------------------------------
 // Stable wrapper content — this script is written to ~/.claude/handoff-statusline.mjs
-// and pointed to by the statusLine command. It auto-resolves the highest
-// installed version of the plugin at run time.
+// and pointed to by the statusLine command.
+//
+// Upgrade/rollback contract: run the highest cached version that Claude Code has
+// NOT marked `.orphaned_at`. Resolution has to stay dynamic — ~/.claude/settings.json
+// points at this wrapper by absolute path, so pinning a literal version here would
+// break the statusLine on every upgrade. But "highest cached" alone is wrong: cache
+// presence is not activation state. Superseded and rolled-back versions stay on disk
+// carrying an `.orphaned_at` marker, so an unfiltered max would silently undo a
+// rollback. Filtering on the marker keeps upgrades working and makes rollbacks stick.
 // ---------------------------------------------------------------------------
 const WRAPPER_CONTENT = `#!/usr/bin/env node
 // @ts-check
 // Stable statusLine wrapper for the handoff plugin.
-// Auto-resolves the highest installed semver of jasonm4130-claude-skills/handoff
-// so upgrading the plugin never breaks the statusLine.
-// Written by: plugins/handoff/scripts/setup.mjs
+// Resolves the highest NON-ORPHANED cached semver of jasonm4130-claude-skills/handoff,
+// so upgrading the plugin never breaks the statusLine and a rollback actually takes
+// effect. Written by: plugins/handoff/scripts/setup.mjs
 // Do not edit by hand — re-run setup.mjs to regenerate.
 
 import { readdirSync, existsSync } from "node:fs";
@@ -103,6 +111,12 @@ if (existsSync(cacheDir)) {
     if (!entry.isDirectory()) continue;
     const parsed = parseSemver(entry.name);
     if (!parsed) continue;
+    // Claude Code marks every superseded / rolled-back / uninstalled cache dir
+    // with .orphaned_at and leaves it on disk. Skipping them is what makes this
+    // "the installed version" rather than "whatever version is newest on disk".
+    // ponytail: infers activation state from an undocumented marker file; if the
+    // convention changes, read ~/.claude/plugins/installed_plugins.json instead.
+    if (existsSync(path.join(cacheDir, entry.name, ".orphaned_at"))) continue;
     const candidate = path.join(cacheDir, entry.name, "scripts", "status-and-flag.mjs");
     if (existsSync(candidate)) {
       candidates.push({ version: parsed, scriptPath: candidate });

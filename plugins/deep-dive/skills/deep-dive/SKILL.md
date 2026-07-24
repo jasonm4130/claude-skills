@@ -48,11 +48,17 @@ Once the user says "go", do NOT spawn `Agent` calls yourself. Build an `args` ob
 confirmed DAG and hand it to the shipped workflow.
 
 1. Resolve the script's absolute path (`${CLAUDE_PLUGIN_ROOT}` is not available in this
-   session, so glob the install and pick the highest version):
+   session, so address the install by literal path — pinned to **this** skill's version,
+   because the `args` contract moves between versions):
 
    ```bash
-   ls -d "$HOME"/.claude/plugins/cache/jasonm4130-claude-skills/deep-dive/*/workflows/fanout.mjs | sort -V | tail -1
+   P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/deep-dive/0.5.0/workflows/fanout.mjs"
+   [ -f "$P" ] && echo "$P" || echo "MISSING: deep-dive 0.5.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
    ```
+
+   If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not glob the
+   cache for another version: superseded and rolled-back versions stay on disk, so picking the
+   highest cached one silently runs a workflow whose `args` contract this skill no longer matches.
 
    In local development, use the repo path `plugins/deep-dive/workflows/fanout.mjs` directly.
 

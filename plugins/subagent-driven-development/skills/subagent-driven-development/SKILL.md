@@ -85,12 +85,19 @@ dispatching. "Execute the plan" is permission for the topic, not for the
 dispatch.
 
 ### 6. Resolve install paths and invoke the Workflow
-`CLAUDE_PLUGIN_ROOT` is not available at runtime, so glob the install and pick
-the highest version (in local dev, use the repo path directly):
+`CLAUDE_PLUGIN_ROOT` is not available at runtime, so address the install by
+literal path, pinned to **this** skill's version — the `args` contract moves
+between versions (in local dev, use the repo path directly):
 
 ```bash
-ls -d "$HOME"/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/*/workflows/sdd.mjs | sort -V | tail -1
+P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.5.0/workflows/sdd.mjs"
+[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.5.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
 ```
+
+If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not
+glob the cache for another version: superseded and rolled-back versions stay on
+disk, so picking the highest cached one silently runs a loop whose `args`
+contract this skill no longer matches.
 
 `pluginDir` is the directory **containing** `workflows/`, `prompts/`, and
 `scripts/` (the parent of the resolved `sdd.mjs`'s `workflows/`). Then:
