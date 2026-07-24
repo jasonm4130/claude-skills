@@ -68,8 +68,11 @@ After install, run the one-time `setup.mjs` helper to wire the context-fill bar 
 your user-level `statusLine`:
 
 ```bash
-node "$(echo ~/.claude/plugins/cache/jasonm4130-claude-skills/handoff/*/scripts/setup.mjs | tr ' ' '\n' | sort -V | tail -n1)"
+node "$(ls -d ~/.claude/plugins/cache/jasonm4130-claude-skills/handoff/*/scripts/setup.mjs | sort -V | tail -1)"
 ```
+
+If you skip this step, the SessionStart hook detects it and prints this same command as a
+one-time reminder — see "Setup reminder" below.
 
 The setup script:
 
@@ -98,6 +101,25 @@ output) is not yet supported by Claude Code. For now, the options are:
 - Run your existing script from inside `status-and-flag.mjs` and append its output.
 
 Composable statusLine support is tracked as a follow-up.
+
+### Setup reminder
+
+The context-fill nudge only ever fires through the `statusLine`, so a session where it isn't
+wired up looks installed but silently never nudges. The `SessionStart` hook
+(`load-pending-handoff.mjs`) checks `~/.claude/settings.json` for a handoff `statusLine` —
+either the stable wrapper or a pre-wrapper versioned path both count as configured — and, if
+neither is present, prints the setup one-liner once as an `additionalContext` reminder.
+
+- **One-time, not periodic:** a marker at `~/.claude/.handoff-setup-hinted` records that the
+  reminder fired; it is not re-shown on later sessions. Delete that file (or re-install into
+  a fresh `~/.claude`) to see the reminder again.
+- **Fails open:** if `settings.json` is absent, unreadable, or not valid JSON, the hook never
+  blocks or errors the session — an absent file is treated as "not configured" (so the
+  reminder fires); an unreadable/unparseable file is treated as indeterminate and stays
+  silent, rather than risk a false-positive nag.
+- **Never fires on a refused or poisoned `.pending` marker.** That silence is a security
+  property, not an oversight — see "Why a handoff must never be committed" below.
+- The hook never writes to `settings.json` itself; only `setup.mjs` does that.
 
 ## Configuration
 
@@ -259,6 +281,7 @@ gives you context, but the retro waits until you've actually done work in the ne
 | File | Location | Description |
 |---|---|---|
 | `handoff-statusline.mjs` | `~/.claude/` | Stable wrapper script that auto-resolves the latest installed plugin version (written by setup.mjs) |
+| `.handoff-setup-hinted` | `~/.claude/` | One-time marker: the "run setup.mjs" reminder has already fired (written by load-pending-handoff.mjs) |
 | `last-context-pct-<sid>.txt` | `$CLAUDE_PLUGIN_DATA` | Tracks last seen context % for band-crossing detection |
 | `handoff-nudge-<sid>.flag` | `$CLAUDE_PLUGIN_DATA` | Nudge flag, consumed by UserPromptSubmit; re-written on each new 10%-point band |
 | `handoff-fired-<sid>-t<thr>-b<N>` | `$CLAUDE_PLUGIN_DATA` | Per-band claim marker — the atomic arbiter that makes a nudge fire at most once per band, however many invocations race. Cleared when context drops below the threshold. |
