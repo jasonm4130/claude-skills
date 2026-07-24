@@ -94,8 +94,8 @@ nicer"; the markdown is the record.
    (`${CLAUDE_PLUGIN_ROOT}` is not reliably available in-session):
 
    ```bash
-   P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/visual-plan/0.1.0/assets/plan.css"
-   [ -f "$P" ] && echo "$P" || echo "MISSING: visual-plan 0.1.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
+   P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/visual-plan/0.2.0/assets/plan.css"
+   [ -f "$P" ] && echo "$P" || echo "MISSING: visual-plan 0.2.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
    ```
 
    If it reports `MISSING`, **emit markdown only and tell the user to update the

@@ -1,7 +1,7 @@
 {
   "name": "adversarial-agents",
   "description": "Configurable adversarial panel review for any artefact — plans, code, design docs, prose, model outputs. Auto-selects panel personas by artefact type, dispatches in parallel, walks critiques convergence-prioritised.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "author": {
     "name": "Jason Matthew",
     "email": "jasonm4130@gmail.com"
