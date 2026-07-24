@@ -149,10 +149,6 @@ function detectOscillation(roundClasses, cap = 2) {
   return false;
 }
 
-function ledgerLine(n, base7, head7, verdict) {
-  return `Task ${n}: ${verdict} (commits ${base7}..${head7})`;
-}
-
 // Topological levels from deps: wave 0 = no deps, else 1 + max(dep waves).
 // sequenceTasks validates deps precede numerically, which guarantees a DAG.
 function computeWaves(tasks) {
@@ -669,7 +665,6 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
   return {
     tasks: results, planConflicts, halted, finalReview, finalFix,
     mergeBase: cfg.mergeBase, head: base, merges,
-    ledgerPath: `${cfg.workdir}/.sdd/progress.md`,
     meta: {
       tasksCompleted: results.length, tasksTotal: order.length, waves: waves.length,
       planConflicts: planConflicts.length,

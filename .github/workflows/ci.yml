@@ -32,6 +32,33 @@ jobs:
         shell: bash
         run: bash scripts/run-node-tests.sh
 
+  plugin-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install claude CLI
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Validate every plugin with claude plugin validate
+        # `claude plugin validate` needs no auth/login/network beyond installing the CLI
+        # itself (verified with a from-scratch HOME) — the CLI route is viable. It must run
+        # PER PLUGIN DIRECTORY, not once at the marketplace root: `claude plugin validate .`
+        # only checks marketplace.json/plugin.json manifests and does NOT walk into each
+        # plugin's skills/*/SKILL.md, so it silently misses the exact frontmatter defect
+        # (unquoted YAML descriptions) this gate exists to catch — reproduced locally before
+        # writing this job. Deliberately not --strict: that would also fail on the `engines`/
+        # `contributors` unknown-field warnings several plugin.json manifests carry, which is
+        # a separate, accepted informational warning (see README's Node.js note) — this gate
+        # is scoped to catching a broken SKILL.md, not to zero-warning manifests.
+        run: |
+          set -e
+          for p in plugins/*/; do
+            echo "== validating $p =="
+            claude plugin validate "$p"
+          done
+
   bash-tests:
     runs-on: ${{ matrix.os }}
     strategy:

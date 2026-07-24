@@ -22,7 +22,8 @@ test("documents the controller flow and the hand-off contract", () => {
 });
 
 test("warns about path resolution and the plan-heading dependency", () => {
-  assert.match(s, /sort -V \| tail -1|glob/i);
+  assert.match(s, /subagent-driven-development\/\d+\.\d+\.\d+\/workflows\/sdd\.mjs/);
+  assert.match(s, /MISSING: subagent-driven-development/);
   assert.match(s, /# Task N|## Task/);
 });
 

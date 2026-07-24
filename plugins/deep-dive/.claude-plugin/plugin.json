@@ -1,7 +1,7 @@
 {
   "name": "deep-dive",
   "description": "Model-tiered, adversarially-verified multi-source research via parallel sub-agents and synthesis with citations. Lead-researcher → parallel sub-agents → critic/judge passes. DAG-planned angles, Exa + Tavily + WebSearch. Distinct from (and cheaper than) Claude Code's built-in all-Opus deep-research.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": {
     "name": "Jason Matthew",
     "email": "jasonm4130@gmail.com"

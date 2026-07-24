@@ -1,6 +1,6 @@
 ---
 name: visual-plan
-description: Use when the user wants to plan a change, record an architecture decision (ADR), or recap what a diff changed — especially when the result benefits from visuals (wireframes, diagrams, before/after, annotated split-diffs). Produces a durable, committed Markdown ADR/plan as the source-of-truth record, and only when warranted ALSO emits a self-contained rich plan.html to /tmp. Markdown canonical, HTML disposable. Triggers: "plan this", "write an ADR", "visual plan", "recap this change", "visual recap", "/visual-plan".
+description: 'Use when the user wants to plan a change, record an architecture decision (ADR), or recap what a diff changed — especially when the result benefits from visuals (wireframes, diagrams, before/after, annotated split-diffs). Produces a durable, committed Markdown ADR/plan as the source-of-truth record, and only when warranted ALSO emits a self-contained rich plan.html to /tmp. Markdown canonical, HTML disposable. Triggers: "plan this", "write an ADR", "visual plan", "recap this change", "visual recap", "/visual-plan". For decide-and-build ADR work, use adr.'
 ---
 
 # Visual Plan
@@ -39,7 +39,7 @@ Pick the template by intent:
 **ADR** (Nygard-style — a decision worth recording):
 
 ```markdown
-# NNNN — <Title>
+# <Title>
 **Status:** Proposed | Accepted | Superseded
 ## Context
 ## Decision
@@ -90,12 +90,19 @@ nicer"; the markdown is the record.
 ## How to emit the HTML
 
 1. **Locate and read the bundled files.** Normally the plugin is installed —
-   glob the cache and take the highest version (`${CLAUDE_PLUGIN_ROOT}` is not
-   reliably available in-session):
+   address the cache by literal path, pinned to **this** skill's version
+   (`${CLAUDE_PLUGIN_ROOT}` is not reliably available in-session):
 
    ```bash
-   ls -d "$HOME"/.claude/plugins/cache/jasonm4130-claude-skills/visual-plan/*/assets/plan.css | sort -V | tail -1
+   P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/visual-plan/0.2.0/assets/plan.css"
+   [ -f "$P" ] && echo "$P" || echo "MISSING: visual-plan 0.2.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
    ```
+
+   If it reports `MISSING`, **emit markdown only and tell the user to update the
+   plugin.** Do not glob the cache for another version: superseded and rolled-back
+   versions stay on disk, and the class contract between `plan.css` and
+   `references/blocks.md` only holds within a single version — pairing a newer
+   stylesheet with this skill's blocks produces silently unstyled output.
 
    (When developing the plugin itself — your cwd is the `claude-skills` repo —
    the files are at `plugins/visual-plan/assets/plan.css` and
@@ -132,7 +139,7 @@ nicer"; the markdown is the record.
 
 | Artifact | Path | Committed? |
 |---|---|---|
-| ADR | `docs/adr/NNNN-<slug>.md` (create `docs/adr/` if absent; scan existing for next `NNNN`) | yes, by the user |
+| ADR | `docs/adr/YYYY-MM-DD-<slug>.md` (dated, not numbered; create `docs/adr/` if absent) | yes, by the user |
 | Plan | `docs/plans/<slug>.md` (or the repo's existing plans dir) | yes, by the user |
 | Rich HTML | `/tmp/visual-plans/<slug>/plan.html` or `recap.html` | no — ephemeral |
 

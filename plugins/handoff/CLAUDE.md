@@ -18,9 +18,13 @@ branch/dirty, context bar, model, rate-limits), calm by default and best-effort 
 the terminal.
 
 `setup.mjs` wires `statusLine` into `~/.claude/settings.json` and (since 0.3.0)
-writes a stable wrapper at `~/.claude/handoff-statusline.mjs` that auto-resolves
-the highest installed plugin version at run time, so plugin upgrades no longer
-break the statusLine.
+writes a stable wrapper at `~/.claude/handoff-statusline.mjs` that resolves the
+plugin version at run time, so plugin upgrades no longer break the statusLine.
+Its contract: **the highest cached version that is not marked `.orphaned_at`.**
+Resolution stays dynamic because `settings.json` points at the wrapper by
+absolute path, but cache presence is not activation state — superseded and
+rolled-back versions stay on disk, so an unfiltered max would silently undo a
+rollback. All versions orphaned (i.e. uninstalled) renders `?`.
 
 ## Plugin structure
 

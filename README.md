@@ -11,33 +11,43 @@ Add the marketplace once, then install the plugins you want.
 /plugin marketplace add jasonm4130/claude-skills
 ```
 
-| Plugin | Description | Install command |
-|---|---|---|
-| `adr` | Intent → grounded, cited, build-ready ADR, handed to the SDD loop | `/plugin install adr@jasonm4130-claude-skills` |
-| `adversarial-agents` | Configurable adversarial panel review for any artefact | `/plugin install adversarial-agents@jasonm4130-claude-skills` |
-| `claude-design` | Paste-ready Claude Design brief + the Claude Code driving path (`/design`, `/design-sync`) | `/plugin install claude-design@jasonm4130-claude-skills` |
-| `codebase-design` | Deep-module design vocabulary — interface/seam/depth, the deletion test, tiered design-it-twice | `/plugin install codebase-design@jasonm4130-claude-skills` |
-| `codex-review` | Cross-provider plan/design review via OpenAI Codex (Terra) | `/plugin install codex-review@jasonm4130-claude-skills` |
-| `deep-dive` | Model-tiered, adversarially-verified multi-source research | `/plugin install deep-dive@jasonm4130-claude-skills` |
-| `design-gate-guard` | PreToolUse gate asking before a new-project scaffold runs ahead of an approved design | `/plugin install design-gate-guard@jasonm4130-claude-skills` |
-| `docs-sync-guard` | Git-commit gate against docs drift in plugins/ monorepos | `/plugin install docs-sync-guard@jasonm4130-claude-skills` |
-| `domain-modeling` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms | `/plugin install domain-modeling@jasonm4130-claude-skills` |
-| `frontend-design` | Light-inline design guidance, or a paste-ready browser brief for wide/detailed work | `/plugin install frontend-design@jasonm4130-claude-skills` |
-| `handoff` | Context-fill-triggered handoff doc, auto-loaded next session | `/plugin install handoff@jasonm4130-claude-skills` |
-| `session-retro` | Session retrospectives that capture learnings to memory | `/plugin install session-retro@jasonm4130-claude-skills` |
-| `ship-gate` | Turn-end nudge to review + push unshipped commits | `/plugin install ship-gate@jasonm4130-claude-skills` |
-| `subagent-driven-development` | Deterministic workflow-driven implement/review/fix loop | `/plugin install subagent-driven-development@jasonm4130-claude-skills` |
-| `superpowers-core` | Owned fork of the superpowers process skills + the `using-skills` dispatcher | `/plugin install superpowers-core@jasonm4130-claude-skills` |
-| `visual-plan` | Markdown-canonical ADR/plan, optional rich HTML companion | `/plugin install visual-plan@jasonm4130-claude-skills` |
-| `workflow-model-guard` | PreToolUse guard nudging model tiering in high-fan-out Workflows | `/plugin install workflow-model-guard@jasonm4130-claude-skills` |
+| Plugin | Description | Requirements | Install command |
+|---|---|---|---|
+| `adr` | Intent → grounded, cited, build-ready ADR, handed to the SDD loop | – | `/plugin install adr@jasonm4130-claude-skills` |
+| `adversarial-agents` | Configurable adversarial panel review for any artefact | – | `/plugin install adversarial-agents@jasonm4130-claude-skills` |
+| `claude-design` | Paste-ready Claude Design brief + the Claude Code driving path (`/design`, `/design-sync`) | – | `/plugin install claude-design@jasonm4130-claude-skills` |
+| `codebase-design` | Deep-module design vocabulary — interface/seam/depth, the deletion test, tiered design-it-twice | – | `/plugin install codebase-design@jasonm4130-claude-skills` |
+| `codex-review` | Cross-provider plan/design review via OpenAI Codex (Terra) | Node 18+ · [Codex CLI](https://github.com/openai/codex) | `/plugin install codex-review@jasonm4130-claude-skills` |
+| `deep-dive` | Model-tiered, adversarially-verified multi-source research | – | `/plugin install deep-dive@jasonm4130-claude-skills` |
+| `design-gate-guard` | PreToolUse gate asking before a new-project scaffold runs ahead of an approved design | Node 18+ | `/plugin install design-gate-guard@jasonm4130-claude-skills` |
+| `docs-sync-guard` | Git-commit gate against docs drift in plugins/ monorepos | Node 18+ | `/plugin install docs-sync-guard@jasonm4130-claude-skills` |
+| `domain-modeling` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms | – | `/plugin install domain-modeling@jasonm4130-claude-skills` |
+| `frontend-design` | Light-inline design guidance, or a paste-ready browser brief for wide/detailed work | – | `/plugin install frontend-design@jasonm4130-claude-skills` |
+| `handoff` | Context-fill-triggered handoff doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
+| `session-retro` | Session retrospectives that capture learnings to memory | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
+| `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
+| `subagent-driven-development` | Deterministic workflow-driven implement/review/fix loop | – | `/plugin install subagent-driven-development@jasonm4130-claude-skills` |
+| `superpowers-core` | Owned fork of the superpowers process skills + the `using-skills` dispatcher | Node 18+ | `/plugin install superpowers-core@jasonm4130-claude-skills` |
+| `visual-plan` | Markdown-canonical ADR/plan, optional rich HTML companion | – | `/plugin install visual-plan@jasonm4130-claude-skills` |
+| `workflow-model-guard` | PreToolUse guard nudging model tiering in high-fan-out Workflows | Node 18+ | `/plugin install workflow-model-guard@jasonm4130-claude-skills` |
 
 Full details per plugin: see `plugins/<name>/README.md`.
 
-> **Node.js note:** `handoff`, `session-retro`, and `subagent-driven-development`
-> require **Node.js 18+** on `PATH`. The handoff plugin also needs a one-time
-> `statusLine` wire-up:
+> **Node.js note:** Node 18+ on `PATH` is needed by every plugin above marked `Node 18+`.
+> Most register a hook (`hooks/hooks.json`) that shells out to `node` directly, and
+> `codex-review`'s skill runs a `.mjs` script the same way via Bash — none of that is covered
+> by Claude Code's own bundled runtime (the native installer does not bring Node — install
+> via Homebrew, WinGet, or your distro's package manager). `codex-review` additionally needs
+> the Codex CLI, authenticated. The `engines` field some `plugin.json` manifests carry is
+> informational only — `claude plugin validate` confirms Claude Code does not read or
+> enforce it, so it is not a substitute for this table.
+>
+> The handoff plugin also needs a one-time `statusLine` wire-up:
 > `node "$(ls -d ~/.claude/plugins/cache/jasonm4130-claude-skills/handoff/*/scripts/setup.mjs | sort -V | tail -1)"`
-> (the setup script installs a version-agnostic wrapper, so upgrades don't break it).
+> (the setup script installs a version-agnostic wrapper that resolves the active,
+> non-orphaned version at runtime, so upgrades and rollbacks don't break it; whichever
+> cached `setup.mjs` this picks writes the same wrapper). Skip this step and the next
+> session prints the same command once, as a reminder.
 
 ## Repo layout
 
@@ -58,8 +68,10 @@ scripts/run-node-tests.sh         # CI test runner
 bash scripts/run-node-tests.sh    # run every *.test.mjs in one process
 ```
 
-CI (`.github/workflows/ci.yml`) validates all JSON manifests, runs the node
-test suite on ubuntu+macos (Node 24), runs the SDD bash smoke tests, and runs
+CI (`.github/workflows/ci.yml`) validates all JSON manifests, runs `claude plugin
+validate` against every `plugins/<name>/` directory (catches malformed skill
+frontmatter that the JSON check above doesn't reach), runs the node test suite
+on ubuntu+macos (Node 24), runs the SDD bash smoke tests, and runs
 `version-bump-check` (see Releasing).
 
 ## Updating an installed plugin

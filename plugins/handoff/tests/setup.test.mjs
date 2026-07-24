@@ -231,9 +231,11 @@ test("setup.mjs --force overwrites unrelated statusLine", async (t) => {
 /**
  * Create a fake home with versioned fake scripts that each emit their version.
  * @param {string[]} versions
+ * @param {string[]} [orphaned] versions to mark with an `.orphaned_at` marker,
+ *   the way Claude Code marks a superseded or rolled-back cache directory
  * @returns {{ dir: string, claudeDir: string, settingsPath: string, wrapperPath: string }}
  */
-function mkFakeHomeWithVersionedEchos(versions) {
+function mkFakeHomeWithVersionedEchos(versions, orphaned = []) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-setup-ver-"));
   const claudeDir = path.join(dir, ".claude");
   mkdirSync(claudeDir, { recursive: true });
@@ -254,6 +256,11 @@ function mkFakeHomeWithVersionedEchos(versions) {
       path.join(scriptDir, "status-and-flag.mjs"),
       `#!/usr/bin/env node\nprocess.stdout.write("version:${ver}\\n");\nprocess.exit(0);\n`,
     );
+  }
+
+  for (const ver of orphaned) {
+    // Real markers hold a millisecond timestamp; only presence is load-bearing.
+    writeFileSync(path.join(cacheBase, ver, ".orphaned_at"), `${1784199698635}`);
   }
 
   return {
@@ -285,6 +292,13 @@ function execWrapper(wrapperPath, claudeDir) {
     child.stdin.end();
   });
 }
+
+// The wrapper's upgrade/rollback contract:
+//   run the highest cached version that Claude Code has NOT marked `.orphaned_at`.
+// Resolution stays dynamic so an upgrade doesn't break the absolute path that
+// ~/.claude/settings.json points at (the next two tests). The orphan filter is
+// what stops "highest cached" from silently defeating a rollback or resurrecting
+// a version the user uninstalled (the three after that).
 
 test("wrapper picks highest semver: 0.10.0 beats 0.3.0 and 0.2.1", async (t) => {
   const fakeHome = mkFakeHomeWithVersionedEchos(["0.2.1", "0.10.0", "0.3.0"]);
@@ -341,6 +355,68 @@ test("wrapper ignores non-semver directory names (latest, tmp, 0.2)", async (t) 
   assert.ok(
     !result.stdout.includes("bad:"),
     `wrapper picked a non-semver dir, got: ${result.stdout}`,
+  );
+});
+
+test("wrapper skips orphaned versions: a rollback to 0.7.0 takes effect", async (t) => {
+  // 0.8.0 is still on disk but marked orphaned — the state left behind by a
+  // rollback or an uninstall. Selecting it would silently undo the rollback.
+  const fakeHome = mkFakeHomeWithVersionedEchos(["0.7.0", "0.8.0"], ["0.8.0"]);
+  t.after(() => cleanup(fakeHome.dir));
+
+  const setupResult = await runSetup([], {
+    dir: fakeHome.dir,
+    claudeDir: fakeHome.claudeDir,
+  });
+  assert.equal(setupResult.code, 0, `setup failed: ${setupResult.stderr}`);
+
+  const result = await execWrapper(fakeHome.wrapperPath, fakeHome.claudeDir);
+  assert.ok(
+    result.stdout.includes("version:0.7.0"),
+    `expected version:0.7.0 (0.8.0 is orphaned), got stdout: ${result.stdout}`,
+  );
+});
+
+test("wrapper still upgrades across orphaned predecessors", async (t) => {
+  // The normal post-upgrade state: every superseded version carries a marker,
+  // the installed one does not. The wrapper must follow the upgrade.
+  const fakeHome = mkFakeHomeWithVersionedEchos(
+    ["0.6.0", "0.7.0", "0.8.0"],
+    ["0.6.0", "0.7.0"],
+  );
+  t.after(() => cleanup(fakeHome.dir));
+
+  const setupResult = await runSetup([], {
+    dir: fakeHome.dir,
+    claudeDir: fakeHome.claudeDir,
+  });
+  assert.equal(setupResult.code, 0, `setup failed: ${setupResult.stderr}`);
+
+  const result = await execWrapper(fakeHome.wrapperPath, fakeHome.claudeDir);
+  assert.ok(
+    result.stdout.includes("version:0.8.0"),
+    `expected version:0.8.0, got stdout: ${result.stdout}`,
+  );
+});
+
+test("wrapper outputs '?' when every cached version is orphaned", async (t) => {
+  // Plugin uninstalled: nothing is activated, so render nothing rather than
+  // resurrect a version the user removed.
+  const fakeHome = mkFakeHomeWithVersionedEchos(["0.7.0", "0.8.0"], ["0.7.0", "0.8.0"]);
+  t.after(() => cleanup(fakeHome.dir));
+
+  const setupResult = await runSetup([], {
+    dir: fakeHome.dir,
+    claudeDir: fakeHome.claudeDir,
+  });
+  assert.equal(setupResult.code, 0, `setup failed: ${setupResult.stderr}`);
+
+  const result = await execWrapper(fakeHome.wrapperPath, fakeHome.claudeDir);
+  assert.equal(result.code, 0, `wrapper should exit 0, got: ${result.code}`);
+  assert.equal(
+    result.stdout.trim(),
+    "?",
+    `wrapper should render '?' when all versions are orphaned, got: ${result.stdout}`,
   );
 });
 

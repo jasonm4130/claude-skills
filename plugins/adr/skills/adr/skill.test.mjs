@@ -31,6 +31,7 @@ test("hands off to the subagent-driven-development workflow with the ADR", () =>
   assert.match(s, /subagent-driven-development|sdd\.mjs/i);
   assert.match(s, /adrPath/);
   assert.match(s, /successCriteria/);
-  assert.match(s, /sort -V \| tail -1|glob/i);
+  assert.match(s, /subagent-driven-development\/\d+\.\d+\.\d+\/workflows\/sdd\.mjs/);
+  assert.match(s, /MISSING: subagent-driven-development/);
   assert.match(s, /parseable|stop and fix|do not hand off/i);
 });
