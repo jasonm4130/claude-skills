@@ -78,6 +78,24 @@ function skillFiles() {
 // <marketplace-id>/<plugin>/<version>/ — the three segments after the cache root.
 const CACHE_RE = /\.claude\/plugins\/cache\/([^/\s"'`)]+)\/([^/\s"'`)]+)\/([^/\s"'`)]+)\//g;
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
+// Fenced code blocks, so the loud-fail check below can anchor to the specific
+// snippet that pins a cached path instead of scanning the whole file — prose
+// elsewhere in the doc can contain "missing" without any guard existing.
+const FENCE_RE = /```[a-zA-Z]*\n([\s\S]*?)```/g;
+
+/**
+ * The fenced code blocks in `content` that contain a cached-path reference.
+ * @param {string} content
+ * @returns {string[]}
+ */
+function cachePathSnippets(content) {
+  /** @type {string[]} */
+  const snippets = [];
+  for (const [, body] of content.matchAll(FENCE_RE)) {
+    if (new RegExp(CACHE_RE.source).test(body)) snippets.push(body);
+  }
+  return snippets;
+}
 
 /** @type {Array<{ file: string, marketplaceId: string, plugin: string, version: string }>} */
 const refs = [];
@@ -162,12 +180,27 @@ test("no cached-path snippet selects a version by highest-cached", () => {
 
 test("a missing pinned version fails loudly instead of falling back", () => {
   for (const { file, content } of filesWithRefs) {
+    const snippets = cachePathSnippets(content);
     assert.ok(
-      /not installed|MISSING|reinstall|Update the plugin/i.test(content),
-      `${file}: pins a cached path but never says what to do when that exact ` +
-        `version is absent. A silent fallback to another cached version is the bug ` +
-        `this pin exists to prevent.`,
+      snippets.length > 0,
+      `${file}: has a cached-path reference outside any fenced code block — ` +
+        `cannot verify the loud-fail guard sits next to it.`,
     );
+    for (const snippet of snippets) {
+      assert.match(
+        snippet,
+        /\[\s*-f\s+"?\$\w+"?\s*\]/,
+        `${file}: cached-path snippet never tests for the pinned path's existence ` +
+          `(expected a \`[ -f "$P" ]\`-style guard in the same fenced block):\n${snippet}`,
+      );
+      assert.match(
+        snippet,
+        /MISSING:/,
+        `${file}: cached-path snippet never emits a literal \`MISSING:\` message when ` +
+          `the pinned version is absent. A silent fallback to another cached version is ` +
+          `the bug this pin exists to prevent:\n${snippet}`,
+      );
+    }
   }
 });
 
