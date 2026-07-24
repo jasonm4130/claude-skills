@@ -1,6 +1,5 @@
 ---
 name: adversarial-agents
-disable-model-invocation: true
 description: Configurable adversarial panel review for any artefact — plans, code, design docs, prose, model outputs. Auto-selects a panel of personas by artefact type (plans get YAGNI/Premortem/Hidden Assumptions; code gets Saboteur/New Hire/Security Auditor; etc.). Captures a pre-commit defense from the user, dispatches the panel in parallel, then walks every critique one-at-a-time with verbatim quoting and convergence-prioritised ordering. Use when user wants adversarial review, red-team a plan, stress-test a design, find holes, devil's advocate, panel critique, or mentions "grill me" / "adversarial-agents".
 ---
 
