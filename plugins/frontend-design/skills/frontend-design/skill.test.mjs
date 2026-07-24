@@ -37,3 +37,13 @@ test("heavy path routes to Claude Design and emits the exact paste-ready brief t
   assert.match(s, /\*\*Existing patterns to match:\*\*/);
   assert.match(s, /\*\*References \/ inspiration:\*\*/);
 });
+
+test("light path carries a concrete anti-tell floor covering every named rule", () => {
+  assert.match(s, /### Cut the AI tells/);
+  assert.match(s, /\*\*Real assets, not fakes\.\*\*/);
+  assert.match(s, /\*\*No invented telemetry or chrome\.\*\*/);
+  assert.match(s, /\*\*Vary the section rhythm\.\*\*/);
+  assert.match(s, /\*\*Hero discipline\.\*\*/);
+  assert.match(s, /\*\*Grids fit their content\.\*\*/);
+  assert.match(s, /\*\*One coherent theme per surface\.\*\*/);
+});
