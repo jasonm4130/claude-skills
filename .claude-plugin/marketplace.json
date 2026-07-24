@@ -101,7 +101,7 @@
       "name": "deep-dive",
       "source": "./plugins/deep-dive",
       "description": "Model-tiered, adversarially-verified multi-source research via parallel sub-agents and synthesis with citations. Cheaper alternative to the built-in all-Opus deep-research.",
-      "version": "0.4.1",
+      "version": "0.5.0",
       "author": {
         "name": "Jason Matthew"
       },
