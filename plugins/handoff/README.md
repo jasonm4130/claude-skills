@@ -71,6 +71,10 @@ your user-level `statusLine`:
 node "$(ls -d ~/.claude/plugins/cache/jasonm4130-claude-skills/handoff/*/scripts/setup.mjs | sort -V | tail -1)"
 ```
 
+Whichever cached `setup.mjs` this glob picks is fine: every version writes the same
+version-agnostic wrapper, and the wrapper resolves the active, non-orphaned plugin version
+at runtime — so a rollback is honored even if the glob points at a newer, orphaned `setup.mjs`.
+
 If you skip this step, the SessionStart hook detects it and prints this same command as a
 one-time reminder — see "Setup reminder" below.
 

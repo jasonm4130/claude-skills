@@ -26,7 +26,7 @@ Add the marketplace once, then install the plugins you want.
 | `handoff` | Context-fill-triggered handoff doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
 | `session-retro` | Session retrospectives that capture learnings to memory | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
-| `subagent-driven-development` | Deterministic workflow-driven implement/review/fix loop | Node 18+ | `/plugin install subagent-driven-development@jasonm4130-claude-skills` |
+| `subagent-driven-development` | Deterministic workflow-driven implement/review/fix loop | – | `/plugin install subagent-driven-development@jasonm4130-claude-skills` |
 | `superpowers-core` | Owned fork of the superpowers process skills + the `using-skills` dispatcher | Node 18+ | `/plugin install superpowers-core@jasonm4130-claude-skills` |
 | `visual-plan` | Markdown-canonical ADR/plan, optional rich HTML companion | – | `/plugin install visual-plan@jasonm4130-claude-skills` |
 | `workflow-model-guard` | PreToolUse guard nudging model tiering in high-fan-out Workflows | Node 18+ | `/plugin install workflow-model-guard@jasonm4130-claude-skills` |
@@ -44,8 +44,10 @@ Full details per plugin: see `plugins/<name>/README.md`.
 >
 > The handoff plugin also needs a one-time `statusLine` wire-up:
 > `node "$(ls -d ~/.claude/plugins/cache/jasonm4130-claude-skills/handoff/*/scripts/setup.mjs | sort -V | tail -1)"`
-> (the setup script installs a version-agnostic wrapper, so upgrades don't break it). Skip
-> this step and the next session prints the same command once, as a reminder.
+> (the setup script installs a version-agnostic wrapper that resolves the active,
+> non-orphaned version at runtime, so upgrades and rollbacks don't break it; whichever
+> cached `setup.mjs` this picks writes the same wrapper). Skip this step and the next
+> session prints the same command once, as a reminder.
 
 ## Repo layout
 

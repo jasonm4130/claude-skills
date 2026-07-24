@@ -42,7 +42,7 @@ genuinely helps.
 ## How it works
 
 1. **Markdown by default.** Prose, `mermaid` diagrams, and GFM tables go in a
-   normal `.md` written into the repo (`docs/adr/NNNN-<slug>.md` or
+   normal `.md` written into the repo (`docs/adr/YYYY-MM-DD-<slug>.md` or
    `docs/plans/<slug>.md`). You commit it like any doc.
 2. **Rich HTML on demand.** When the work needs a block markdown can't render,
    the skill also writes a self-contained `plan.html` to
