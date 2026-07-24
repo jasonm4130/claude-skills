@@ -139,7 +139,7 @@ Everything else — tiering, escalation, the per-task gate, finishing — is ide
 
 ### 7. On return: present, adjudicate, finish
 The workflow returns `{ tasks, planConflicts, halted, finalReview, finalFix,
-mergeBase, head, merges, ledgerPath, meta }`.
+mergeBase, head, merges, meta }`.
 
 **Verify the returned head yourself before presenting or finishing.** The workflow's
 `verified: true` flags come from a verifier *agent* — an independent check, not proof (the
@@ -165,7 +165,12 @@ gate exists to catch.
   merge-gate failures ("merge gate red after repair"); `failures[]` covers
   task-level ones. Failed tasks keep their worktree and branch for
   inspection. After you fix the plan/blocker, resume with
-  `Workflow({ scriptPath, resumeFromRunId })` (completed tasks return cached).
+  `Workflow({ scriptPath, resumeFromRunId })` (completed tasks return cached) —
+  **but only within the same Claude Code session**: resume state lives in that
+  session's memory, not on disk, so exiting the session (or a crash) loses it
+  and the next run starts fresh from wave 0. There is no durable ledger; if you
+  need to resume across sessions, keep the failed task's worktree/branch and
+  re-run the plan from that task manually.
   A halt can now also come from the **Final** phase (`wave: "final"`) — a missing final
   review, a missing fixer result, or a final fix that could not be confirmed — from a **merge
   gate** whose claimed green the verifier could not confirm, and from a **singleton task** whose
