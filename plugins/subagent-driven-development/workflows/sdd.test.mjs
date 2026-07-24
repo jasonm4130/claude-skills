@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "sdd.mjs"), "utf8");
 const pure = src.split("// >>> PURE")[1].split("// <<< PURE")[0];
 const H = new Function(
-  `${pure}; return { TIERS, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchImpl, detectOscillation, ledgerLine, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptVerification };`,
+  `${pure}; return { TIERS, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchImpl, detectOscillation, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptVerification };`,
 )();
 
 const okArgs = () => ({
@@ -132,10 +132,6 @@ test("detectOscillation flags a class surviving two consecutive rounds", () => {
   assert.equal(H.detectOscillation([["x"], ["y"]]), false);
   assert.equal(H.detectOscillation([["x"], ["x"]]), true);
   assert.equal(H.detectOscillation([["x"], ["y"], ["y"]]), true);
-});
-
-test("ledgerLine formats a stable record", () => {
-  assert.equal(H.ledgerLine(3, "aaaaaaa", "bbbbbbb", "clean"), "Task 3: clean (commits aaaaaaa..bbbbbbb)");
 });
 
 test("validateArgs defaults maxParallel/setupCmd/testCmd and accepts overrides", () => {

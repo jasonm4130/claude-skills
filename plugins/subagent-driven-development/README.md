@@ -59,7 +59,7 @@ current tip, `git rev-parse HEAD`) anchors wave-0 dispatch. Omitting
 stale tree whenever the branch is ahead of the merge-base — always pass it.
 
 **return:**
-`{ tasks, planConflicts, halted, finalReview, finalFix, mergeBase, head, merges, ledgerPath, meta }`
+`{ tasks, planConflicts, halted, finalReview, finalFix, mergeBase, head, merges, meta }`
 
 ### Progress phases
 
@@ -93,7 +93,9 @@ set on **every** `agent()` call, so none inherit the orchestrator and the
   tier below opus; at opus, up to `escalateAttempts` (default 2); then one shot on
   `fable` — the premium top rung, opt out with `fableEscalation: false` to halt at
   opus (on by default) — then halt the run and return state (resume via
-  `resumeFromRunId` after a human fixes the cause). A Fable dispatch that fails
+  `resumeFromRunId` after a human fixes the cause — **same Claude Code session
+  only**: resume state is not persisted to disk, so exiting the session starts
+  the next run fresh from wave 0). A Fable dispatch that fails
   (tier unavailable) degrades to the same clean halt, never a crash.
 - **Oscillation breaker:** the same finding-class surviving two consecutive fix
   rounds halts that task instead of looping forever.

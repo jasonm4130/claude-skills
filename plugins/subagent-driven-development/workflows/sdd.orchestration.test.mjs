@@ -292,3 +292,11 @@ test("phases: a SINGLETON wave's verifier is not mislabelled as a Merge — ther
   assert.equal(phaseOf(calls, "verify:t1"), "Implement",
     "a singleton wave never merges; its verifier checks the implementer's claim, so it belongs with Implement");
 });
+
+test("return value: no path-shaped key points at a file the run never creates", async () => {
+  // The workflow sandbox has no fs — it cannot create or append to a ledger file. Returning
+  // `ledgerPath` claims a durable progress record that nothing ever writes.
+  const { result } = await runWorkflow({ args: soloArgs(), respond: happyResponder() });
+  assert.equal(result.halted, null);
+  assert.ok(!("ledgerPath" in result), "result must not advertise an unwritten ledger file");
+});
