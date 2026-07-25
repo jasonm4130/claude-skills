@@ -26,6 +26,16 @@ absolute path, but cache presence is not activation state — superseded and
 rolled-back versions stay on disk, so an unfiltered max would silently undo a
 rollback. All versions orphaned (i.e. uninstalled) renders `?`.
 
+Since 0.9.1 the wrapper runs the resolved script **in-process** (`await import()`)
+rather than spawning a child. Spawning cost a second Node cold start on every
+render — measured 74.2ms → 40.1ms for byte-identical output, on the most frequently
+invoked script in the plugin, with Node startup ~30ms of the total. The resolved
+script reads stdin and writes stdout itself, so this is behaviourally equivalent to
+the old `stdio: "inherit"`; the import is awaited inside a `try/catch` that still
+renders `?`, preserving the old `child.on("error")` fallback, and the path is
+converted with `pathToFileURL` because a bare absolute path is not a valid import
+specifier on Windows.
+
 ## Plugin structure
 
 ```
@@ -56,7 +66,7 @@ handoff/
 ## Dependencies
 
 - **Node.js 18+ on PATH.** No third-party packages, no `package.json`.
-  Stdlib only.
+  Stdlib only. Claude Code ships a self-contained native binary and its documented system requirements do **not** include Node, so this is an external prerequisite the host does not provide — install it via Homebrew, WinGet, or your distro's package manager. On a machine without it the hook cannot run and Claude Code shows a non-blocking `hook error` per matching event, so the guard fails open. There is no silent-skip: probing for node needs shell syntax that is not portable across the shells Claude Code picks per platform, and the exec-form alternative is unsupported before 2.1.139 with no way to enforce that floor (`engines` is not a recognised manifest field). See `scripts/hook-runtime-guard.test.mjs` for the full reasoning.
 - **Claude Code >= 2.1.110** — required for `hooks.json` plugin hook registration.
 
 ## Development

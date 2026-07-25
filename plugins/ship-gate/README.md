@@ -58,7 +58,7 @@ if set, otherwise `os.tmpdir()/ship-gate-data`. Flags are plain text, not JSON.
 ## Requirements
 
 - Claude Code ≥ 2.1.110
-- **Node.js 18+ on PATH**
+- **Node.js 18+ on PATH.** Claude Code ships a self-contained native binary and its documented system requirements do **not** include Node, so this is an external prerequisite the host does not provide — install it via Homebrew, WinGet, or your distro's package manager. On a machine without it the hook cannot run and Claude Code shows a non-blocking `hook error` per matching event, so the guard fails open. There is no silent-skip: probing for node needs shell syntax that is not portable across the shells Claude Code picks per platform, and the exec-form alternative is unsupported before 2.1.139 with no way to enforce that floor (`engines` is not a recognised manifest field). See `scripts/hook-runtime-guard.test.mjs` for the full reasoning.
 - git (silent no-op outside a git repo)
 
 ## Tests
