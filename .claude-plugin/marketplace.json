@@ -15,7 +15,7 @@
       "name": "adr",
       "source": "./plugins/adr",
       "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to the subagent-driven-development loop. Front-end for adr → sdd.",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "author": {
         "name": "Jason Matthew"
       },
@@ -145,8 +145,8 @@
     {
       "name": "docs-sync-guard",
       "source": "./plugins/docs-sync-guard",
-      "description": "PreToolUse git-commit gate against docs drift — denies a commit that changes code without staging its covering docs: per-plugin README/CLAUDE.md pairs in plugins/ monorepos, and a generic nearest-covering-doc rule (README.md/CLAUDE.md/AGENTS.md walking up from each changed file) in any repo. Tests, version bumps, markdown, and lockfiles never trigger it; add docs-sync:ack to the commit message for deliberate no-doc-impact changes.",
-      "version": "0.3.1",
+      "description": "Two mechanisms against docs drift. A blocking PreToolUse git-commit gate denies a commit that changes code without staging its covering docs — per-plugin README/CLAUDE.md pairs in plugins/ monorepos, and a generic nearest-covering-doc rule (README.md/CLAUDE.md/AGENTS.md walking up from each changed file) in any repo; tests, version bumps, markdown and lockfiles never trigger it, and docs-sync:ack bypasses deliberately. Separately, a never-blocking consolidation trigger counts commits since the .docs-sync record and nudges in-session toward /docs-consolidate, an audit for contradictions, stale claims, orphans and bloat.",
+      "version": "0.3.2",
       "author": {
         "name": "Jason Matthew"
       },

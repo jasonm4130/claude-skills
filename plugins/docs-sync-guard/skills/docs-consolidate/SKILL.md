@@ -93,11 +93,18 @@ not happen is the one lie this whole mechanism exists to prevent.
 
 Record line count and last-touching commit for each.
 
-**Exclude dated, point-in-time records** — `docs/superpowers/specs/`,
-`docs/superpowers/plans/`, `docs/adr/`. These are archival by convention (ADRs are
-never deleted; a superseded one is *supposed* to disagree with current state), so
-auditing them generates permanent, unfixable "stale" findings. That is the fastest
-route to a not-useful rate that gets the whole tool switched off.
+**Exclude dated, point-in-time records** — any specs/plans/ADR directory:
+`docs/superpowers/specs/`, `docs/superpowers/plans/`, `docs/plans/`, `docs/adr/`,
+and their equivalents wherever this repo keeps them. These are archival by
+convention (ADRs are never deleted; a superseded one is *supposed* to disagree with
+current state), so auditing them generates permanent, unfixable "stale" findings.
+That is the fastest route to a not-useful rate that gets the whole tool switched off.
+
+Match on **what the directory holds, not on the four names above** — a repo that
+keeps dated records somewhere else still needs them excluded, and a `docs/plans/`
+that this list happened to miss is how a pass ends up auditing an archive. Dated
+filenames (`YYYY-MM-DD-*`) are the reliable tell. Say which directories you
+excluded when you report.
 
 **Exclude generated sections.** transcoder's CONFIG-MATRIX in `docs/STATUS.md` is
 generated from `crates/host/src/http/config_matrix.rs::MATRIX` and CI-linted by

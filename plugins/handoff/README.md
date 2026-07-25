@@ -7,27 +7,25 @@ when your context window fills up, and auto-loads it in the next session.
 
 1. **Monitors context fill** via a statusLine command that renders a color-coded,
    adaptive status line and detects when context crosses a configurable threshold
-   (default 70%). Since 0.8.0 the line composes up to four segments — identity/branch/dirty,
-   context bar, model, and rate-limits — and reads context from the transcript first
-   (stable, once-per-turn) rather than the volatile per-request stdin frame, which is what
-   stopped the bar from filling and emptying erratically mid-turn; stdin's `current_usage`
-   is now the fallback, not the primary source. The line stays calm by default: dirty count,
-   rate-limit windows, and the token-count suffix only appear when they're actually
-   noteworthy (dirty > 0, a window ≥50% used, tokens when the bar is red), and the whole
-   line best-effort fits the terminal width (via `COLUMNS`, populated from CC 2.1.153+;
-   defaults to a 120-column budget otherwise) by progressively dropping rate-limits, then
-   dirty, then shortening the model name, then clamping identity/branch — the context %
-   is never dropped. Git branch + dirty count come from a `spawnSync` shell-out that
-   degrades to omitting the whole git segment on any failure (non-git dir, missing git,
-   timeout) — it never takes the bar down. Since 0.6.0, each nudge is **idempotent per
-   band**: an atomic exclusive-create marker (not a lock) guarantees a band fires at most
-   once no matter how many invocations race, and the transcript-derivation fallback is
-   cached on the transcript's path + mtime + size so the expensive read only runs when the
-   transcript actually changed. A band also resets on a real decrease in context (not just
-   dropping below the threshold), so a `/compact` that lands above the threshold still lets
-   the next climb re-nudge instead of staying silently suppressed. Overlapping invocations
-   (Claude Code can fire the next one before a slow render finishes) are still guarded — a
-   concurrent run replays the previous render — but that guard is a **performance guard**,
+   (default 70%).
+
+   The line composes up to four segments — identity/branch/dirty, context bar, model,
+   and rate-limits — and reads context from the transcript first (stable, once-per-turn)
+   rather than the volatile per-request stdin frame; stdin's `current_usage` is the
+   fallback. It stays calm by default: dirty count, rate-limit windows, and the
+   token-count suffix appear only when actually noteworthy (dirty > 0, a window ≥50%
+   used, tokens when the bar is red). The whole line best-effort fits the terminal width
+   (via `COLUMNS`, populated from CC 2.1.153+; a 120-column budget otherwise) by
+   progressively dropping rate-limits, then dirty, then shortening the model name, then
+   clamping identity/branch — the context % is never dropped. Git branch + dirty come
+   from a `spawnSync` shell-out that degrades to omitting the whole git segment on any
+   failure, so it never takes the bar down.
+
+   Each nudge is **idempotent per band**: an atomic exclusive-create marker (not a lock)
+   guarantees a band fires at most once no matter how many invocations race. A band also
+   resets on a real decrease in context, not just on dropping below the threshold, so a
+   `/compact` landing above the threshold still lets the next climb re-nudge. Overlapping
+   invocations replay the previous render — but that guard is a **performance guard**,
    not a mutex: it never breaks a lock on age alone or one whose holder is alive, and
    correctness does not depend on it (statusLine has no documented timeout).
 2. **Nudges escalate with context** — a nudge fires on every 10%-point band
@@ -130,7 +128,7 @@ neither is present, prints the setup one-liner once as an `additionalContext` re
 | Env var | Default | Description |
 |---|---|---|
 | `HANDOFF_THRESHOLD_PCT` | `70` | Context % at which to fire the nudge |
-| `HANDOFF_EFFECTIVE_MAX_TOKENS` | _(unset)_ | Token ceiling to compute pct against — mirror your `autoCompactWindow` setting. When set, a JSONL transcript fallback (added in 0.3.0) is used if `current_usage` is absent or all-zero in stdin. |
+| `HANDOFF_EFFECTIVE_MAX_TOKENS` | _(unset)_ | Token ceiling to compute pct against — mirror your `autoCompactWindow` setting. When set, a JSONL transcript fallback is used if `current_usage` is absent or all-zero in stdin. |
 | `CLAUDE_PLUGIN_DATA` | `<os.tmpdir>/handoff-data` | Where flag and last-pct state files are stored |
 
 Set env vars in `~/.claude/settings.json` under `"env"`:
@@ -188,7 +186,7 @@ This is a workaround for upstream
 
 ### Why a handoff must never be committed (and what happens if one is)
 
-**Keep `/.claude/handoffs/` gitignored.** The skill tells you to, and since 0.7.0 the loader depends
+**Keep `/.claude/handoffs/` gitignored.** The skill tells you to, and the loader depends
 on it.
 
 A handoff is injected into the next session announced as *"from your previous session"* — which is
@@ -201,7 +199,7 @@ The gitignore convention is what makes this cheap to close, with no allowlist an
 handoff this machine wrote is untracked, always, and a fresh clone cannot produce an untracked-but-
 present ignored file.** So anything git *tracks* was shipped by the repo, not written here.
 
-Since 0.7.0 the loader refuses to auto-load a handoff (or a `.pending`) that git tracks. It emits
+The loader refuses to auto-load a handoff (or a `.pending`) that git tracks. It emits
 neither the contents nor the filename — both are attacker-controlled — and instead tells you plainly
 that a committed handoff was found and skipped. If you trust the repo, read the file yourself.
 
@@ -229,7 +227,7 @@ deciles — so a non-decile `HANDOFF_THRESHOLD_PCT` (e.g. 75) still fires its
 first nudge as soon as context crosses 75%, then again at 85%, 95%, etc.,
 rather than waiting for the next absolute 10%-boundary.
 
-### Concurrency and caching (0.6.0)
+### Concurrency and caching
 
 - **Nudges are idempotent per band.** An atomic exclusive-create marker
   (`handoff-fired-<sid>-t<thr>-b<N>`) — not a lock — is what guarantees a band fires at
@@ -267,8 +265,8 @@ rather than waiting for the next absolute 10%-boundary.
 - Check for errors in the hook: run `check-handoff-flag.mjs` manually with test input.
 - If `CLAUDE_PLUGIN_DATA` is unset and the tmpdir fallback is not writable, the flag may
   not be created or deleted correctly.
-- Note: since 0.4.0, re-firing at each new 10%-point band (70/80/90) is
-  expected behavior, not a bug — see "Band-crossing semantics" above.
+- Note: re-firing at each new 10%-point band (70/80/90) is expected
+  behavior, not a bug — see "Band-crossing semantics" above.
 
 **Handoff not auto-loading in new session:**
 - Confirm `.claude/handoffs/.pending` was written (check after running `/handoff`).

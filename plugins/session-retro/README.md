@@ -79,48 +79,19 @@ The skill writes to `${CLAUDE_PROJECT_DIR}/memory/` using three types:
 
 Each entry has `**Why:**` and `**How to apply:**` slots so the rationale survives.
 
-## Migration from v0.2
+## Upgrading
 
-v0.2 → v3 is a force-push redesign. To upgrade:
-
-```
-/plugin update session-retro@jasonm4130-session-retro
-/reload-plugins
-```
-
-Claude Code will prompt to approve the new hooks (`PostToolUse`, `Stop`, `PreCompact`). Existing memory files keep working — same format. claude-mem is no longer a requirement; remove it if you only had it installed for session-retro.
-
-## Migration from v0.3 to v0.4
-
-v0.3 → v0.4 changes only the nudge mechanism — `/retro` behaviour itself is unchanged.
-
-**What changed:** The `Stop` and `PreCompact` hooks previously emitted a `systemMessage` directly. In v0.4 they instead write a flag file (`retro-nudge-{session_id}.flag`). A new `UserPromptSubmit` hook (`check-retro-flag.sh`) picks up the flag on your next prompt and injects an `additionalContext` block, which the agent surfaces in its own voice. The flag is consumed immediately (fire-once).
-
-**Why:** `systemMessage` is passive — the nudge appeared in the hook output panel and users consistently scrolled past it. `additionalContext` feeds directly into the agent's response, making the nudge much harder to miss.
-
-**To upgrade:**
-
-```
-/plugin update session-retro@jasonm4130-session-retro
-/reload-plugins
-```
-
-Claude Code will prompt to approve the new `UserPromptSubmit` hook.
-
-## Migration from v0.5 to v0.6
-
-v0.5 → v0.6 changes only *when* the nudge surfaces — hooks, flags, and the `/retro` interview are otherwise unchanged.
-
-**What changed:** Per-session Stop nudges no longer interrupt you. `UserPromptSubmit` now folds each retro-worthy Stop into a cross-session worthy log (`retro-worthy.jsonl`) and only emits an agent-directed nudge once `≥ RETRO_BATCH_MIN_SESSIONS` (default 3) worthy sessions have accrued since your last retro and `≥ RETRO_BATCH_MIN_DAYS` (default 7) have passed — at most once per 24h. `PreCompact` still nudges immediately. The `/retro` skill now ends by running `mark-retro-done.mjs`, which records the fired flag and resets the batch clock.
-
-**Why:** In practice the old per-session nudge fired ~60 times over three weeks and yielded 3 retros — noise that trained users to ignore it, while auto-memory already captured ambient facts. Batching trades 60 low-signal nudges for the occasional high-signal one the agent acts on directly.
-
-Just `/plugin update` and `/reload-plugins`; no new hooks to approve, no on-disk format break.
+`bash scripts/update-plugins.sh` then `/reload-plugins`, or see the root README's
+*Updating an installed plugin*. Claude Code prompts to approve any hook the new
+version adds. Upgrades need no manual migration step: where on-disk state had to
+change (the v0.7.0 `retro-processed.jsonl` ledger), the hooks run a one-time,
+idempotent migration themselves. For what changed in a given release, read
+`git log plugins/session-retro/`.
 
 ## Tests
 
 ```
-node --test plugins/session-retro/tests/
+node --test plugins/session-retro/tests/*.test.mjs
 ```
 
 The Node `node:test` suite covers event-log init/parallel-writes (race regression), Stop hook threshold scoring (no-trigger, edits, duration, commit, tests-trigger, tool-calls, retro-fired suppression, compound reasons, malformed-line resilience, session_id from stdin), PreCompact flag-write, check-retro-flag handler (silent worthy-log absorption + dedup for Stop-origin flags, immediate emission for PreCompact, batch-nudge fire/silence across the session/day/24h gates, env overrides), mark-retro-done (fired flag + last-retro timestamp from stdin or argv), and an end-to-end integration test that runs the full SessionStart → PostToolUse → Stop → UserPromptSubmit pipeline.

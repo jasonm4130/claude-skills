@@ -150,7 +150,7 @@ occasional high-signal one the agent acts on directly.
 
 ```bash
 # Run all tests
-node --test plugins/session-retro/tests/
+node --test plugins/session-retro/tests/*.test.mjs
 
 # Run a single test file
 node --test plugins/session-retro/tests/stop-write-retro-flag.test.mjs

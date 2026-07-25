@@ -120,9 +120,12 @@ JSDoc typedefs, own `lib.mjs` copy (plugins can't share files), deny via the
 ## Development
 
 ```bash
-node --test plugins/docs-sync-guard/tests/   # real temp git repos throughout
+node --test plugins/docs-sync-guard/tests/*.test.mjs   # real temp git repos throughout
 ```
 
-The boundary test builds 49 real commits, so the suite takes ~40s. Filler commits use
+Glob the files — Node 24 regressed bare-directory invocation (`node --test <dir>` →
+MODULE_NOT_FOUND); see the header of `scripts/run-node-tests.sh`, which is what CI runs.
+
+The boundary test builds 49 commits, so the suite takes ~1min. Filler commits use
 `--allow-empty` — `rev-list --count` counts them identically and it avoids both the
 file I/O and a per-call filename counter that collides across calls.

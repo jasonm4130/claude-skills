@@ -29,8 +29,8 @@ Read the real code and current external practice the change touches.
 cross-cutting, or the user asks** — a deep-dive on a one-line change is the
 ceremony to avoid.
 
-- **State grounding:** LSP (symbols/types/refs), `graphify` if a
-  `graphify-out/graph.json` exists, `git` history, an `Explore` agent for breadth.
+- **State grounding:** LSP (symbols/types/refs), `git` history, an `Explore`
+  agent for breadth.
 - **Research grounding:** `context7` for library docs, the cloudflare MCP for CF,
   a `deep-dive` fan-out for novel/cross-cutting work or on request — current
   external knowledge, not ~1-year-stale training.

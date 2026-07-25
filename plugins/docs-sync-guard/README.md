@@ -156,7 +156,7 @@ never committed.
 ## Development
 
 ```bash
-node --test plugins/docs-sync-guard/tests/
+node --test plugins/docs-sync-guard/tests/*.test.mjs
 
 # Manual smoke test — code staged, docs not → deny envelope on stdout
 echo '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"cwd":"<repo-with-staged-plugin-code>"}' \

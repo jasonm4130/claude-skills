@@ -147,7 +147,7 @@ others pass.
 
 ```bash
 # Run the test suite
-node --test plugins/workflow-model-guard/tests/
+node --test plugins/workflow-model-guard/tests/*.test.mjs
 
 # Manual smoke test — expensive workflow, no model → deny envelope on stdout
 echo '{"tool_name":"Workflow","tool_input":{"script":"await parallel(items.map(i => () => agent(\"do\")))"}}' \
