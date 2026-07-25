@@ -1,23 +1,36 @@
 // @ts-check
-// Node hooks must use exec form, never a shell.
+// Hook commands must stay in shell form. Do not "modernise" them to exec form.
 //
-// Claude Code picks the hook shell per platform: sh on macOS/Linux, Git Bash on
-// Windows, but PowerShell on native Windows when Git Bash is absent. Any shell
-// syntax in a hook command is therefore a portability trap — a POSIX probe such as
-// `command -v node >/dev/null 2>&1 || exit 0` is invalid PowerShell and errors
-// before node ever runs, breaking the hook on a supported configuration.
+// This test exists because that migration was attempted and reverted, and the reason
+// is not visible from the hooks.json files themselves.
 //
-// Exec form (`command` + `args`) sidesteps the whole problem: Claude Code resolves
-// `command` on PATH and spawns it directly with no shell on any platform, so there is
-// no dialect to get wrong. It also drops the `sh -c` fork — measured 45.6ms through a
-// shell launcher vs 37.7ms exec form, on hooks that run on every matching tool call.
+// Exec form (`command: "node"`, `args: [script]`) is genuinely nicer: Claude Code
+// spawns the binary directly with no shell, so there is no sh-vs-PowerShell dialect
+// to get wrong and no quoting problem for paths with spaces. It is also marginally
+// faster — measured 37.7ms vs 41.1ms per invocation, on hooks that fire on every
+// matching tool call.
 //
-// The trade this encodes: `node` is an external prerequisite (Claude Code ships a
-// self-contained native binary and its documented system requirements do not include
-// Node), so on a machine without it the spawn fails and Claude Code shows a
-// non-blocking "hook error" per event. That failure is loud and self-diagnosing,
-// which is preferred here over carrying a shell launcher whose Windows branch this
-// repo cannot test — CI runs ubuntu and macos only.
+// The blocker is compatibility, and it has no workaround:
+//
+//   1. `args` was added in Claude Code 2.1.139 ("Added hook `args: string[]` field
+//      (exec form) that spawns the command directly without a shell" — CHANGELOG).
+//      The hooks docs page carries no min-version marker for it; the changelog is the
+//      authority. Do not read the docs page's silence as "no requirement".
+//   2. On an older host `args` is ignored, so `command: "node"` degrades to
+//      `sh -c "node"`. node then reads the hook's JSON payload from stdin AS
+//      JAVASCRIPT and dies with a SyntaxError, so the guard never runs and fails open.
+//   3. There is no way to stop that install. `engines` is NOT a recognised plugin.json
+//      field — `claude plugin validate --strict` reports "Unknown field 'engines' ...
+//      Claude Code ignores unrecognized fields at load time", and the plugin manifest
+//      reference defines no minimum-version mechanism at all. The `engines` values in
+//      this repo are documentation, not enforcement.
+//
+// So exec form trades a few milliseconds for a silently unguarded window on any host
+// between the plugin's real floor and 2.1.139, with nothing able to prevent it.
+// Shell form works on every version and every platform.
+//
+// Revisit only when the oldest Claude Code worth supporting is >= 2.1.139, or when a
+// real minimum-version mechanism ships. Then delete this test with the migration.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -45,99 +58,41 @@ function allHooks() {
   return out;
 }
 
-test("every node hook uses exec form, not a shell command string", () => {
-  const offenders = [];
-  for (const { plugin, event, hook } of allHooks()) {
-    const command = hook.command;
-    if (typeof command !== "string") continue;
-    // A node hook in exec form has command exactly "node"; in shell form the binary
-    // name is embedded in a command string that a shell has to tokenize.
-    const isExecNode = command === "node" && Array.isArray(hook.args);
-    const mentionsNode = /(^|[;&|\s])node(\s|$)/.test(command);
-    if (mentionsNode && !isExecNode) offenders.push(`${plugin} ${event}: ${command}`);
-  }
+test("no hook uses exec form (`args`) — unsupported before Claude Code 2.1.139", () => {
+  const offenders = allHooks()
+    .filter(({ hook }) => Array.isArray(hook.args))
+    .map(({ plugin, event }) => `${plugin} ${event}`);
   assert.deepEqual(
     offenders,
     [],
-    `these run node through a shell, so they depend on the platform's shell dialect:\n  ${offenders.join("\n  ")}`,
+    `exec form silently disables these hooks on hosts older than 2.1.139, and ` +
+      `engines cannot prevent the install — see this file's header:\n  ${offenders.join("\n  ")}`,
   );
 });
 
-test("exec-form hooks carry no shell metacharacters in command or args", () => {
+test("every hook command points at a script that exists", () => {
   for (const { plugin, event, hook } of allHooks()) {
-    if (hook.command !== "node") continue;
-    for (const arg of hook.args ?? []) {
-      // ${CLAUDE_PLUGIN_ROOT} is substituted by Claude Code as a plain string, not by a
-      // shell, so it is the one brace/dollar construct that belongs here — strip it
-      // before looking for syntax that would only ever mean something to a shell.
-      const rest = arg.replaceAll("${CLAUDE_PLUGIN_ROOT}", "");
-      assert.doesNotMatch(
-        rest,
-        /[;&|><$(){}]/,
-        `${plugin} ${event}: arg "${arg}" contains shell syntax, which exec form never interprets`,
-      );
-    }
-    // `shell` is ignored in exec form — carrying it would imply a guarantee it can't make.
-    assert.equal(hook.shell, undefined, `${plugin} ${event}: "shell" is ignored when args is set`);
+    const command = hook.command;
+    if (typeof command !== "string") continue;
+    const m = /\$\{CLAUDE_PLUGIN_ROOT\}\/(\S+?\.mjs|\S+?)"/.exec(command);
+    if (!m) continue;
+    const target = join(pluginsDir, plugin, m[1]);
+    assert.ok(existsSync(target), `${plugin} ${event}: hook targets missing file ${target}`);
   }
 });
 
-test("every exec-form hook names a script that exists", () => {
-  for (const { plugin, event, hook } of allHooks()) {
-    if (hook.command !== "node") continue;
-    const args = hook.args ?? [];
-    assert.equal(args.length, 1, `${plugin} ${event}: expected exactly one script arg`);
-    const rel = args[0].replace("${CLAUDE_PLUGIN_ROOT}/", "");
-    const script = join(pluginsDir, plugin, rel);
-    assert.ok(existsSync(script), `${plugin} ${event}: hook targets missing script ${script}`);
-  }
-});
-
-test("plugins using exec form declare a Claude Code floor that supports it", () => {
-  // Claude Code CHANGELOG 2.1.139: "Added hook `args: string[]` field (exec form) that
-  // spawns the command directly without a shell". The hooks docs page carries no
-  // min-version marker for `args`, so the changelog is the authority here.
-  //
-  // This pairing is the whole point of the test: on an older host the `args` field is
-  // unknown, so the hook does not run as intended and a PreToolUse guard stops
-  // guarding. Declaring exec form without raising the floor ships a silently
-  // disabled guard to anyone between 2.1.110 and 2.1.138.
-  const EXEC_FORM_MIN = [2, 1, 139];
-
+test("`engines` is treated as documentation, never as a compatibility gate", () => {
+  // Pinned so a future reader does not repeat the mistake of raising this floor and
+  // believing it prevents anything. Claude Code ignores the field entirely.
   for (const plugin of readdirSync(pluginsDir)) {
-    const manifestPath = join(pluginsDir, plugin, "hooks", "hooks.json");
+    const manifestPath = join(pluginsDir, plugin, ".claude-plugin", "plugin.json");
     if (!existsSync(manifestPath)) continue;
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    const usesExecForm = Object.values(manifest.hooks ?? {})
-      .flat()
-      .flatMap((/** @type {any} */ m) => m.hooks ?? [])
-      .some((/** @type {any} */ h) => Array.isArray(h.args));
-    if (!usesExecForm) continue;
-
-    const pluginJson = JSON.parse(
-      readFileSync(join(pluginsDir, plugin, ".claude-plugin", "plugin.json"), "utf8"),
-    );
-    const declared = pluginJson.engines?.["claude-code"];
-    assert.ok(declared, `${plugin}: uses exec form but declares no claude-code engine floor`);
-
-    const m = /^>=\s*(\d+)\.(\d+)\.(\d+)$/.exec(declared);
-    assert.ok(m, `${plugin}: engines.claude-code ${declared} is not a parseable ">=x.y.z" floor`);
-    const floor = [Number(m[1]), Number(m[2]), Number(m[3])];
-    const ok =
-      floor[0] > EXEC_FORM_MIN[0] ||
-      (floor[0] === EXEC_FORM_MIN[0] &&
-        (floor[1] > EXEC_FORM_MIN[1] ||
-          (floor[1] === EXEC_FORM_MIN[1] && floor[2] >= EXEC_FORM_MIN[2])));
-    assert.ok(
-      ok,
-      `${plugin}: uses exec form (needs >=${EXEC_FORM_MIN.join(".")}) but declares ${declared}`,
+    const engines = JSON.parse(readFileSync(manifestPath, "utf8")).engines;
+    if (engines === undefined) continue;
+    assert.match(
+      engines["claude-code"] ?? "",
+      /^>=\d+\.\d+\.\d+$/,
+      `${plugin}: engines.claude-code should stay a plain ">=x.y.z" note`,
     );
   }
-});
-
-test("no plugin still ships the retired shell launcher", () => {
-  const leftovers = readdirSync(pluginsDir).filter((p) =>
-    existsSync(join(pluginsDir, p, "hooks", "run-hook.cmd")),
-  );
-  assert.deepEqual(leftovers, [], `run-hook.cmd is superseded by exec form: ${leftovers.join(", ")}`);
 });

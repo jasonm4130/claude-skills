@@ -16,6 +16,6 @@
     "claude-code"
   ],
   "engines": {
-    "claude-code": ">=2.1.139"
+    "claude-code": ">=2.1.110"
   }
 }

@@ -56,7 +56,7 @@ when your context window fills up, and auto-loads it in the next session.
 - **Node.js 18+** on `PATH`. The Claude Code installer does not bring Node — install
   it via your platform package manager (Homebrew, WinGet, your distro's apt/dnf/pacman,
   or [nodejs.org](https://nodejs.org)).
-- Claude Code `>= 2.1.139` — hooks use exec form (`args`), added in 2.1.139.
+- Claude Code `>= 2.1.110`.
 
 ## Install
 

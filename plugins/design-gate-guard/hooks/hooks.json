@@ -6,10 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-design-gate.mjs"
-            ],
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-design-gate.mjs\"",
             "timeout": 5
           }
         ]

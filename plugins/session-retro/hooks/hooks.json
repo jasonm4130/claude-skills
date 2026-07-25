@@ -5,10 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/mark-session-start.mjs"
-            ],
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/mark-session-start.mjs\"",
             "timeout": 5
           }
         ]
@@ -20,10 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/posttooluse-append-event.mjs"
-            ],
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/posttooluse-append-event.mjs\"",
             "timeout": 5
           }
         ]
@@ -34,10 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/stop-write-retro-flag.mjs"
-            ],
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/stop-write-retro-flag.mjs\"",
             "timeout": 5
           }
         ]
@@ -48,10 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/precompact-write-retro-flag.mjs"
-            ],
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/precompact-write-retro-flag.mjs\"",
             "timeout": 5
           }
         ]
@@ -62,10 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/check-retro-flag.mjs"
-            ],
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/check-retro-flag.mjs\"",
             "timeout": 5
           }
         ]

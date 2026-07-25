@@ -6,10 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs"
-            ],
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs\"",
             "timeout": 5
           }
         ]
@@ -19,10 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs"
-            ],
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs\"",
             "timeout": 5
           }
         ]
