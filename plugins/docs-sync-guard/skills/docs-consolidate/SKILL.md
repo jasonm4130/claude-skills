@@ -42,9 +42,14 @@ unknown quality, offer to run a full pass immediately after adopting.
 
    ```
    docs-sync: audited=<git rev-parse HEAD>
-   Last documentation consolidation: <ISO-8601 UTC>
+   Recorded: <ISO-8601 UTC>
    Run /docs-consolidate — do not hand-edit the audited= line.
    ```
+
+   The second line says **Recorded**, not "Last consolidation", and both `--init` and
+   a re-stamp use the same wording. At adoption no consolidation has happened, so a
+   line claiming one would be false in the file whose entire job is to not make false
+   claims.
 
 3. Commit it. Then assert `audited == git rev-parse HEAD~1` — the record names the
    commit whose tree was audited, which is the *parent* of the commit containing the
