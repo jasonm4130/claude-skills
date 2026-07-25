@@ -20,7 +20,7 @@ Any single "heavy" signal is usually enough to route heavy — visual exploratio
 
 ## Light path: design inline
 
-Work this loop: ground it in the subject, apply the design principles below, explore a couple of concrete directions, then self-critique before you call it done.
+Work this loop: ground it in the subject, apply the design principles below, cut the AI tells, explore a couple of concrete directions, then self-critique before you call it done.
 
 ### Ground it in the subject
 
@@ -37,7 +37,7 @@ If the request doesn't pin down what's being designed, pin it yourself: name the
 
 ### Cut the AI tells
 
-A concrete floor that *subtracts* the marks of generated design. These remove recognizable tells; they don't prescribe a house look (a fixed "anti-slop" style just trades one sameness for another). Apply them while building and judge by eye — they're defaults that yield to real content, accessibility, and the surface's purpose, not a blocking checklist.
+A concrete **anti-tell floor** that *subtracts* the marks of generated design. These remove recognizable tells; they don't prescribe a house look (a fixed "anti-slop" style just trades one sameness for another). Apply them while building and judge by eye — they're defaults that yield to real content, accessibility, and the surface's purpose, not a blocking checklist.
 
 - **Real assets, not fakes.** No `<div>`-built "fake screenshots" of product UI and no hand-rolled decorative SVG illustrations as a default; use real or generated imagery, or leave an explicit `TODO` placeholder.
 - **No invented telemetry or chrome.** Drop fake version labels (`BETA`, `v0.6`), section-number eyebrows (`00 / INDEX`), scroll cues, and locale/weather strips unless they encode real state.
@@ -52,7 +52,7 @@ Sketch 2–3 concrete variations of the specific decision at hand (not a whole r
 
 ### Self-critique
 
-Before calling it done, check the result against the trap of templated defaults: would this exact choice be your answer to almost any similar brief, regardless of subject? If yes, revise the part that's generic. Then check the floor that never gets cut for speed: responsive down to mobile width, visible keyboard focus, and color contrast that holds up — these are cheap to get right the first time and expensive to retrofit.
+Before calling it done, check the result against the trap of templated defaults: would this exact choice be your answer to almost any similar brief, regardless of subject? If yes, revise the part that's generic. Then check the accessibility floor that never gets cut for speed: responsive down to mobile width, visible keyboard focus, and color contrast that holds up — these are cheap to get right the first time and expensive to retrofit.
 
 ## Heavy path: hand off to Claude Design in the browser
 
