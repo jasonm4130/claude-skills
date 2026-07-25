@@ -46,12 +46,20 @@ Every ambiguous case returns null from `computeDrift` and exits 0. "Cannot tell"
 never "warn" — a guard that cries wolf on shallow clones gets uninstalled, and then the
 real staleness goes unnoticed too.
 
-That was not hypothetical: the first version treated a missing stamp object as
-`unknown-commit` unconditionally, which meant a depth-1 clone of a repo whose tip is the
-doc's own commit reported a current doc as stale. Check
-`rev-parse --is-shallow-repository` before concluding a missing object means rewritten
-history. Any future "the stamp isn't resolvable" branch needs the same question asked:
-is this repo actually missing the object, or was it just never fetched?
+That was not hypothetical, and it took two passes to get right. The rule that survived
+both: **in a shallow repo, history topology is never evidence of staleness.** A real
+commit count still counts; the shape of the graph does not.
+
+Two distinct false positives, each reproduced before being fixed:
+
+| Clone | What breaks | Symptom |
+|---|---|---|
+| `--depth 1` | tip is the doc's own commit, so its stamped parent was never fetched | `cat-file` fails → false `unknown-commit` |
+| `--depth 1 --no-single-branch` | another branch keeps the stamped object alive, but the path to HEAD is cut | `--is-ancestor` returns 1 → false `diverged` |
+
+The second is the trap: the object is *present*, so an object-existence check passes and
+the bug hides behind it. Any future branch that concludes staleness from topology —
+ancestry, reachability, merge-base — needs the `shallow` guard applied to it too.
 
 ## Hook form
 

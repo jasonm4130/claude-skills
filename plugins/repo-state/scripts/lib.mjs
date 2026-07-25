@@ -202,20 +202,32 @@ export function resolveThreshold(env = process.env) {
 export function computeDrift(repoRoot, stampCommit, threshold) {
   if (git(["rev-parse", "HEAD"], repoRoot) === null) return null;
 
+  // In a shallow repo, history TOPOLOGY is never evidence of staleness. The clone
+  // boundary is treated as a root, so both "object missing" and "not an ancestor"
+  // are artefacts of truncation rather than facts about the doc:
+  //
+  //   --depth 1                     tip is the doc's own commit → its stamped parent
+  //                                 was never fetched → cat-file fails
+  //   --depth 1 --no-single-branch  another branch keeps the stamped object alive,
+  //                                 but the path from it to HEAD is cut → is-ancestor
+  //                                 returns 1 for a commit that IS an ancestor upstream
+  //
+  // Both would fire on every CI session, which is how a guard gets ignored. A real
+  // commit count (below) still counts in a shallow repo; topology does not.
+  const shallow = git(["rev-parse", "--is-shallow-repository"], repoRoot) === "true";
+
   // Stamp object missing entirely: history was rewritten hard, or the doc was
   // copied in from elsewhere. Either way its claims are unverifiable.
-  //
-  // Except in a shallow clone, where a missing object proves nothing: a depth-1
-  // checkout of a repo whose tip is the doc's own commit does not contain the
-  // parent the doc is stamped with, even though the doc is perfectly current.
-  // Warning there would fire on every CI session and teach people to ignore it.
   if (gitRun(["cat-file", "-e", `${stampCommit}^{commit}`], repoRoot).status !== 0) {
-    if (git(["rev-parse", "--is-shallow-repository"], repoRoot) === "true") return null;
+    if (shallow) return null;
     return { stale: true, reason: "unknown-commit", count: null };
   }
 
   const ancestry = gitRun(["merge-base", "--is-ancestor", stampCommit, "HEAD"], repoRoot).status;
-  if (ancestry === 1) return { stale: true, reason: "diverged", count: null };
+  if (ancestry === 1) {
+    if (shallow) return null;
+    return { stale: true, reason: "diverged", count: null };
+  }
   if (ancestry !== 0) return null; // 128 or spawn failure — cannot tell, stay quiet
 
   // Exclude the doc's own commits, or a refresh instantly re-arms itself at drift 1.

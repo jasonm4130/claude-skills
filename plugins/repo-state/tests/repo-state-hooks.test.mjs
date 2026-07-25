@@ -291,6 +291,44 @@ test("shallow clone missing the stamped parent → silent, not a false 'stale'",
   }
 });
 
+test("shallow --no-single-branch clone: stamp present but unreachable → silent", () => {
+  // Nastier than the missing-object case. With --no-single-branch the stamped commit
+  // IS in the clone (another branch points at it), but the shallow boundary removes the
+  // path between it and HEAD. Git treats that boundary as a root, so --is-ancestor says
+  // "no" and topology alone would call a merely-slightly-behind doc "diverged".
+  // In a shallow repo, ancestry is never evidence of staleness.
+  const root = mkdtempSync(join(os.tmpdir(), "repo-state-nsb-"));
+  const origin = join(root, "origin");
+  const clone = join(root, "c");
+  try {
+    mkdirSync(origin, { recursive: true });
+    git(["init", "-q", "-b", "main", "."], origin);
+    writeFileSync(join(origin, "a.txt"), "a\n");
+    git(["add", "a.txt"], origin);
+    git(["commit", "-qm", "A"], origin);
+    const stamp = git(["rev-parse", "HEAD"], origin);
+    git(["branch", "old"], origin); // keeps the object alive in the clone
+    commitN(origin, 3, "c");
+    writeDoc(origin, stamp);
+    git(["add", DOC_REL], origin);
+    git(["commit", "-qm", "docs: state"], origin);
+
+    git(["clone", "-q", "--depth", "1", "--no-single-branch", `file://${origin}`, clone], root);
+    assert.equal(git(["rev-parse", "--is-shallow-repository"], clone), "true");
+    assert.equal(
+      spawnSync("git", ["cat-file", "-e", `${stamp}^{commit}`], { cwd: clone }).status,
+      0,
+      "precondition: the stamped object is present via the other branch",
+    );
+
+    const r = runHook(SESSIONSTART, { cwd: clone, session_id: "s1" });
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, "", "a truncated path is not divergence");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("malformed payload → exit 0, no crash", () => {
   const res = spawnSync(process.execPath, [SESSIONSTART], {
     input: "not json at all",
