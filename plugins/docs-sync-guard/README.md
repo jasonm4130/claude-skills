@@ -1,9 +1,23 @@
 # docs-sync-guard
 
-A Claude Code plugin that stops docs drift at the commit boundary: a `git commit`
-that changes a plugin's executable code without touching that plugin's docs is
-**denied with a reason**, so the docs update (or an explicit "no doc impact" call)
-happens in the same commit — not never.
+Two mechanisms against docs drift, sited by how confident each can be:
+
+1. **The commit gate** (blocking) — a `git commit` that changes code without touching
+   its covering docs is **denied with a reason**, so the docs update (or an explicit
+   "no doc impact" call) happens in the same commit, not never.
+2. **The consolidation trigger** (0.3.0, never blocking) — once a repo has moved far
+   enough since anyone last checked its docs *against each other*, an in-session nudge
+   suggests `/docs-consolidate`. Docs that were each updated correctly in isolation
+   can still contradict one another.
+
+The split is deliberate. Google sites its false-positive bar by pipeline position:
+build-blocking checks must "produce no effective false positives (the analysis should
+never stop the build for correct code)", while review-time checks tolerate under 10%.
+A path comparison meets that bar; contradiction detection does not come close — so it
+stays off the blocking path. But an out-of-band report is inert too: Facebook measured
+a >70% fix rate for issues raised on the diff that introduced them versus "near
+silence" for the same issues in an offline bug list. Hence a nudge that arrives in the
+session and blocks nothing.
 
 ## Why the commit boundary
 
@@ -43,7 +57,7 @@ Never flagged (the explicit not-to-flag list — noise kills commit gates):
 - `skills/` and `commands/` markdown — those files are self-documenting prompt
   content, not code that a README describes
 - all markdown, lockfiles (`package-lock.json`, `Cargo.lock`, `uv.lock`, …),
-  LICENSE, `.gitignore`/`.gitattributes`/`.editorconfig`
+  LICENSE, `.gitignore`/`.gitattributes`/`.editorconfig`, `.docs-sync`
 - doc-only commits, non-commit git commands, non-git Bash commands
 
 ## Escape hatch
@@ -58,6 +72,45 @@ The marker lands in the commit message, so the "no doc impact" judgment stays
 auditable in history. Any git error, non-repo cwd, or unparseable payload fails
 open — the guard never blocks a commit by accident.
 
+## The consolidation trigger (0.3.0)
+
+**Opt in by committing `.docs-sync` at the repo root; opt out by deleting it.**
+`/docs-consolidate --init` creates it:
+
+```
+docs-sync: audited=<full-40-char-sha>
+Last documentation consolidation: <ISO-8601 UTC>
+Run /docs-consolidate — do not hand-edit the audited= line.
+```
+
+Drift is `git rev-list --count <audited>..HEAD`. Past
+`DOCS_SYNC_CONSOLIDATE_THRESHOLD` (default **50**) the `Stop` hook arms a flag and
+the next `UserPromptSubmit` injects a one-off nudge — at most once per session,
+re-armed only when HEAD moves. `/docs-consolidate --defer` silences it until the repo
+has moved that far again.
+
+`count` includes the record's own commit, so a fresh record reads 1 and the nudge
+fires after `threshold − 1` further commits. The off-by-one is deliberate: excluding
+the record with a pathspec would trigger git's history simplification, after which the
+count silently stops meaning what it looks like.
+
+**Every anomaly is silent, never "stale".** No record, an uncommitted record, an
+unparseable `audited=` line, a SHA that no longer exists or is no longer an ancestor,
+a shallow clone, a broken git — all of it exits 0 with no output. A nudge toward
+optional work must never fire on "I cannot tell"; that is the effective false positive
+that gets a tool switched off. It also means shallow clones need no special-casing at
+all, because both shallow failure shapes land on paths that are already silent.
+
+One consequence worth stating: a history rewrite that drops the audited commit
+silences the trigger until someone runs `/docs-consolidate` or `--init` again. Silence
+is a degradation; a false "audited" is a lie.
+
+The record is trusted by convention. It defends against *incidental* touches — a merge
+conflict resolution, a prose fix — which are likely and would otherwise reset drift
+without an audit. It does not defend against someone deliberately writing a fresh
+`audited=` and committing it. Nothing local can, and for a non-blocking nudge that is
+the right place to stop.
+
 ## Install
 
 ```
@@ -66,18 +119,30 @@ open — the guard never blocks a commit by accident.
 
 ## How it works
 
-One stateless PreToolUse hook (matcher `Bash`) — no flag files, no state.
+The gate is one stateless PreToolUse hook (matcher `Bash`). The trigger adds a `Stop`
+hook that measures and records, and a `UserPromptSubmit` hook that delivers — because
+Stop-hook stdout is never injected into model context, so Stop cannot speak for itself.
 
 ```
 docs-sync-guard/
 ├── .claude-plugin/plugin.json
-├── hooks/hooks.json                          — PreToolUse, matcher "Bash"
+├── hooks/hooks.json                          — PreToolUse (Bash), Stop, UserPromptSubmit
 ├── scripts/
-│   ├── lib.mjs                               — readStdin + safeJsonParse + emitPermissionDecision
-│   └── pretooluse-guard-docs-sync.mjs        — the guard
+│   ├── lib.mjs                               — hook I/O + the drift engine
+│   ├── pretooluse-guard-docs-sync.mjs        — the commit gate
+│   ├── stop-check-consolidation-drift.mjs    — measures drift, arms the flag
+│   └── check-consolidation-flag.mjs          — consumes the flag, injects the nudge
+├── skills/docs-consolidate/SKILL.md          — the audit itself
 └── tests/
-    └── pretooluse-guard-docs-sync.test.mjs
+    ├── pretooluse-guard-docs-sync.test.mjs
+    ├── consolidation-drift.test.mjs
+    └── consolidation-hooks.test.mjs
 ```
+
+State lives in `CLAUDE_PLUGIN_DATA`. The nudge flag and its throttle are keyed
+`<session>-<repoHash>` so a flag armed in one repo is never consumed by a prompt from
+another. **The defer file is keyed by repo only** — "not now" has to outlive the
+session that said it.
 
 ## Development
 
