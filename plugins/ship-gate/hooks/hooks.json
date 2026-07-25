@@ -1,10 +1,26 @@
 {
   "hooks": {
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/stop-check-unshipped.mjs\"", "timeout": 5 } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v node >/dev/null 2>&1 || { echo \"ship-gate: node not found on PATH - hook skipped\" >&2; exit 0; }; exec node \"${CLAUDE_PLUGIN_ROOT}/scripts/stop-check-unshipped.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
     ],
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/check-shipgate-flag.mjs\"", "timeout": 5 } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v node >/dev/null 2>&1 || { echo \"ship-gate: node not found on PATH - hook skipped\" >&2; exit 0; }; exec node \"${CLAUDE_PLUGIN_ROOT}/scripts/check-shipgate-flag.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

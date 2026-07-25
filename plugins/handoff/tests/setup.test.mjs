@@ -130,6 +130,35 @@ test("setup.mjs points statusLine command at the wrapper, not versioned path", a
   );
 });
 
+test("generated wrapper runs the resolved script in-process, not as a child", async (t) => {
+  const fakeHome = mkFakeHome({ versions: ["0.2.1"] });
+  t.after(() => cleanup(fakeHome.dir));
+
+  await runSetup([], fakeHome);
+  const wrapper = readFileSync(fakeHome.wrapperPath, "utf8");
+
+  // The statusLine is the most frequently invoked script in the plugin, and a child
+  // process costs a second Node cold start per render (~30ms of pure startup, measured
+  // 73.9ms -> 40.4ms for byte-identical output). Spawning must not creep back in.
+  assert.ok(
+    !wrapper.includes("child_process"),
+    "wrapper must not spawn a child process — that doubles Node startup per render",
+  );
+  assert.match(wrapper, /await import\(/, "wrapper should import the resolved script in-process");
+  // A bare absolute path is not a valid import specifier on Windows.
+  assert.match(
+    wrapper,
+    /pathToFileURL\(resolvedScript\)/,
+    "wrapper must convert the resolved path to a file URL before importing",
+  );
+  // The old child.on("error") fallback rendered "?" — the catch must preserve it.
+  assert.match(
+    wrapper,
+    /catch \{\s*process\.stdout\.write\("\?/,
+    "wrapper must still degrade to '?' when the resolved script fails to load",
+  );
+});
+
 test("setup.mjs is idempotent: running twice produces same result", async (t) => {
   const fakeHome = mkFakeHome({ versions: ["0.2.1"] });
   t.after(() => cleanup(fakeHome.dir));

@@ -49,7 +49,7 @@ This is normal — plugins that execute code require explicit user trust.
 - Claude Code ≥ 2.1.110 (for `additionalContext` support and the `resume`
   `SessionStart` matcher source)
 - Node.js 18+ on `PATH` — used by `hooks/session-start` to JSON-encode the
-  injected kernel; no other dependency
+  injected kernel; no other dependency. Claude Code ships a self-contained native binary and its documented system requirements do not include Node, so this is an external prerequisite, not something the host provides. If `node` is missing the hook **skips silently** (exit 0) instead of erroring on every event; the reason goes to stderr, visible under `claude --debug`.
 - For the `writing-plans` handoff: the `codex-review` and
   `subagent-driven-development` plugins from the same marketplace — the finished
   plan is gated by `codex-plan-review`, then executed by

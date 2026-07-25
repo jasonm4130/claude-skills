@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/check-handoff-flag.mjs\"",
+            "command": "command -v node >/dev/null 2>&1 || { echo \"handoff: node not found on PATH - hook skipped\" >&2; exit 0; }; exec node \"${CLAUDE_PLUGIN_ROOT}/scripts/check-handoff-flag.mjs\"",
             "timeout": 5
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/load-pending-handoff.mjs\"",
+            "command": "command -v node >/dev/null 2>&1 || { echo \"handoff: node not found on PATH - hook skipped\" >&2; exit 0; }; exec node \"${CLAUDE_PLUGIN_ROOT}/scripts/load-pending-handoff.mjs\"",
             "timeout": 5
           }
         ]

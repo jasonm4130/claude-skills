@@ -1,7 +1,7 @@
 {
   "name": "ship-gate",
   "description": "Stop-hook gate against trail-off: detects unpushed commits at turn end and injects an agent-directed nudge to review and finish the branch.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "Jason Matthew"
   },

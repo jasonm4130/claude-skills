@@ -7,6 +7,13 @@
 # total count of literal apostrophes in the body, even under a quoted
 # delimiter. Piping the heredoc straight into the node process avoids the
 # nested-command-substitution path that trips it.
+#
+# node is an external prerequisite, not something Claude Code provides — the host
+# ships a self-contained native binary and its documented system requirements list
+# no Node. Without this probe a node-less machine gets exit 127, which surfaces as a
+# per-session "hook error" notice; skip silently instead and leave the reason on
+# stderr for `claude --debug`.
+command -v node >/dev/null 2>&1 || { echo "superpowers-core: node not found on PATH - hook skipped" >&2; exit 0; }
 node -e '
 const fs = require("fs");
 const kernel = fs.readFileSync(0, "utf8");

@@ -85,6 +85,7 @@ pattern the other guards use (`docs-sync:ack`, `model-guard:ack`).
 ## Requirements
 
 - **Node.js 18+ on PATH.** No third-party packages, no `package.json`. Stdlib only.
+  Claude Code ships a self-contained native binary and its documented system requirements do not include Node, so this is an external prerequisite, not something the host provides. If `node` is missing the hook **skips silently** (exit 0) instead of erroring on every event; the reason goes to stderr, visible under `claude --debug`.
 - **Claude Code >= 2.1.110** — for `hooks.json` plugin hook registration.
 
 ## Development

@@ -58,7 +58,7 @@ if set, otherwise `os.tmpdir()/ship-gate-data`. Flags are plain text, not JSON.
 ## Requirements
 
 - Claude Code ≥ 2.1.110
-- **Node.js 18+ on PATH**
+- **Node.js 18+ on PATH.** Claude Code ships a self-contained native binary and its documented system requirements do not include Node, so this is an external prerequisite, not something the host provides. If `node` is missing the hook **skips silently** (exit 0) instead of erroring on every event; the reason goes to stderr, visible under `claude --debug`.
 - git (silent no-op outside a git repo)
 
 ## Tests

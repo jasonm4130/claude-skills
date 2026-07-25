@@ -60,7 +60,7 @@ import { readdirSync, existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import process from "node:process";
-import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
 /** @param {string} v @returns {[number, number, number] | null} */
 function parseSemver(v) {
@@ -133,14 +133,20 @@ if (!resolvedScript) {
   process.exit(0);
 }
 
-const child = spawn(process.execPath, [resolvedScript], { stdio: "inherit" });
-child.on("error", () => {
+// Run the resolved script in THIS process rather than spawning a child. The child
+// cost a second Node cold start on every render — measured 73.9ms vs 40.4ms for
+// byte-identical output, on the most frequently invoked script in the plugin, and
+// Node startup is ~30ms of that. The resolved script reads stdin and writes stdout
+// itself, so in-process is behaviourally equivalent to the old stdio:"inherit".
+// pathToFileURL, not a bare path: absolute Windows paths are not valid import
+// specifiers. Awaited so a module-load failure lands in the catch instead of
+// becoming an unhandled rejection, preserving the old child.on("error") fallback.
+try {
+  await import(pathToFileURL(resolvedScript).href);
+} catch {
   process.stdout.write("?\\n");
   process.exit(0);
-});
-child.on("close", (code) => {
-  process.exit(code ?? 0);
-});
+}
 `;
 
 // ---------------------------------------------------------------------------
