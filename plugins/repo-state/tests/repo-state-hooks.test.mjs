@@ -262,6 +262,35 @@ test("corrupt stamp → exit 0, silent", () => {
   }
 });
 
+test("shallow clone missing the stamped parent → silent, not a false 'stale'", () => {
+  // A depth-1 clone of a repo whose tip is the doc-only commit does NOT contain the
+  // parent the doc is stamped with. The doc is current; the history to prove it is
+  // simply absent. "Cannot tell" must fail open, or CI checkouts warn on every session.
+  const root = mkdtempSync(join(os.tmpdir(), "repo-state-shallow-"));
+  const origin = join(root, "origin");
+  const shallow = join(root, "shallow");
+  try {
+    mkdirSync(origin, { recursive: true });
+    git(["init", "-q", "-b", "main", "."], origin);
+    writeFileSync(join(origin, "a.txt"), "a\n");
+    git(["add", "a.txt"], origin);
+    git(["commit", "-qm", "seed"], origin);
+    const parent = git(["rev-parse", "HEAD"], origin);
+    writeDoc(origin, parent);
+    git(["add", DOC_REL], origin);
+    git(["commit", "-qm", "docs: current state"], origin);
+
+    git(["clone", "-q", "--depth", "1", `file://${origin}`, shallow], root);
+    assert.equal(git(["rev-parse", "--is-shallow-repository"], shallow), "true");
+
+    const r = runHook(SESSIONSTART, { cwd: shallow, session_id: "s1" });
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, "", "a truncated history is unknowable, not stale");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("malformed payload → exit 0, no crash", () => {
   const res = spawnSync(process.execPath, [SESSIONSTART], {
     input: "not json at all",

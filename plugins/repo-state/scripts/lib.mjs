@@ -204,7 +204,13 @@ export function computeDrift(repoRoot, stampCommit, threshold) {
 
   // Stamp object missing entirely: history was rewritten hard, or the doc was
   // copied in from elsewhere. Either way its claims are unverifiable.
+  //
+  // Except in a shallow clone, where a missing object proves nothing: a depth-1
+  // checkout of a repo whose tip is the doc's own commit does not contain the
+  // parent the doc is stamped with, even though the doc is perfectly current.
+  // Warning there would fire on every CI session and teach people to ignore it.
   if (gitRun(["cat-file", "-e", `${stampCommit}^{commit}`], repoRoot).status !== 0) {
+    if (git(["rev-parse", "--is-shallow-repository"], repoRoot) === "true") return null;
     return { stale: true, reason: "unknown-commit", count: null };
   }
 
