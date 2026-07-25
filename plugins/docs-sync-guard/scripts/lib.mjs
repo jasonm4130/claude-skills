@@ -79,6 +79,27 @@ export function emitPermissionDecision(decision, reason) {
 /** Repo-relative path of the consolidation record. */
 export const RECORD_REL = ".docs-sync";
 
+/**
+ * Absolute path of the defer marker, which lives in `.git/` rather than in
+ * CLAUDE_PLUGIN_DATA.
+ *
+ * The nudge flag and throttle are hook-only, so the plugin data dir suits them. The
+ * defer marker is different: `/docs-consolidate --defer` writes it from a SESSION
+ * shell, and CLAUDE_PLUGIN_DATA is not exported there (verified: unset in the Bash
+ * tool's environment). Anything keyed off that variable would have the writer and the
+ * reader disagreeing about the directory, and defer would silently never work.
+ *
+ * `.git/` is computable identically from both sides, is per-clone — which is exactly
+ * the scope of "not now" — and is never committed.
+ *
+ * @param {string} repoRoot
+ * @returns {string | null}
+ */
+export function deferMarkerPath(repoRoot) {
+  const gitDir = git(["rev-parse", "--absolute-git-dir"], repoRoot);
+  return gitDir === null ? null : path.join(gitDir, "docs-sync-defer");
+}
+
 /** Commits of drift before a consolidation pass is suggested. */
 export const DEFAULT_CONSOLIDATE_THRESHOLD = 50;
 

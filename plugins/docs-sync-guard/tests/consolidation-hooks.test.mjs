@@ -21,13 +21,16 @@ import {
 import os from "node:os";
 import path from "node:path";
 
-import { RECORD_REL, repoHash } from "../scripts/lib.mjs";
+import { RECORD_REL, repoHash, deferMarkerPath } from "../scripts/lib.mjs";
 
 const STOP = fileURLToPath(
   new URL("../scripts/stop-check-consolidation-drift.mjs", import.meta.url),
 );
 const PROMPT = fileURLToPath(
   new URL("../scripts/check-consolidation-flag.mjs", import.meta.url),
+);
+const DEFER = fileURLToPath(
+  new URL("../scripts/defer-consolidation.mjs", import.meta.url),
 );
 
 /**
@@ -74,8 +77,10 @@ function scenario(extra = 0) {
     root,
     dataDir,
     audited,
-    flag: () => path.join(dataDir, `consolidate-nudge-sid1-${repoHash(root)}.flag`),
-    deferFile: () => path.join(dataDir, `consolidate-defer-${repoHash(root)}.txt`),
+    // Takes the session id: asserting "no flag" against a hardcoded sid would pass
+    // vacuously whenever the run under test used a different one.
+    flag: (sid = "sid1") => path.join(dataDir, `consolidate-nudge-${sid}-${repoHash(root)}.flag`),
+    deferFile: () => /** @type {string} */ (deferMarkerPath(root)),
     cleanup: () => {
       rmSync(root, { recursive: true, force: true });
       rmSync(dataDir, { recursive: true, force: true });
@@ -166,7 +171,7 @@ test("defer suppresses until threshold further commits", () => {
 
     sh('git commit -q --allow-empty -m "a"', s.root);
     run(STOP, { session_id: "sid2", cwd: s.root }, s.dataDir, T(5));
-    assert.equal(existsSync(s.flag()), false, "1 commit past defer → still silent");
+    assert.equal(existsSync(s.flag("sid2")), false, "1 commit past defer → still silent");
 
     for (let i = 0; i < 5; i++) sh(`git commit -q --allow-empty -m "b${i}"`, s.root);
     run(STOP, { session_id: "sid1", cwd: s.root }, s.dataDir, T(5));
@@ -244,6 +249,45 @@ test("git entirely unavailable → exit 0, no output, and no state touched", () 
   }
 });
 
+test("the --defer COMMAND writes where the Stop hook reads — no shared env var", () => {
+  // The reason this is a script and not skill prose: CLAUDE_PLUGIN_DATA is not
+  // exported to session shells, so a defer path derived from it would be written
+  // somewhere the hook never looks. This runs the real command with that variable
+  // absent, exactly as a session would, and then checks the hook honours it.
+  const s = scenario(10);
+  try {
+    const env = { ...process.env };
+    delete env.CLAUDE_PLUGIN_DATA;
+    const res = spawnSync(process.execPath, [DEFER, s.root], { encoding: "utf8", env });
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(existsSync(s.deferFile()), true, "the command must create the marker");
+
+    run(STOP, { session_id: "sid1", cwd: s.root }, s.dataDir, T(5));
+    assert.equal(existsSync(s.flag()), false, "the hook must honour the deferral");
+
+    const cleared = spawnSync(process.execPath, [DEFER, s.root, "--clear"], {
+      encoding: "utf8",
+      env,
+    });
+    assert.equal(cleared.status, 0);
+    assert.equal(existsSync(s.deferFile()), false);
+    run(STOP, { session_id: "sid2", cwd: s.root }, s.dataDir, T(5));
+    assert.equal(existsSync(s.flag("sid2")), true, "clearing lets the nudge fire again");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("the defer marker is not a committable file", () => {
+  const s = scenario(0);
+  try {
+    spawnSync(process.execPath, [DEFER, s.root], { encoding: "utf8" });
+    assert.equal(sh("git status --porcelain", s.root), "", "must leave the tree clean");
+  } finally {
+    s.cleanup();
+  }
+});
+
 // ---- UserPromptSubmit: consuming ----
 
 test("consumes the flag fire-once and emits additionalContext", () => {
@@ -260,6 +304,25 @@ test("consumes the flag fire-once and emits additionalContext", () => {
 
     const second = run(PROMPT, { session_id: "sid1", cwd: s.root }, s.dataDir);
     assert.equal(second.stdout.trim(), "", "fire-once");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("opting out between arming and consuming stays silent", () => {
+  // Stop arms at the end of a turn; the user deletes .docs-sync before the next
+  // prompt. The documented contract is that a deleted record goes silent immediately,
+  // so an already-armed flag must not still speak.
+  const s = scenario(10);
+  try {
+    run(STOP, { session_id: "sid1", cwd: s.root }, s.dataDir, T(5));
+    assert.equal(existsSync(s.flag()), true);
+
+    rmSync(path.join(s.root, RECORD_REL));
+    const res = run(PROMPT, { session_id: "sid1", cwd: s.root }, s.dataDir);
+    assert.equal(res.status, 0);
+    assert.equal(res.stdout.trim(), "", "opt-out must win over an armed flag");
+    assert.equal(existsSync(s.flag()), false, "and the stale flag must be cleared");
   } finally {
     s.cleanup();
   }

@@ -22,6 +22,7 @@ import {
   repoHash,
   gitRepoRoot,
   git,
+  deferMarkerPath,
   isAncestor,
   readConsolidationStamp,
   resolveConsolidateThreshold,
@@ -60,10 +61,12 @@ const sessionId = resolveSessionId(payload);
 const dataDir = resolveDataDir("docs-sync-guard-data");
 const rh = repoHash(repoRoot);
 
-// The defer file is keyed by REPO ONLY, deliberately: "not now" has to outlive the
-// session that said it. The nudge flag and throttle below are session+repo.
-const deferFile = path.join(dataDir, `consolidate-defer-${rh}.txt`);
-if (existsSync(deferFile)) {
+// The defer marker lives in `.git/`, not in the plugin data dir: it is written by
+// `/docs-consolidate --defer` from a session shell, where CLAUDE_PLUGIN_DATA is not
+// exported. It is per-clone, which is exactly the scope of "not now", and it outlives
+// the session that said it. The nudge flag and throttle below are session+repo.
+const deferFile = deferMarkerPath(repoRoot);
+if (deferFile !== null && existsSync(deferFile)) {
   /** @type {string | null} */
   let deferred = null;
   try {

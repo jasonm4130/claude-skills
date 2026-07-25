@@ -134,7 +134,8 @@ docs-sync-guard/
 │   ├── lib.mjs                               — hook I/O + the drift engine
 │   ├── pretooluse-guard-docs-sync.mjs        — the commit gate
 │   ├── stop-check-consolidation-drift.mjs    — measures drift, arms the flag
-│   └── check-consolidation-flag.mjs          — consumes the flag, injects the nudge
+│   ├── check-consolidation-flag.mjs          — consumes the flag, injects the nudge
+│   └── defer-consolidation.mjs               — /docs-consolidate --defer
 ├── skills/docs-consolidate/SKILL.md          — the audit itself
 └── tests/
     ├── pretooluse-guard-docs-sync.test.mjs
@@ -142,10 +143,15 @@ docs-sync-guard/
     └── consolidation-hooks.test.mjs
 ```
 
-State lives in `CLAUDE_PLUGIN_DATA`. The nudge flag and its throttle are keyed
+The nudge flag and its throttle live in `CLAUDE_PLUGIN_DATA`, keyed
 `<session>-<repoHash>` so a flag armed in one repo is never consumed by a prompt from
-another. **The defer file is keyed by repo only** — "not now" has to outlive the
-session that said it.
+another.
+
+**The deferral marker lives in `.git/docs-sync-defer` instead**, because
+`CLAUDE_PLUGIN_DATA` is not exported to session shells — `/docs-consolidate --defer`
+runs there, and a path derived from that variable would be written where the hook
+never looks. `.git/` is per-clone, which is exactly the scope of "not now", and is
+never committed.
 
 ## Development
 

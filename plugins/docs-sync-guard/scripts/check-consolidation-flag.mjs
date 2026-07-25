@@ -18,6 +18,7 @@ import {
   resolveDataDir,
   repoHash,
   gitRepoRoot,
+  readConsolidationStamp,
   emitAdditionalContext,
 } from "./lib.mjs";
 
@@ -55,6 +56,12 @@ try {
 } catch {
   // best-effort; a stale flag is re-consumed harmlessly next prompt
 }
+
+// Re-check the record before speaking. Stop armed this flag at the end of the last
+// turn; the user may have opted out since by deleting `.docs-sync`, and the contract
+// says a deleted record goes silent immediately. Consuming the flag above and
+// returning here is deliberate — the opt-out should also clear anything already armed.
+if (readConsolidationStamp(repoRoot) === null) process.exit(0);
 
 const scale = count ? `${count} commits` : "a lot";
 emitAdditionalContext(

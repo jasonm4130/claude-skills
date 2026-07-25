@@ -56,11 +56,21 @@ before the deletion is even committed.
 
 ## `--defer`
 
-Write the current HEAD to the defer file and stop. The nudge stays silent until the
-repo has moved a further threshold's worth of commits. Deferring is a per-user
-decision, so it lives in local state — **never** touch `.docs-sync` to silence a
-nudge. Recording a consolidation that did not happen is the one lie this whole
-mechanism exists to prevent.
+Run the shipped script — do **not** hand-roll the path:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/defer-consolidation.mjs"            # defer here
+node "${CLAUDE_PLUGIN_ROOT}/scripts/defer-consolidation.mjs" . --clear  # undo
+```
+
+The marker lives in `.git/docs-sync-defer`, deliberately *not* in the plugin data
+directory: `CLAUDE_PLUGIN_DATA` is not exported to session shells, so anything derived
+from it here would be written where the hook never looks and deferral would silently
+never work. `.git/` is per-clone — exactly the scope of "not now" — and never
+committed.
+
+**Never touch `.docs-sync` to silence a nudge.** Recording a consolidation that did
+not happen is the one lie this whole mechanism exists to prevent.
 
 ## The pass
 
