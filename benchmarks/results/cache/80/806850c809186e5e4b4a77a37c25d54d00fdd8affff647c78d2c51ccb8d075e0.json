@@ -1,0 +1,1 @@
+{"ok":true,"match":true,"reason":"Both identify the exact same mechanism: is_near_duplicate uses `<= threshold` where it should use `>= threshold`, inverting the decision so identical/near-duplicate vectors (high cosine) return False and dissimilar/orthogonal vectors (low cosine) return True. Same location, same operator inversion, same described runtime consequence."}

@@ -1,0 +1,1 @@
+{"ok":true,"match":true,"reason":"Both describe the identical defect: Math.max(1, ...) clamps the floor to 1 instead of 0, causing a same-run item with all zero day-diffs to be reported as 1 day stuck instead of the correct 0. Same location, same mechanism, same failure scenario — just paraphrased."}

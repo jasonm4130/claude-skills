@@ -1,0 +1,1 @@
+{"ok":true,"match":true,"reason":"Both identify the identical root cause: Math.max(1, ...) forces a floor of 1 instead of 0 on the age computation, causing same-run (zero-day) stuck items to be misreported as \"1d\" in notifications. The reviewer's description is a faithful paraphrase of the ground-truth mechanism at the same location, not a different bug or vague complaint."}

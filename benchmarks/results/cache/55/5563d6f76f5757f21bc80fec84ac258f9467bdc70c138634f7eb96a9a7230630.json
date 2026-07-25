@@ -1,0 +1,1 @@
+{"ok":true,"match":true,"reason":"Both identify the identical mechanism: UNITS.h (the hours multiplier) holds 600,000 ms instead of 3,600,000 ms, causing every hour-denominated duration to parse to 1/6 of its correct value. The reviewer even reproduces the same numeric consequence (2h -> 1,200,000 instead of 7,200,000). Same location, same root cause, same runtime misbehavior."}

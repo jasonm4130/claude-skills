@@ -1,0 +1,1 @@
+{"ok":true,"match":true,"reason":"Both describe the identical mechanism: an unmatched slug yields article === undefined from the map lookup, and isPublished() (lacking a guard) dereferences article.draft on it, throwing a TypeError instead of treating it as unpublished. The reviewer's phrasing is a faithful paraphrase, not a different bug."}

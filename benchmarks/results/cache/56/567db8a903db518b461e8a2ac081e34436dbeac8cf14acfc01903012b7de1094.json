@@ -1,0 +1,1 @@
+{"ok":true,"match":true,"reason":"The reviewer identifies the identical inverted-condition bug: normalizeLift is only invoked when lift.method is already truthy (`lift.method ? normalizeLift(lift) : lift`), so legacy lifts lacking a method pass through unnormalized and get persisted with method undefined — exactly the ground-truth mechanism, same location, same consequence."}

@@ -1,0 +1,1 @@
+{"ok":true,"match":true,"reason":"Both identify the identical mechanism: pingTimer is declared but never assigned the setInterval return value, so clearInterval(pingTimer) in onclose is a no-op on undefined, leaving the interval uncancellable and causing a new stacked, never-cleared ping interval on every reconnect."}

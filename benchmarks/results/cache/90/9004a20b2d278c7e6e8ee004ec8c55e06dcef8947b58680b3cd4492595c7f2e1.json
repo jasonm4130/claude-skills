@@ -1,0 +1,1 @@
+{"status":"ok","verdict":"reject","findings":[{"file":"src/parse-duration.mjs","line":2,"severity":"Critical","summary":"Hour unit constant is wrong: 600_000 instead of 3_600_000.","mechanism":"600_000 ms = 10 minutes, not 1 hour. \"2h\" parses to 1,200,000 ms instead of the required 7,200,000 ms — a 6x error."}],"tokens":{"input":4,"output":383},"wallMs":78696,"error":null}

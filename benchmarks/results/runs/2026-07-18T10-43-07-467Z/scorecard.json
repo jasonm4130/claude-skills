@@ -1,0 +1,84 @@
+{
+  "generatedFrom": "cc7625532ddf336269f448e7f95e6d4473a6f3f85c7aecf74a865be5fe33f0cc",
+  "populationId": "91637aa1c0dbe27ff78bdfc925b3bdd70789c434ab97bb41e166cc8c3f4630be",
+  "status": "INFORMATIONAL",
+  "exitCode": 0,
+  "adapters": {
+    "code-review": {
+      "catchRate": 0.6666666666666666,
+      "overRejection": 0,
+      "mechanismAccuracy": 1,
+      "flipRate": 0,
+      "errorRate": 0,
+      "coverage": 1,
+      "medianTokens": 637,
+      "medianWallMs": 15394.5
+    }
+  },
+  "strata": [
+    {
+      "key": "code-review/clean/unsafe-input",
+      "adapter": "code-review",
+      "arm": "clean",
+      "class": "unsafe-input",
+      "attempted": 1,
+      "scored": 1,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/clean/wrong-constant",
+      "adapter": "code-review",
+      "arm": "clean",
+      "class": "wrong-constant",
+      "attempted": 1,
+      "scored": 1,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/clean/off-by-one",
+      "adapter": "code-review",
+      "arm": "clean",
+      "class": "off-by-one",
+      "attempted": 1,
+      "scored": 1,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/seeded/unsafe-input",
+      "adapter": "code-review",
+      "arm": "seeded",
+      "class": "unsafe-input",
+      "attempted": 1,
+      "scored": 1,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/seeded/wrong-constant",
+      "adapter": "code-review",
+      "arm": "seeded",
+      "class": "wrong-constant",
+      "attempted": 1,
+      "scored": 1,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/seeded/off-by-one",
+      "adapter": "code-review",
+      "arm": "seeded",
+      "class": "off-by-one",
+      "attempted": 1,
+      "scored": 1,
+      "coverage": 1,
+      "notScored": false
+    }
+  ],
+  "floors": {
+    "evaluated": false,
+    "breaches": []
+  }
+}

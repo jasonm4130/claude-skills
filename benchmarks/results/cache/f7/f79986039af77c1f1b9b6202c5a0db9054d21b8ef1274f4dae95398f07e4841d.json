@@ -1,0 +1,1 @@
+{"ok":true,"match":true,"reason":"Both identify the identical root cause: the 'h' unit multiplier is set to 600,000 instead of the correct 3,600,000 milliseconds-per-hour, causing hour durations to parse to 1/6 of their correct value. The reviewer's example (2h → 1,200,000ms) is arithmetically consistent with 600,000 × 2, matching the ground-truth mechanism exactly."}

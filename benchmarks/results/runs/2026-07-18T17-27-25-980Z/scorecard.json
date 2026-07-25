@@ -1,0 +1,644 @@
+{
+  "generatedFrom": "86c52105e4e7c79dbb813037c1218075ba9334d3ff151933b54f63d24e3be782",
+  "populationId": "0c08b057256b21e8cb6407b0fd820915281814c71d226c9869a127f3726f8c8f",
+  "status": "UNRELIABLE",
+  "exitCode": 2,
+  "adapters": {
+    "code-review": {
+      "catchRate": 0.8846153846153846,
+      "overRejection": 0.47435897435897434,
+      "mechanismAccuracy": 1,
+      "flipRate": 0.23076923076923078,
+      "errorRate": 0.019230769230769232,
+      "coverage": 1,
+      "medianTokens": 1036,
+      "medianWallMs": 84877
+    },
+    "sdd-reviewer": {
+      "catchRate": 0.8823529411764706,
+      "overRejection": 1.6333333333333335,
+      "mechanismAccuracy": 0.9767441860465116,
+      "flipRate": 0.35294117647058826,
+      "errorRate": 0.2948717948717949,
+      "coverage": 0.7115384615384616,
+      "medianTokens": 10427,
+      "medianWallMs": 293009.5
+    },
+    "codex": {
+      "catchRate": 0.875,
+      "overRejection": 0.8076923076923077,
+      "mechanismAccuracy": 0.9545454545454546,
+      "flipRate": 0,
+      "errorRate": 0.038461538461538464,
+      "coverage": 0.9615384615384616,
+      "medianTokens": 78879,
+      "medianWallMs": 41213.5
+    }
+  },
+  "strata": [
+    {
+      "key": "code-review/clean/missing-await",
+      "adapter": "code-review",
+      "arm": "clean",
+      "class": "missing-await",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/clean/unsafe-input",
+      "adapter": "code-review",
+      "arm": "clean",
+      "class": "unsafe-input",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/clean/null-path",
+      "adapter": "code-review",
+      "arm": "clean",
+      "class": "null-path",
+      "attempted": 3,
+      "scored": 3,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/clean/wrong-constant",
+      "adapter": "code-review",
+      "arm": "clean",
+      "class": "wrong-constant",
+      "attempted": 5,
+      "scored": 5,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/clean/resource-leak",
+      "adapter": "code-review",
+      "arm": "clean",
+      "class": "resource-leak",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/clean/logic-inversion",
+      "adapter": "code-review",
+      "arm": "clean",
+      "class": "logic-inversion",
+      "attempted": 3,
+      "scored": 3,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/clean/off-by-one",
+      "adapter": "code-review",
+      "arm": "clean",
+      "class": "off-by-one",
+      "attempted": 4,
+      "scored": 4,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/clean/weakened-test",
+      "adapter": "code-review",
+      "arm": "clean",
+      "class": "weakened-test",
+      "attempted": 1,
+      "scored": 1,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/clean/swallowed-error",
+      "adapter": "code-review",
+      "arm": "clean",
+      "class": "swallowed-error",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/clean/api-misuse",
+      "adapter": "code-review",
+      "arm": "clean",
+      "class": "api-misuse",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/seeded/missing-await",
+      "adapter": "code-review",
+      "arm": "seeded",
+      "class": "missing-await",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/seeded/unsafe-input",
+      "adapter": "code-review",
+      "arm": "seeded",
+      "class": "unsafe-input",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/seeded/null-path",
+      "adapter": "code-review",
+      "arm": "seeded",
+      "class": "null-path",
+      "attempted": 3,
+      "scored": 3,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/seeded/wrong-constant",
+      "adapter": "code-review",
+      "arm": "seeded",
+      "class": "wrong-constant",
+      "attempted": 5,
+      "scored": 5,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/seeded/resource-leak",
+      "adapter": "code-review",
+      "arm": "seeded",
+      "class": "resource-leak",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/seeded/logic-inversion",
+      "adapter": "code-review",
+      "arm": "seeded",
+      "class": "logic-inversion",
+      "attempted": 3,
+      "scored": 3,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/seeded/off-by-one",
+      "adapter": "code-review",
+      "arm": "seeded",
+      "class": "off-by-one",
+      "attempted": 4,
+      "scored": 4,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/seeded/weakened-test",
+      "adapter": "code-review",
+      "arm": "seeded",
+      "class": "weakened-test",
+      "attempted": 1,
+      "scored": 1,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/seeded/swallowed-error",
+      "adapter": "code-review",
+      "arm": "seeded",
+      "class": "swallowed-error",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "code-review/seeded/api-misuse",
+      "adapter": "code-review",
+      "arm": "seeded",
+      "class": "api-misuse",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "sdd-reviewer/clean/missing-await",
+      "adapter": "sdd-reviewer",
+      "arm": "clean",
+      "class": "missing-await",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "sdd-reviewer/clean/unsafe-input",
+      "adapter": "sdd-reviewer",
+      "arm": "clean",
+      "class": "unsafe-input",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "sdd-reviewer/clean/null-path",
+      "adapter": "sdd-reviewer",
+      "arm": "clean",
+      "class": "null-path",
+      "attempted": 3,
+      "scored": 3,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "sdd-reviewer/clean/wrong-constant",
+      "adapter": "sdd-reviewer",
+      "arm": "clean",
+      "class": "wrong-constant",
+      "attempted": 5,
+      "scored": 5,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "sdd-reviewer/clean/resource-leak",
+      "adapter": "sdd-reviewer",
+      "arm": "clean",
+      "class": "resource-leak",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "sdd-reviewer/clean/logic-inversion",
+      "adapter": "sdd-reviewer",
+      "arm": "clean",
+      "class": "logic-inversion",
+      "attempted": 3,
+      "scored": 0,
+      "coverage": 0,
+      "notScored": true
+    },
+    {
+      "key": "sdd-reviewer/clean/off-by-one",
+      "adapter": "sdd-reviewer",
+      "arm": "clean",
+      "class": "off-by-one",
+      "attempted": 4,
+      "scored": 3,
+      "coverage": 0.75,
+      "notScored": true
+    },
+    {
+      "key": "sdd-reviewer/clean/weakened-test",
+      "adapter": "sdd-reviewer",
+      "arm": "clean",
+      "class": "weakened-test",
+      "attempted": 1,
+      "scored": 1,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "sdd-reviewer/clean/swallowed-error",
+      "adapter": "sdd-reviewer",
+      "arm": "clean",
+      "class": "swallowed-error",
+      "attempted": 2,
+      "scored": 0,
+      "coverage": 0,
+      "notScored": true
+    },
+    {
+      "key": "sdd-reviewer/clean/api-misuse",
+      "adapter": "sdd-reviewer",
+      "arm": "clean",
+      "class": "api-misuse",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "sdd-reviewer/seeded/missing-await",
+      "adapter": "sdd-reviewer",
+      "arm": "seeded",
+      "class": "missing-await",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "sdd-reviewer/seeded/unsafe-input",
+      "adapter": "sdd-reviewer",
+      "arm": "seeded",
+      "class": "unsafe-input",
+      "attempted": 2,
+      "scored": 1,
+      "coverage": 0.5,
+      "notScored": true
+    },
+    {
+      "key": "sdd-reviewer/seeded/null-path",
+      "adapter": "sdd-reviewer",
+      "arm": "seeded",
+      "class": "null-path",
+      "attempted": 3,
+      "scored": 3,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "sdd-reviewer/seeded/wrong-constant",
+      "adapter": "sdd-reviewer",
+      "arm": "seeded",
+      "class": "wrong-constant",
+      "attempted": 5,
+      "scored": 2,
+      "coverage": 0.4,
+      "notScored": true
+    },
+    {
+      "key": "sdd-reviewer/seeded/resource-leak",
+      "adapter": "sdd-reviewer",
+      "arm": "seeded",
+      "class": "resource-leak",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "sdd-reviewer/seeded/logic-inversion",
+      "adapter": "sdd-reviewer",
+      "arm": "seeded",
+      "class": "logic-inversion",
+      "attempted": 3,
+      "scored": 2,
+      "coverage": 0.6666666666666666,
+      "notScored": true
+    },
+    {
+      "key": "sdd-reviewer/seeded/off-by-one",
+      "adapter": "sdd-reviewer",
+      "arm": "seeded",
+      "class": "off-by-one",
+      "attempted": 4,
+      "scored": 2,
+      "coverage": 0.5,
+      "notScored": true
+    },
+    {
+      "key": "sdd-reviewer/seeded/weakened-test",
+      "adapter": "sdd-reviewer",
+      "arm": "seeded",
+      "class": "weakened-test",
+      "attempted": 1,
+      "scored": 1,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "sdd-reviewer/seeded/swallowed-error",
+      "adapter": "sdd-reviewer",
+      "arm": "seeded",
+      "class": "swallowed-error",
+      "attempted": 2,
+      "scored": 1,
+      "coverage": 0.5,
+      "notScored": true
+    },
+    {
+      "key": "sdd-reviewer/seeded/api-misuse",
+      "adapter": "sdd-reviewer",
+      "arm": "seeded",
+      "class": "api-misuse",
+      "attempted": 2,
+      "scored": 1,
+      "coverage": 0.5,
+      "notScored": true
+    },
+    {
+      "key": "codex/clean/missing-await",
+      "adapter": "codex",
+      "arm": "clean",
+      "class": "missing-await",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/clean/unsafe-input",
+      "adapter": "codex",
+      "arm": "clean",
+      "class": "unsafe-input",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/clean/null-path",
+      "adapter": "codex",
+      "arm": "clean",
+      "class": "null-path",
+      "attempted": 3,
+      "scored": 3,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/clean/wrong-constant",
+      "adapter": "codex",
+      "arm": "clean",
+      "class": "wrong-constant",
+      "attempted": 5,
+      "scored": 5,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/clean/resource-leak",
+      "adapter": "codex",
+      "arm": "clean",
+      "class": "resource-leak",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/clean/logic-inversion",
+      "adapter": "codex",
+      "arm": "clean",
+      "class": "logic-inversion",
+      "attempted": 3,
+      "scored": 3,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/clean/off-by-one",
+      "adapter": "codex",
+      "arm": "clean",
+      "class": "off-by-one",
+      "attempted": 4,
+      "scored": 4,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/clean/weakened-test",
+      "adapter": "codex",
+      "arm": "clean",
+      "class": "weakened-test",
+      "attempted": 1,
+      "scored": 1,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/clean/swallowed-error",
+      "adapter": "codex",
+      "arm": "clean",
+      "class": "swallowed-error",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/clean/api-misuse",
+      "adapter": "codex",
+      "arm": "clean",
+      "class": "api-misuse",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/seeded/missing-await",
+      "adapter": "codex",
+      "arm": "seeded",
+      "class": "missing-await",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/seeded/unsafe-input",
+      "adapter": "codex",
+      "arm": "seeded",
+      "class": "unsafe-input",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/seeded/null-path",
+      "adapter": "codex",
+      "arm": "seeded",
+      "class": "null-path",
+      "attempted": 3,
+      "scored": 3,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/seeded/wrong-constant",
+      "adapter": "codex",
+      "arm": "seeded",
+      "class": "wrong-constant",
+      "attempted": 5,
+      "scored": 4,
+      "coverage": 0.8,
+      "notScored": true
+    },
+    {
+      "key": "codex/seeded/resource-leak",
+      "adapter": "codex",
+      "arm": "seeded",
+      "class": "resource-leak",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/seeded/logic-inversion",
+      "adapter": "codex",
+      "arm": "seeded",
+      "class": "logic-inversion",
+      "attempted": 3,
+      "scored": 3,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/seeded/off-by-one",
+      "adapter": "codex",
+      "arm": "seeded",
+      "class": "off-by-one",
+      "attempted": 4,
+      "scored": 4,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/seeded/weakened-test",
+      "adapter": "codex",
+      "arm": "seeded",
+      "class": "weakened-test",
+      "attempted": 1,
+      "scored": 1,
+      "coverage": 1,
+      "notScored": false
+    },
+    {
+      "key": "codex/seeded/swallowed-error",
+      "adapter": "codex",
+      "arm": "seeded",
+      "class": "swallowed-error",
+      "attempted": 2,
+      "scored": 1,
+      "coverage": 0.5,
+      "notScored": true
+    },
+    {
+      "key": "codex/seeded/api-misuse",
+      "adapter": "codex",
+      "arm": "seeded",
+      "class": "api-misuse",
+      "attempted": 2,
+      "scored": 2,
+      "coverage": 1,
+      "notScored": false
+    }
+  ],
+  "floors": {
+    "evaluated": false,
+    "breaches": []
+  }
+}

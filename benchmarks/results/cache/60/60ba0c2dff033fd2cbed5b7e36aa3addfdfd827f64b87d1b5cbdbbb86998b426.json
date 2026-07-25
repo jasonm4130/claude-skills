@@ -1,0 +1,1 @@
+{"ok":true,"match":true,"reason":"Reviewer identifies the identical mechanism: the \"7d\" preset uses daysAgo(7) instead of daysAgo(6), producing an inclusive 8-day window instead of 7 with today as the fixed upper bound — same root cause, same runtime consequence as the ground truth."}

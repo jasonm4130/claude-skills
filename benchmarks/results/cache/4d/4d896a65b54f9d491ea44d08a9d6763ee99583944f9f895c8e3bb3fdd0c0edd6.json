@@ -1,0 +1,1 @@
+{"ok":true,"match":true,"reason":"Both identify the identical mechanism: Math.max(1, ...) instead of Math.max(0, ...) floors oldestDays at 1, so a stuckRow first observed in the current run (diff = 0) is misreported as 1 day stuck instead of 0, defeating the fix's zero-day boundary case. Same location, same runtime misbehavior, just paraphrased."}

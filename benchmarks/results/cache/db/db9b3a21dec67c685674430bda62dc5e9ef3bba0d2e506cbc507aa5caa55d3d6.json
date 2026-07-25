@@ -1,0 +1,1 @@
+{"ok":true,"match":true,"reason":"The reviewer identifies the identical mechanism: daysAgo(7) is used instead of daysAgo(6) for the 7-day preset's from-date, combined with an inclusive [from, to] window where to=today, causing the range to span 8 days instead of 7. This matches the ground truth exactly, just paraphrased."}

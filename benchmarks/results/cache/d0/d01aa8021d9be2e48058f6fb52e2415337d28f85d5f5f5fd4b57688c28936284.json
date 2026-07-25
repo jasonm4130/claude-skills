@@ -1,0 +1,1 @@
+{"ok":true,"match":true,"reason":"Both identify the same defect: UNITS.h (hour multiplier) is set to 600,000 instead of 3,600,000, causing hour-denominated durations to parse to 1/6 of their correct value. The reviewer's specific example (parseDuration(\"2h\") → 1,200,000 vs 7,200,000) is a correct concrete instance of this exact ratio. Same location, same mechanism."}

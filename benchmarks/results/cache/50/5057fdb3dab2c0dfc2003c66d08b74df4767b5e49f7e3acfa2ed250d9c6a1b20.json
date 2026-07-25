@@ -1,0 +1,1 @@
+{"ok":true,"match":true,"reason":"Both identify the same mechanism: openMenu() registers a document click listener (onClickOutside) that closeMenu() fails to remove (unlike the keydown listener it does remove), causing stale click listeners to accumulate across open/close cycles. This is a paraphrase of the same runtime misbehavior, not a different bug or vague complaint."}
