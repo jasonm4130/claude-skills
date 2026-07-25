@@ -132,8 +132,14 @@ const violatingPlugins = [...codePlugins].filter((p) => !docPlugins.has(p)).sort
 // root; the nearest level holding a README.md/CLAUDE.md/AGENTS.md is the covering
 // doc set. A repo with no such docs anywhere above the file has nothing to drift.
 const DOC_BASENAMES = ["README.md", "CLAUDE.md", "AGENTS.md"];
+// `.docs-sync` is this plugin's own consolidation record. It is not Markdown, so
+// without this entry rule 2 would treat it as code, walk up for its covering doc,
+// find the root README.md unstaged, and deny — blocking `/docs-consolidate --init`
+// and every routine re-stamp in any repo that has a root README (i.e. all of them).
+// Exempting the record does not exempt the commit: real code staged alongside it is
+// still caught, because each path is classified independently.
 const SKIP_RE =
-  /\.(md|markdown)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|Cargo\.lock|uv\.lock|poetry\.lock|LICENSE[^/]*|\.gitignore|\.gitattributes|\.editorconfig)$|\.lock$|(^|\/)\.claude-plugin\//;
+  /\.(md|markdown)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|Cargo\.lock|uv\.lock|poetry\.lock|LICENSE[^/]*|\.gitignore|\.gitattributes|\.editorconfig|\.docs-sync)$|\.lock$|(^|\/)\.claude-plugin\//;
 
 /** @type {Map<string, { docs: string[], files: string[] }>} */
 const genericViolations = new Map();

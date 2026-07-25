@@ -341,3 +341,50 @@ test("generic: tests-only and lockfile-only commits never trigger", () => {
     r.cleanup();
   }
 });
+
+// ---- .docs-sync: this plugin's own consolidation record (v0.3.0) ----
+//
+// The record is not Markdown, so without an explicit exemption rule 2 treats it as
+// code, walks up for its covering doc, finds the root README.md unstaged, and denies.
+// Every repo this ships to has a root README, so `/docs-consolidate --init` and every
+// routine re-stamp would be refused — the feature could not be adopted at all.
+//
+// The exemption must not become a bypass: it exempts the record, not the commit.
+
+test("docs-sync: a record-only commit is allowed even with an unstaged root README", () => {
+  const r = repo({ ".docs-sync": "docs-sync: audited=abc123", "README.md": "d" }, [
+    ".docs-sync",
+  ]);
+  try {
+    assert.equal(run(bash(COMMIT, r.root)).stdout.trim(), "");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("docs-sync: the record alongside markdown edits is allowed", () => {
+  const r = repo(
+    { ".docs-sync": "docs-sync: audited=abc123", "README.md": "d", "docs/STATUS.md": "s" },
+    [".docs-sync", "README.md", "docs/STATUS.md"],
+  );
+  try {
+    assert.equal(run(bash(COMMIT, r.root)).stdout.trim(), "");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("docs-sync: the exemption is not a bypass — real code in the same commit still denies", () => {
+  const r = repo(
+    { ".docs-sync": "docs-sync: audited=abc123", "src/main.js": "x", "README.md": "d" },
+    [".docs-sync", "src/main.js"],
+  );
+  try {
+    const d = parseDecision(run(bash(COMMIT, r.root)).stdout);
+    assert.equal(d.permissionDecision, "deny");
+    assert.match(d.permissionDecisionReason, /src\/main\.js/);
+    assert.doesNotMatch(d.permissionDecisionReason, /\.docs-sync/);
+  } finally {
+    r.cleanup();
+  }
+});
