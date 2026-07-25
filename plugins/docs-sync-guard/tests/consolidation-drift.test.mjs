@@ -157,8 +157,22 @@ test("not a git repo → null everywhere", () => {
     assert.equal(gitRepoRoot(dir), null);
     assert.equal(readConsolidationStamp(dir), null);
     assert.equal(computeConsolidationDrift(dir, "a".repeat(40), 50), null);
+    // null, NOT false: callers delete state on a verified `false`, and "git could
+    // not answer" is not a verified absence.
+    assert.equal(isAncestor(dir, "a".repeat(40)), null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("isAncestor: a missing object is a verified false, not an unknown", () => {
+  const r = newRepo();
+  try {
+    assert.equal(isAncestor(r.root, "0".repeat(40)), false);
+    assert.equal(isAncestor(r.root, "not-a-sha"), false);
+    assert.equal(isAncestor(r.root, sh("git rev-parse HEAD", r.root)), true);
+  } finally {
+    r.cleanup();
   }
 });
 

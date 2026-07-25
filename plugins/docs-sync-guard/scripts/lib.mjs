@@ -244,8 +244,18 @@ export function readConsolidationStamp(repoRoot) {
  */
 export function isAncestor(repoRoot, sha) {
   if (!/^[0-9a-f]{7,40}$/i.test(sha)) return false;
-  const exists = gitRun(["cat-file", "-e", `${sha}^{commit}`], repoRoot);
-  if (exists.status === 1 || exists.status === 128) return false;
+  // `rev-parse --verify --quiet`, NOT `cat-file -e`: callers delete state on a
+  // verified `false`, so "the object is gone" and "git could not answer" must not
+  // collapse together. Measured exit codes (spawned directly, no shell):
+  //
+  //   rev-parse --verify --quiet <missing>^{commit}   → 1    (verified absent)
+  //   rev-parse --verify --quiet <present>^{commit}   → 0
+  //   ...outside a repository                         → 128  (cannot tell)
+  //
+  // `cat-file -e <missing>^{commit}` returns 128 for BOTH, because peeling an
+  // object that isn't there is a fatal error rather than a negative answer.
+  const exists = gitRun(["rev-parse", "--verify", "--quiet", `${sha}^{commit}`], repoRoot);
+  if (exists.status === 1) return false;
   if (exists.status !== 0) return null;
   const anc = gitRun(["merge-base", "--is-ancestor", sha, "HEAD"], repoRoot);
   if (anc.status === 0) return true;
