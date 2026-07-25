@@ -82,7 +82,7 @@ quality.
 
 ```
 docs-sync: audited=<full-40-char-sha>
-Last documentation consolidation: <ISO-8601 UTC>
+Recorded: <ISO-8601 UTC>
 Run /docs-consolidate — do not hand-edit the audited= line.
 ```
 
