@@ -58,7 +58,7 @@ if set, otherwise `os.tmpdir()/ship-gate-data`. Flags are plain text, not JSON.
 ## Requirements
 
 - Claude Code ≥ 2.1.110
-- **Node.js 18+ on PATH.** Claude Code ships a self-contained native binary and its documented system requirements do not include Node, so this is an external prerequisite, not something the host provides. Hooks route through `hooks/run-hook.cmd`, a polyglot batch/sh launcher that probes for node on both the Windows and POSIX paths — Claude Code picks the hook shell per platform, and an inline POSIX probe would be invalid PowerShell on native Windows without Git Bash. If `node` is missing the hook **skips silently** (exit 0) instead of erroring on every event, with the reason on stderr for `claude --debug`.
+- **Node.js 18+ on PATH.** Claude Code ships a self-contained native binary and its documented system requirements do **not** include Node, so this is an external prerequisite the host does not provide — install it via Homebrew, WinGet, or your distro's package manager. Hooks use **exec form** (`command: "node"`, `args: [...]`), so Claude Code spawns node directly with no shell on any platform; without a shell there is no sh-vs-PowerShell dialect to get wrong. On a machine with no node the spawn fails and Claude Code shows a non-blocking `hook error` per event — loud and self-diagnosing by design.
 - git (silent no-op outside a git repo)
 
 ## Tests

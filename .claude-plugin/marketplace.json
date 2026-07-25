@@ -94,7 +94,14 @@
         "name": "Jason Matthew"
       },
       "license": "MIT",
-      "keywords": ["codex", "cross-provider", "plan-review", "design-review", "adversarial-review", "claude-code"],
+      "keywords": [
+        "codex",
+        "cross-provider",
+        "plan-review",
+        "design-review",
+        "adversarial-review",
+        "claude-code"
+      ],
       "category": "productivity"
     },
     {
@@ -264,7 +271,7 @@
       "name": "superpowers-core",
       "source": "./plugins/superpowers-core",
       "description": "Owned fork of the superpowers process skills (brainstorming, systematic-debugging, writing-plans, writing-skills, test-driven-development) plus the using-skills dispatcher.",
-      "version": "0.2.1",
+      "version": "0.2.0",
       "author": {
         "name": "Jason Matthew"
       },

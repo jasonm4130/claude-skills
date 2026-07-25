@@ -43,8 +43,7 @@ handoff/
 ├── .claude-plugin/
 │   └── plugin.json           — name, version, author, engines
 ├── hooks/
-│   ├── hooks.json            — UserPromptSubmit + SessionStart
-│   └── run-hook.cmd          — polyglot batch/sh launcher; probes for node, skips silently if absent
+│   └── hooks.json            — UserPromptSubmit + SessionStart (exec form: spawns node with no shell)
 ├── scripts/
 │   ├── lib.mjs               — shared stdin/env/flag helpers; the atomic band-claim (claimBand/resetBands), in-flight lock (acquireInflightLock), and cached transcript parse (cachedTranscriptUsage) primitives (since 0.6.0); and (since 0.8.0) the adaptive-render helpers: pickContextTokens (transcript-primary source selection), shouldResetBands (decrease-based band reset), gitBranchDirty (spawnSync branch/dirty, degrades to null), modelColor/selectRateLimits/tokensSuffix (segment formatters), and visibleWidth/truncateEnd/assembleStatusLine (ANSI-aware width fitting + line assembly)
 │   ├── status-and-flag.mjs   — statusLine: renders the adaptive line (identity/branch/dirty, context bar, model, rate-limits — since 0.8.0, via lib.mjs's assembleStatusLine) and writes the nudge flag at threshold; nudges are idempotent per band (since 0.6.0, via an atomic claim marker, not a lock) and the ladder also resets on a real decrease in context, not just dropping below threshold (since 0.8.0); overlap guard replays the last render when another invocation is in flight — a performance guard, not a mutex, with no statusLine-timeout assumption
@@ -67,7 +66,7 @@ handoff/
 ## Dependencies
 
 - **Node.js 18+ on PATH.** No third-party packages, no `package.json`.
-  Stdlib only. Claude Code ships a self-contained native binary and its documented system requirements do not include Node, so this is an external prerequisite, not something the host provides. Hooks route through `hooks/run-hook.cmd`, a polyglot batch/sh launcher that probes for node on both the Windows and POSIX paths — Claude Code picks the hook shell per platform, and an inline POSIX probe would be invalid PowerShell on native Windows without Git Bash. If `node` is missing the hook **skips silently** (exit 0) instead of erroring on every event, with the reason on stderr for `claude --debug`.
+  Stdlib only. Claude Code ships a self-contained native binary and its documented system requirements do **not** include Node, so this is an external prerequisite the host does not provide — install it via Homebrew, WinGet, or your distro's package manager. Hooks use **exec form** (`command: "node"`, `args: [...]`), so Claude Code spawns node directly with no shell on any platform; without a shell there is no sh-vs-PowerShell dialect to get wrong. On a machine with no node the spawn fails and Claude Code shows a non-blocking `hook error` per event — loud and self-diagnosing by design.
 - **Claude Code >= 2.1.110** — required for `hooks.json` plugin hook registration.
 
 ## Development

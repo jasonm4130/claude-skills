@@ -1,34 +1,36 @@
 // @ts-check
-// Node-invoking hooks must go through the polyglot launcher, which probes for node.
+// Node hooks must use exec form, never a shell.
 //
-// Claude Code no longer requires Node: the native install ships a self-contained
-// binary, and even the npm package "installs the same native binary... [which] does
-// not itself invoke Node" (code.claude.com/docs/en/setup — the system requirements
-// list OS/RAM/shell/ripgrep and no Node). So `node` on PATH is an external
-// prerequisite this repo must probe for, not something the host guarantees. Without
-// a probe a node-less machine gets exit 127, which Claude Code treats as a
-// NON-BLOCKING error: the guard fails open AND every matching event prints a "hook
-// error" notice — on a PreToolUse:Bash matcher, every Bash call.
+// Claude Code picks the hook shell per platform: sh on macOS/Linux, Git Bash on
+// Windows, but PowerShell on native Windows when Git Bash is absent. Any shell
+// syntax in a hook command is therefore a portability trap — a POSIX probe such as
+// `command -v node >/dev/null 2>&1 || exit 0` is invalid PowerShell and errors
+// before node ever runs, breaking the hook on a supported configuration.
 //
-// The probe cannot live inline in hooks.json. Claude Code picks the hook shell per
-// platform: sh on macOS/Linux, Git Bash on Windows, but PowerShell on native Windows
-// when Git Bash is absent. `command -v` / `>&2` / `exec` are not valid PowerShell, so
-// an inline POSIX probe errors before node runs and breaks a supported configuration
-// that plain `node "<script>"` had worked on. Hence run-hook.cmd: a polyglot batch/sh
-// launcher (the pattern obra/superpowers uses) that probes on both paths.
+// Exec form (`command` + `args`) sidesteps the whole problem: Claude Code resolves
+// `command` on PATH and spawns it directly with no shell on any platform, so there is
+// no dialect to get wrong. It also drops the `sh -c` fork — measured 45.6ms through a
+// shell launcher vs 37.7ms exec form, on hooks that run on every matching tool call.
+//
+// The trade this encodes: `node` is an external prerequisite (Claude Code ships a
+// self-contained native binary and its documented system requirements do not include
+// Node), so on a machine without it the spawn fails and Claude Code shows a
+// non-blocking "hook error" per event. That failure is loud and self-diagnosing,
+// which is preferred here over carrying a shell launcher whose Windows branch this
+// repo cannot test — CI runs ubuntu and macos only.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const pluginsDir = join(repoRoot, "plugins");
 
-/** @returns {Array<{plugin: string, event: string, command: string}>} */
-function allHookCommands() {
-  /** @type {Array<{plugin: string, event: string, command: string}>} */
+/** @returns {Array<{plugin: string, event: string, hook: any}>} */
+function allHooks() {
+  /** @type {Array<{plugin: string, event: string, hook: any}>} */
   const out = [];
   for (const plugin of readdirSync(pluginsDir)) {
     const manifest = join(pluginsDir, plugin, "hooks", "hooks.json");
@@ -36,84 +38,64 @@ function allHookCommands() {
     const parsed = JSON.parse(readFileSync(manifest, "utf8"));
     for (const [event, matchers] of Object.entries(parsed.hooks ?? {})) {
       for (const matcher of /** @type {any[]} */ (matchers)) {
-        for (const hook of matcher.hooks ?? []) {
-          if (typeof hook.command === "string") out.push({ plugin, event, command: hook.command });
-        }
+        for (const hook of matcher.hooks ?? []) out.push({ plugin, event, hook });
       }
     }
   }
   return out;
 }
 
-test("no hooks.json command invokes node directly", () => {
-  const offenders = allHookCommands()
-    .filter(({ command }) => /(^|[;&|\s])node\s/.test(command))
-    .map(({ plugin, event, command }) => `${plugin} ${event}: ${command}`);
+test("every node hook uses exec form, not a shell command string", () => {
+  const offenders = [];
+  for (const { plugin, event, hook } of allHooks()) {
+    const command = hook.command;
+    if (typeof command !== "string") continue;
+    // A node hook in exec form has command exactly "node"; in shell form the binary
+    // name is embedded in a command string that a shell has to tokenize.
+    const isExecNode = command === "node" && Array.isArray(hook.args);
+    const mentionsNode = /(^|[;&|\s])node(\s|$)/.test(command);
+    if (mentionsNode && !isExecNode) offenders.push(`${plugin} ${event}: ${command}`);
+  }
   assert.deepEqual(
     offenders,
     [],
-    `these bypass the launcher, so they carry no node probe:\n  ${offenders.join("\n  ")}`,
+    `these run node through a shell, so they depend on the platform's shell dialect:\n  ${offenders.join("\n  ")}`,
   );
 });
 
-test("every launcher-based hook names a script that exists", () => {
-  for (const { plugin, event, command } of allHookCommands()) {
-    const m = /run-hook\.cmd" (\S+)/.exec(command);
-    if (!m) continue;
-    const script = join(pluginsDir, plugin, "scripts", `${m[1]}.mjs`);
-    assert.ok(existsSync(script), `${plugin} ${event}: launcher targets missing script ${script}`);
+test("exec-form hooks carry no shell metacharacters in command or args", () => {
+  for (const { plugin, event, hook } of allHooks()) {
+    if (hook.command !== "node") continue;
+    for (const arg of hook.args ?? []) {
+      // ${CLAUDE_PLUGIN_ROOT} is substituted by Claude Code as a plain string, not by a
+      // shell, so it is the one brace/dollar construct that belongs here — strip it
+      // before looking for syntax that would only ever mean something to a shell.
+      const rest = arg.replaceAll("${CLAUDE_PLUGIN_ROOT}", "");
+      assert.doesNotMatch(
+        rest,
+        /[;&|><$(){}]/,
+        `${plugin} ${event}: arg "${arg}" contains shell syntax, which exec form never interprets`,
+      );
+    }
+    // `shell` is ignored in exec form — carrying it would imply a guarantee it can't make.
+    assert.equal(hook.shell, undefined, `${plugin} ${event}: "shell" is ignored when args is set`);
   }
 });
 
-test("each launcher probes for node on BOTH the batch and POSIX paths", () => {
-  const plugins = new Set(
-    allHookCommands()
-      .filter(({ command }) => command.includes("run-hook.cmd"))
-      .map(({ plugin }) => plugin),
-  );
-  assert.ok(plugins.size > 0, "fixture drift: no plugin routes hooks through run-hook.cmd");
-
-  for (const plugin of plugins) {
-    const launcher = join(pluginsDir, plugin, "hooks", "run-hook.cmd");
-    assert.ok(existsSync(launcher), `${plugin}: hooks.json references a missing run-hook.cmd`);
-    const body = readFileSync(launcher, "utf8");
-
-    // Polyglot framing: sh must swallow the batch block as a heredoc.
-    assert.match(body, /^: << 'CMDBLOCK'/, `${plugin}: launcher must open with the sh heredoc guard`);
-    assert.match(body, /^CMDBLOCK$/m, `${plugin}: launcher must close the heredoc`);
-
-    // Windows/cmd path — PowerShell invokes .cmd via cmd.exe.
-    assert.match(body, /where node >nul 2>nul/, `${plugin}: launcher must probe for node in batch`);
-    assert.match(body, /exit \/b 0/, `${plugin}: batch probe must skip with exit 0, not an error`);
-
-    // POSIX path.
-    assert.match(
-      body,
-      /command -v node >\/dev\/null 2>&1 \|\| \{[^}]*exit 0[^}]*\}/,
-      `${plugin}: launcher must probe for node in sh and skip with exit 0`,
-    );
-    // exec so a blocking exit 2 from the hook script cannot be masked by the shell.
-    assert.match(body, /exec node /, `${plugin}: launcher must exec node so its exit code propagates`);
-
-    // sh has to be able to execve it.
-    assert.ok(
-      (statSync(launcher).mode & 0o111) !== 0,
-      `${plugin}: run-hook.cmd must be executable or sh -c cannot run it`,
-    );
+test("every exec-form hook names a script that exists", () => {
+  for (const { plugin, event, hook } of allHooks()) {
+    if (hook.command !== "node") continue;
+    const args = hook.args ?? [];
+    assert.equal(args.length, 1, `${plugin} ${event}: expected exactly one script arg`);
+    const rel = args[0].replace("${CLAUDE_PLUGIN_ROOT}/", "");
+    const script = join(pluginsDir, plugin, rel);
+    assert.ok(existsSync(script), `${plugin} ${event}: hook targets missing script ${script}`);
   }
 });
 
-test("shell hook scripts that invoke node probe for it too", () => {
-  // superpowers-core is an owned fork (see its README), not a pristine vendor, so its
-  // hook script is in scope for the same guarantee. It is a #!/bin/sh script, so it was
-  // already unusable on native Windows without Git Bash — the probe below is about the
-  // node prerequisite, not that pre-existing platform limitation.
-  const script = join(pluginsDir, "superpowers-core", "hooks", "session-start");
-  const body = readFileSync(script, "utf8");
-  assert.match(body, /(^|[;&|\s])node\s/, "fixture drift: this script no longer invokes node");
-  assert.match(
-    body,
-    /command -v node >\/dev\/null 2>&1 \|\|/,
-    "superpowers-core/hooks/session-start invokes node without probing for it",
+test("no plugin still ships the retired shell launcher", () => {
+  const leftovers = readdirSync(pluginsDir).filter((p) =>
+    existsSync(join(pluginsDir, p, "hooks", "run-hook.cmd")),
   );
+  assert.deepEqual(leftovers, [], `run-hook.cmd is superseded by exec form: ${leftovers.join(", ")}`);
 });

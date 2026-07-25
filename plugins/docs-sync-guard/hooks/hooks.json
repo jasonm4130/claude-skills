@@ -6,7 +6,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" pretooluse-guard-docs-sync",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-docs-sync.mjs"
+            ],
             "timeout": 5
           }
         ]
