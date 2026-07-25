@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v node >/dev/null 2>&1 || { echo \"docs-sync-guard: node not found on PATH - hook skipped\" >&2; exit 0; }; exec node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-docs-sync.mjs\"",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" pretooluse-guard-docs-sync",
             "timeout": 5
           }
         ]

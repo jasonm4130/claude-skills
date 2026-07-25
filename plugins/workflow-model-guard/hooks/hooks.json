@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v node >/dev/null 2>&1 || { echo \"workflow-model-guard: node not found on PATH - hook skipped\" >&2; exit 0; }; exec node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs\"",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" pretooluse-guard-workflow-model",
             "timeout": 5
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v node >/dev/null 2>&1 || { echo \"workflow-model-guard: node not found on PATH - hook skipped\" >&2; exit 0; }; exec node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs\"",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" pretooluse-guard-agent-model",
             "timeout": 5
           }
         ]

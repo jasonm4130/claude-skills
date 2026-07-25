@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v node >/dev/null 2>&1 || { echo \"design-gate-guard: node not found on PATH - hook skipped\" >&2; exit 0; }; exec node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-design-gate.mjs\"",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" pretooluse-guard-design-gate",
             "timeout": 5
           }
         ]

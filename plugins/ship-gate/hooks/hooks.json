@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v node >/dev/null 2>&1 || { echo \"ship-gate: node not found on PATH - hook skipped\" >&2; exit 0; }; exec node \"${CLAUDE_PLUGIN_ROOT}/scripts/stop-check-unshipped.mjs\"",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" stop-check-unshipped",
             "timeout": 5
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v node >/dev/null 2>&1 || { echo \"ship-gate: node not found on PATH - hook skipped\" >&2; exit 0; }; exec node \"${CLAUDE_PLUGIN_ROOT}/scripts/check-shipgate-flag.mjs\"",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" check-shipgate-flag",
             "timeout": 5
           }
         ]

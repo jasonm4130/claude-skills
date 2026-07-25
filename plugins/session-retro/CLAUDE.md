@@ -140,7 +140,7 @@ occasional high-signal one the agent acts on directly.
 ## Dependencies
 
 - **Node.js 18+ on PATH.** No third-party packages, no `package.json`.
-  Stdlib only. Claude Code ships a self-contained native binary and its documented system requirements do not include Node, so this is an external prerequisite, not something the host provides. If `node` is missing the hook **skips silently** (exit 0) instead of erroring on every event; the reason goes to stderr, visible under `claude --debug`.
+  Stdlib only. Claude Code ships a self-contained native binary and its documented system requirements do not include Node, so this is an external prerequisite, not something the host provides. Hooks route through `hooks/run-hook.cmd`, a polyglot batch/sh launcher that probes for node on both the Windows and POSIX paths — Claude Code picks the hook shell per platform, and an inline POSIX probe would be invalid PowerShell on native Windows without Git Bash. If `node` is missing the hook **skips silently** (exit 0) instead of erroring on every event, with the reason on stderr for `claude --debug`.
 - **Claude Code >= 2.1.110** — required for `hooks.json` plugin hook
   registration.
 - **git** — optional. The `/retro` skill uses it to ask diff-driven questions;
