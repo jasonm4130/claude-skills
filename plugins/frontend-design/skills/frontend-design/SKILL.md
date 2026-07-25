@@ -20,7 +20,7 @@ Any single "heavy" signal is usually enough to route heavy — visual exploratio
 
 ## Light path: design inline
 
-Work this loop: ground it in the subject, apply the design principles below, explore a couple of concrete directions, then self-critique before you call it done.
+Work this loop: ground it in the subject, apply the design principles below, cut the AI tells, explore a couple of concrete directions, then self-critique before you call it done.
 
 ### Ground it in the subject
 
@@ -35,13 +35,24 @@ If the request doesn't pin down what's being designed, pin it yourself: name the
 - **Match effort to ambition.** A minimal direction needs precise spacing and restraint; a bolder direction needs the follow-through to execute it fully. Half of either looks unfinished.
 - **Copy is part of the design.** Interface text is read by the person using it, not by the system that built it — name things by what the user controls, use active voice, and keep error/empty states specific about what happened and what to do next.
 
+### Cut the AI tells
+
+A concrete **anti-tell floor** that *subtracts* the marks of generated design. These remove recognizable tells; they don't prescribe a house look (a fixed "anti-slop" style just trades one sameness for another). Apply them while building and judge by eye — they're defaults that yield to real content, accessibility, and the surface's purpose, not a blocking checklist.
+
+- **Real assets, not fakes.** No `<div>`-built "fake screenshots" of product UI and no hand-rolled decorative SVG illustrations as a default; use real or generated imagery, or leave an explicit `TODO` placeholder.
+- **No invented telemetry or chrome.** Drop fake version labels (`BETA`, `v0.6`), section-number eyebrows (`00 / INDEX`), scroll cues, and locale/weather strips unless they encode real state.
+- **Vary the section rhythm.** Don't reuse one section layout family down the page, and don't stack more than two image-and-text split sections in a row — a page where every band is the same shape reads as generated.
+- **Hero discipline.** One focal hero: aim for a headline of one or two lines and, where the surface has one, a primary CTA visible without scrolling; avoid a kitchen-sink stack of taglines, trust strips, and avatar rows above the fold. (Real content, localization, and accessibility win over the line count — don't truncate meaning or invent a CTA to hit it.)
+- **Grids fit their content.** N items means N cells — reshape the grid rather than padding it with an empty tile.
+- **One coherent theme per surface.** No light/dark flips mid-page — while still designing both light and dark where the surface is theme-aware.
+
 ### Explore
 
 Sketch 2–3 concrete variations of the specific decision at hand (not a whole redesign) — a component's layout, a palette choice, a copy treatment — before committing to one. State which you picked and why in one line; don't silently default to the first idea.
 
 ### Self-critique
 
-Before calling it done, check the result against the trap of templated defaults: would this exact choice be your answer to almost any similar brief, regardless of subject? If yes, revise the part that's generic. Then check the floor that never gets cut for speed: responsive down to mobile width, visible keyboard focus, and color contrast that holds up — these are cheap to get right the first time and expensive to retrofit.
+Before calling it done, check the result against the trap of templated defaults: would this exact choice be your answer to almost any similar brief, regardless of subject? If yes, revise the part that's generic. Then check the accessibility floor that never gets cut for speed: responsive down to mobile width, visible keyboard focus, and color contrast that holds up — these are cheap to get right the first time and expensive to retrofit.
 
 ## Heavy path: hand off to Claude Design in the browser
 

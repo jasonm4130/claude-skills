@@ -27,9 +27,11 @@ need) before doing any design work — any single "heavy" signal routes heavy.
 
 - **Light path** — design inline: ground it in the subject and the surrounding codebase, apply the
   design principles (one clear focal point, purposeful typography, meaningful structure, motion only
-  where it clarifies state, effort matched to ambition, copy as part of the design), explore 2–3
-  concrete directions, then self-critique against templated defaults and the responsive/focus/contrast
-  floor.
+  where it clarifies state, effort matched to ambition, copy as part of the design) plus a concrete
+  anti-tell floor (real assets over fake screenshots, no invented telemetry or chrome, varied section
+  rhythm, hero discipline, grids that fit their content, one coherent theme per surface), explore 2–3
+  concrete directions, then self-critique against templated defaults and the accessibility floor
+  (responsive, visible focus, contrast).
 - **Heavy path** — hand off to **Claude Design** (claude.ai, in the browser) rather than iterate
   wide-sweeping or highly-detailed visual work blind in a text loop. The skill emits a paste-ready
   `# Design brief: <feature>` template (goal, users & context, constraints, screens/components,
