@@ -63,6 +63,13 @@ Not a git repo, doc absent, stamp unparseable, shallow clone, git broken, malfor
 payload — every one of these exits 0 silently. This hook must never be the reason a
 session breaks.
 
+The shallow-clone case is the subtle one. A depth-1 checkout of a repo whose tip is the
+doc's own commit does **not** contain the parent the doc is stamped with, so the stamped
+object is missing even though the doc is perfectly current. A missing object therefore
+only means "rewritten or foreign" in a complete repo; in a shallow one it means the
+history needed to judge was never fetched, and the guard stays silent. Without that
+distinction the warning fires on every CI session, which is how a guard gets ignored.
+
 ## The stamp
 
 ```

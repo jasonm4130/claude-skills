@@ -46,6 +46,13 @@ Every ambiguous case returns null from `computeDrift` and exits 0. "Cannot tell"
 never "warn" — a guard that cries wolf on shallow clones gets uninstalled, and then the
 real staleness goes unnoticed too.
 
+That was not hypothetical: the first version treated a missing stamp object as
+`unknown-commit` unconditionally, which meant a depth-1 clone of a repo whose tip is the
+doc's own commit reported a current doc as stale. Check
+`rev-parse --is-shallow-repository` before concluding a missing object means rewritten
+history. Any future "the stamp isn't resolvable" branch needs the same question asked:
+is this repo actually missing the object, or was it just never fetched?
+
 ## Hook form
 
 Shell form (`command: "node \"${CLAUDE_PLUGIN_ROOT}/...\""`), never exec form (`args`).
