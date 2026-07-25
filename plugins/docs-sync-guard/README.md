@@ -75,7 +75,10 @@ open — the guard never blocks a commit by accident.
 ## The consolidation trigger (0.3.0)
 
 **Opt in by committing `.docs-sync` at the repo root; opt out by deleting it.**
-`/docs-consolidate --init` creates it:
+`/docs-consolidate --init` creates it — note that adopting **starts the clock rather
+than auditing**: the SHA it writes means "measure drift from here", not "these docs
+were verified". Run a full pass straight after if the existing docs are of unknown
+quality.
 
 ```
 docs-sync: audited=<full-40-char-sha>

@@ -28,6 +28,12 @@ come back to it.
 
 Adopt the trigger in this repo.
 
+**`--init` starts the clock; it does not audit.** The `audited=` SHA it writes means
+"drift is measured from here", not "these docs were verified at this commit". Say that
+to the user when you run it, because the trigger will then stay silent for
+`threshold − 1` commits over docs nobody has checked. If the repo's docs are of
+unknown quality, offer to run a full pass immediately after adopting.
+
 1. **Refuse if the record would be ignored.** `git check-ignore .docs-sync` matching
    means the file would never reach a teammate's clone — stop and say so rather than
    creating a record that silently does nothing. (This is what ruled out putting it
