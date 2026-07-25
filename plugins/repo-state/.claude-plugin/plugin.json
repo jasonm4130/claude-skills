@@ -1,0 +1,21 @@
+{
+  "name": "repo-state",
+  "description": "Activity-triggered current-state docs: a SessionStart guard that refuses to let a stale docs/CURRENT_STATE.md be trusted silently, plus a drift-driven refresh nudge that fires on commits rather than on a calendar.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Jason Matthew"
+  },
+  "homepage": "https://github.com/jasonm4130/claude-skills",
+  "repository": "https://github.com/jasonm4130/claude-skills",
+  "license": "MIT",
+  "keywords": [
+    "documentation",
+    "staleness",
+    "orientation",
+    "session-start",
+    "claude-code"
+  ],
+  "engines": {
+    "claude-code": ">=2.1.110"
+  }
+}
