@@ -72,9 +72,13 @@ if (deferFile !== null && existsSync(deferFile)) {
   try {
     deferred = readFileSync(deferFile, "utf8").trim();
   } catch {
-    deferred = null;
+    // The marker is THERE but unreadable (permissions, I/O error). That is
+    // "cannot tell", not "no deferral" — falling through would arm a nudge the
+    // user explicitly deferred. Same rule as everywhere else: stay silent.
+    process.exit(0);
   }
-  if (deferred) {
+  if (!deferred) process.exit(0); // present but empty — also cannot tell
+  {
     const anc = isAncestor(repoRoot, deferred);
     if (anc === null) process.exit(0); // cannot tell — keep the defer, stay silent
     if (anc === false) {

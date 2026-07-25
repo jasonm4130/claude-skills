@@ -80,7 +80,15 @@ Codex-reviewed: 3 rounds + audit, chain `881f87716802`, 14 unique findings.
   session", which is the one thing defer exists to prevent.
 - **`--defer` is a shipped script, not skill prose.** Instructions telling the agent to
   "write the defer file" cannot work when the path depends on state the session cannot
-  see; the script and the hook call the same helper.
+  see; the script and the hook call the same helper. The skill resolves it relative to
+  **its own base directory** — `${CLAUDE_PLUGIN_ROOT}` is unset in session shells too,
+  so a command built from it expands to `node "/scripts/…"` and dies with
+  MODULE_NOT_FOUND. A test pins the relative hop and forbids the variable.
+- **A defer marker that exists but cannot be read is silence, not permission.** An
+  unreadable (or empty) marker used to fall through and arm a nudge the user had
+  explicitly deferred, because the catch set `deferred = null` and the block was
+  skipped. Present-but-unparseable is "cannot tell" and takes the silent path, like
+  everything else here.
 - **UserPromptSubmit re-checks the record before speaking.** Stop arms at end of turn;
   the user may delete `.docs-sync` before the next prompt, and the documented opt-out
   is immediate. Consuming the flag and then staying silent is deliberate — opting out

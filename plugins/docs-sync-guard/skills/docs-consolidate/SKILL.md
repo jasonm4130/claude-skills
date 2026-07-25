@@ -56,12 +56,19 @@ before the deletion is even committed.
 
 ## `--defer`
 
-Run the shipped script — do **not** hand-roll the path:
+Run the shipped script. Resolve it **relative to this skill's own base directory** —
+the absolute path stated when this skill was loaded — as `../../scripts/defer-consolidation.mjs`:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/defer-consolidation.mjs"            # defer here
-node "${CLAUDE_PLUGIN_ROOT}/scripts/defer-consolidation.mjs" . --clear  # undo
+D="<this skill's base directory>/../../scripts/defer-consolidation.mjs"
+node "$D"            # defer here
+node "$D" . --clear  # undo
 ```
+
+Do **not** use `${CLAUDE_PLUGIN_ROOT}`. Like `CLAUDE_PLUGIN_DATA`, it is set for
+hooks and is **unset in session shells**, so it silently expands to nothing and the
+command becomes `node "/scripts/defer-consolidation.mjs"` → `MODULE_NOT_FOUND`. The
+skill's base directory is the only plugin path available here.
 
 The marker lives in `.git/docs-sync-defer`, deliberately *not* in the plugin data
 directory: `CLAUDE_PLUGIN_DATA` is not exported to session shells, so anything derived

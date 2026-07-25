@@ -17,6 +17,8 @@ import {
   existsSync,
   readdirSync,
   realpathSync,
+  readFileSync,
+  chmodSync,
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -273,6 +275,54 @@ test("the --defer COMMAND writes where the Stop hook reads — no shared env var
     assert.equal(existsSync(s.deferFile()), false);
     run(STOP, { session_id: "sid2", cwd: s.root }, s.dataDir, T(5));
     assert.equal(existsSync(s.flag("sid2")), true, "clearing lets the nudge fire again");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("the path the SKILL tells the agent to run actually resolves", () => {
+  // The skill can only use its own base directory: CLAUDE_PLUGIN_ROOT and
+  // CLAUDE_PLUGIN_DATA are both unset in session shells, so a command built from
+  // either expands to a broken path and fails with MODULE_NOT_FOUND. This pins the
+  // documented relative hop so renaming or moving the script breaks a test rather
+  // than breaking /docs-consolidate --defer silently.
+  const skillDir = fileURLToPath(new URL("../skills/docs-consolidate", import.meta.url));
+  const asDocumented = path.join(skillDir, "..", "..", "scripts", "defer-consolidation.mjs");
+  assert.equal(existsSync(asDocumented), true, `skill points at a missing file: ${asDocumented}`);
+  assert.equal(realpathSync(asDocumented), realpathSync(DEFER));
+
+  const skillText = readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
+  assert.match(skillText, /\.\.\/\.\.\/scripts\/defer-consolidation\.mjs/);
+  assert.doesNotMatch(
+    skillText.replace(/Do \*\*not\*\* use `\$\{CLAUDE_PLUGIN_ROOT\}`[\s\S]*?available here\./, ""),
+    /\$\{CLAUDE_PLUGIN_ROOT\}/,
+    "the skill must not instruct the agent to use a hook-only variable",
+  );
+});
+
+test("an unreadable defer marker is silence, not permission to nudge", () => {
+  const s = scenario(10);
+  try {
+    writeFileSync(s.deferFile(), sh("git rev-parse HEAD", s.root));
+    chmodSync(s.deferFile(), 0o000);
+    run(STOP, { session_id: "sid1", cwd: s.root }, s.dataDir, T(5));
+    assert.equal(existsSync(s.flag()), false, "cannot-tell must not arm a deferred nudge");
+  } finally {
+    try {
+      chmodSync(s.deferFile(), 0o644);
+    } catch {
+      /* already gone */
+    }
+    s.cleanup();
+  }
+});
+
+test("an empty defer marker is also silence", () => {
+  const s = scenario(10);
+  try {
+    writeFileSync(s.deferFile(), "   \n");
+    run(STOP, { session_id: "sid1", cwd: s.root }, s.dataDir, T(5));
+    assert.equal(existsSync(s.flag()), false);
   } finally {
     s.cleanup();
   }
