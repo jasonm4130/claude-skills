@@ -24,7 +24,6 @@ Add the marketplace once, then install the plugins you want.
 | `domain-modeling` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms | – | `/plugin install domain-modeling@jasonm4130-claude-skills` |
 | `frontend-design` | Light-inline design guidance, or a paste-ready browser brief for wide/detailed work | – | `/plugin install frontend-design@jasonm4130-claude-skills` |
 | `handoff` | Context-fill-triggered handoff doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
-| `repo-state` | Stale-doc guard at session start + activity-driven refresh nudge for `docs/CURRENT_STATE.md` | Node 18+ | `/plugin install repo-state@jasonm4130-claude-skills` |
 | `session-retro` | Session retrospectives that capture learnings to memory | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
 | `subagent-driven-development` | Deterministic workflow-driven implement/review/fix loop | – | `/plugin install subagent-driven-development@jasonm4130-claude-skills` |
