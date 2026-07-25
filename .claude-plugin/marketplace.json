@@ -216,23 +216,6 @@
       "category": "productivity"
     },
     {
-      "name": "repo-state",
-      "source": "./plugins/repo-state",
-      "description": "Activity-triggered current-state docs: a SessionStart guard that refuses to let a stale docs/CURRENT_STATE.md be trusted silently, plus a drift-driven refresh nudge that fires on commits rather than on a calendar.",
-      "version": "0.1.0",
-      "author": {
-        "name": "Jason Matthew"
-      },
-      "license": "MIT",
-      "keywords": [
-        "documentation",
-        "staleness",
-        "orientation",
-        "session-start"
-      ],
-      "category": "productivity"
-    },
-    {
       "name": "session-retro",
       "source": "./plugins/session-retro",
       "description": "Interactive session retrospectives — deterministic Stop/PreCompact triggers, batch-scoped diff- and event-log-driven interview, native memory entries. No external services.",
