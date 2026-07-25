@@ -93,6 +93,48 @@ test("every exec-form hook names a script that exists", () => {
   }
 });
 
+test("plugins using exec form declare a Claude Code floor that supports it", () => {
+  // Claude Code CHANGELOG 2.1.139: "Added hook `args: string[]` field (exec form) that
+  // spawns the command directly without a shell". The hooks docs page carries no
+  // min-version marker for `args`, so the changelog is the authority here.
+  //
+  // This pairing is the whole point of the test: on an older host the `args` field is
+  // unknown, so the hook does not run as intended and a PreToolUse guard stops
+  // guarding. Declaring exec form without raising the floor ships a silently
+  // disabled guard to anyone between 2.1.110 and 2.1.138.
+  const EXEC_FORM_MIN = [2, 1, 139];
+
+  for (const plugin of readdirSync(pluginsDir)) {
+    const manifestPath = join(pluginsDir, plugin, "hooks", "hooks.json");
+    if (!existsSync(manifestPath)) continue;
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const usesExecForm = Object.values(manifest.hooks ?? {})
+      .flat()
+      .flatMap((/** @type {any} */ m) => m.hooks ?? [])
+      .some((/** @type {any} */ h) => Array.isArray(h.args));
+    if (!usesExecForm) continue;
+
+    const pluginJson = JSON.parse(
+      readFileSync(join(pluginsDir, plugin, ".claude-plugin", "plugin.json"), "utf8"),
+    );
+    const declared = pluginJson.engines?.["claude-code"];
+    assert.ok(declared, `${plugin}: uses exec form but declares no claude-code engine floor`);
+
+    const m = /^>=\s*(\d+)\.(\d+)\.(\d+)$/.exec(declared);
+    assert.ok(m, `${plugin}: engines.claude-code ${declared} is not a parseable ">=x.y.z" floor`);
+    const floor = [Number(m[1]), Number(m[2]), Number(m[3])];
+    const ok =
+      floor[0] > EXEC_FORM_MIN[0] ||
+      (floor[0] === EXEC_FORM_MIN[0] &&
+        (floor[1] > EXEC_FORM_MIN[1] ||
+          (floor[1] === EXEC_FORM_MIN[1] && floor[2] >= EXEC_FORM_MIN[2])));
+    assert.ok(
+      ok,
+      `${plugin}: uses exec form (needs >=${EXEC_FORM_MIN.join(".")}) but declares ${declared}`,
+    );
+  }
+});
+
 test("no plugin still ships the retired shell launcher", () => {
   const leftovers = readdirSync(pluginsDir).filter((p) =>
     existsSync(join(pluginsDir, p, "hooks", "run-hook.cmd")),

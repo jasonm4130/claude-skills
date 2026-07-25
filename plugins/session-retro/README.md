@@ -45,7 +45,7 @@ On first load, Claude Code will prompt you to approve the hooks. This is normal 
 
 ## Requirements
 
-- Claude Code ≥ 2.1.110
+- Claude Code ≥ 2.1.139 — hooks use exec form (`args`), added in 2.1.139
 - **Node.js 18+ on PATH** — the native Claude Code installer does not bring Node. Install via Homebrew (`brew install node`), WinGet (`winget install OpenJS.NodeJS.LTS`), or your distro's package manager.
 - git (optional — interview-only mode if not in a git repo)
 

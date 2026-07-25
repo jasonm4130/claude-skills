@@ -108,7 +108,7 @@ both, or the guard double-fires. Re-verify after major Claude Code upgrades.
 
 - **Node.js 18+ on PATH.** No third-party packages, no `package.json`. Stdlib only.
   Claude Code ships a self-contained native binary and its documented system requirements do **not** include Node, so this is an external prerequisite the host does not provide — install it via Homebrew, WinGet, or your distro's package manager. Hooks use **exec form** (`command: "node"`, `args: [...]`), so Claude Code spawns node directly with no shell on any platform; without a shell there is no sh-vs-PowerShell dialect to get wrong. On a machine with no node the spawn fails and Claude Code shows a non-blocking `hook error` per event — loud and self-diagnosing by design.
-- **Claude Code >= 2.1.110** — required for `hooks.json` plugin hook registration.
+- **Claude Code >= 2.1.139** — hooks use exec form (`args`), added in 2.1.139.
 
 ## Development
 
