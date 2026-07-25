@@ -1,7 +1,7 @@
 {
   "name": "docs-sync-guard",
   "description": "Two mechanisms against docs drift. A blocking PreToolUse git-commit gate denies a commit that changes code without staging its covering docs: per-plugin README/CLAUDE.md pairs in plugins/ monorepos, and a generic nearest-covering-doc rule (README.md/CLAUDE.md/AGENTS.md walking up from each changed file) in any repo — tests, version bumps, markdown and lockfiles never trigger it, and docs-sync:ack bypasses deliberately. Separately, a never-blocking consolidation trigger counts commits since the .docs-sync record and nudges in-session toward /docs-consolidate, an audit for contradictions, stale claims, orphans and bloat across docs that were each updated correctly in isolation.",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "author": {
     "name": "Jason Matthew",
     "email": "jasonm4130@gmail.com"

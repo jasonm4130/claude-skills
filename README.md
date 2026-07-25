@@ -59,7 +59,10 @@ plugins/<name>/
   hooks/hooks.json                # hook registrations (where applicable)
   scripts/ tests/                 # stdlib-only .mjs + node:test suites
 docs/superpowers/{specs,plans}/   # design specs and implementation plans
-scripts/run-node-tests.sh         # CI test runner
+docs/plans/                       # dated research + triage records
+RESEARCH_*.md                     # standalone research write-ups
+scripts/run-node-tests.sh         # CI test runner (globs files — `node --test <dir>`
+                                  #   is broken on Node 24)
 ```
 
 ## Development

@@ -60,5 +60,5 @@ error / missing payload / empty command → `process.exit(0)`).
 ## Development
 
 ```bash
-node --test plugins/design-gate-guard/tests/   # 73 tests
+node --test plugins/design-gate-guard/tests/*.test.mjs
 ```

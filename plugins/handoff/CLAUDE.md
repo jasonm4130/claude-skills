@@ -4,37 +4,36 @@
 
 A Claude Code plugin that watches context fill via a `statusLine` command and
 triggers a handoff suggestion at a configurable threshold, re-firing on every
-10%-point band crossed at or above it (70 → 80 → 90; since 0.4.0) with
-severity-tiered, agent-directed wording. Since 0.6.0 each band-nudge is
-idempotent under concurrency via an atomic claim marker. When triggered, the `/handoff` skill
-(agent-authored) writes a structured resume document to
-`$PROJECT_ROOT/.claude/handoffs/`. The next session's `SessionStart` hook
-auto-loads the document via `additionalContext` injection.
+10%-point band crossed at or above it (70 → 80 → 90) with severity-tiered,
+agent-directed wording. Each band-nudge is idempotent under concurrency via an
+atomic claim marker. When triggered, the `/handoff` skill (agent-authored) writes
+a structured resume document to `$PROJECT_ROOT/.claude/handoffs/`. The next
+session's `SessionStart` hook auto-loads the document via `additionalContext`
+injection.
 
-Since 0.8.0 the statusLine reads context from the transcript first (stable, once-per-turn)
-instead of the volatile per-request stdin frame — the fix for a bar that filled and emptied
-erratically mid-turn — and composes an adaptive line from up to four segments (identity/
-branch/dirty, context bar, model, rate-limits), calm by default and best-effort width-fit to
-the terminal.
+The statusLine reads context from the transcript first (stable, once-per-turn)
+instead of the volatile per-request stdin frame — the fix for a bar that filled and
+emptied erratically mid-turn — and composes an adaptive line from up to four segments
+(identity/branch/dirty, context bar, model, rate-limits), calm by default and
+best-effort width-fit to the terminal.
 
-`setup.mjs` wires `statusLine` into `~/.claude/settings.json` and (since 0.3.0)
-writes a stable wrapper at `~/.claude/handoff-statusline.mjs` that resolves the
-plugin version at run time, so plugin upgrades no longer break the statusLine.
-Its contract: **the highest cached version that is not marked `.orphaned_at`.**
-Resolution stays dynamic because `settings.json` points at the wrapper by
-absolute path, but cache presence is not activation state — superseded and
-rolled-back versions stay on disk, so an unfiltered max would silently undo a
-rollback. All versions orphaned (i.e. uninstalled) renders `?`.
+`setup.mjs` wires `statusLine` into `~/.claude/settings.json` and writes a stable
+wrapper at `~/.claude/handoff-statusline.mjs` that resolves the plugin version at
+run time, so plugin upgrades don't break the statusLine. Its contract: **the
+highest cached version that is not marked `.orphaned_at`.** Resolution stays
+dynamic because `settings.json` points at the wrapper by absolute path, but cache
+presence is not activation state — superseded and rolled-back versions stay on
+disk, so an unfiltered max would silently undo a rollback. All versions orphaned
+(i.e. uninstalled) renders `?`.
 
-Since 0.9.1 the wrapper runs the resolved script **in-process** (`await import()`)
-rather than spawning a child. Spawning cost a second Node cold start on every
-render — measured 74.2ms → 40.1ms for byte-identical output, on the most frequently
-invoked script in the plugin, with Node startup ~30ms of the total. The resolved
-script reads stdin and writes stdout itself, so this is behaviourally equivalent to
-the old `stdio: "inherit"`; the import is awaited inside a `try/catch` that still
-renders `?`, preserving the old `child.on("error")` fallback, and the path is
-converted with `pathToFileURL` because a bare absolute path is not a valid import
-specifier on Windows.
+The wrapper runs the resolved script **in-process** (`await import()`) rather than
+spawning a child. Spawning cost a second Node cold start on every render —
+measured 74.2ms → 40.1ms for byte-identical output, on the most frequently invoked
+script in the plugin, with Node startup ~30ms of the total. The resolved script
+reads stdin and writes stdout itself, so this is behaviourally equivalent to
+`stdio: "inherit"`; the import is awaited inside a `try/catch` that still renders
+`?`, and the path is converted with `pathToFileURL` because a bare absolute path is
+not a valid import specifier on Windows.
 
 ## Plugin structure
 
@@ -45,8 +44,8 @@ handoff/
 ├── hooks/
 │   └── hooks.json            — UserPromptSubmit + SessionStart
 ├── scripts/
-│   ├── lib.mjs               — shared stdin/env/flag helpers; the atomic band-claim (claimBand/resetBands), in-flight lock (acquireInflightLock), and cached transcript parse (cachedTranscriptUsage) primitives (since 0.6.0); and (since 0.8.0) the adaptive-render helpers: pickContextTokens (transcript-primary source selection), shouldResetBands (decrease-based band reset), gitBranchDirty (spawnSync branch/dirty, degrades to null), modelColor/selectRateLimits/tokensSuffix (segment formatters), and visibleWidth/truncateEnd/assembleStatusLine (ANSI-aware width fitting + line assembly)
-│   ├── status-and-flag.mjs   — statusLine: renders the adaptive line (identity/branch/dirty, context bar, model, rate-limits — since 0.8.0, via lib.mjs's assembleStatusLine) and writes the nudge flag at threshold; nudges are idempotent per band (since 0.6.0, via an atomic claim marker, not a lock) and the ladder also resets on a real decrease in context, not just dropping below threshold (since 0.8.0); overlap guard replays the last render when another invocation is in flight — a performance guard, not a mutex, with no statusLine-timeout assumption
+│   ├── lib.mjs               — shared stdin/env/flag helpers; concurrency primitives (claimBand/resetBands, acquireInflightLock, cachedTranscriptUsage); adaptive-render helpers (pickContextTokens, shouldResetBands, gitBranchDirty, modelColor/selectRateLimits/tokensSuffix, visibleWidth/truncateEnd/assembleStatusLine)
+│   ├── status-and-flag.mjs   — statusLine: renders the adaptive line via assembleStatusLine and writes the nudge flag at threshold; nudges are idempotent per band (atomic claim marker, not a lock) and the ladder resets on a real decrease in context, not just on dropping below threshold; the overlap guard replays the last render when another invocation is in flight — a performance guard, not a mutex
 │   ├── check-handoff-flag.mjs— UserPromptSubmit: consumes flag → additionalContext
 │   ├── load-pending-handoff.mjs — SessionStart: loads .pending handoff → additionalContext
 │   └── setup.mjs             — one-time helper that wires statusLine into ~/.claude/settings.json
@@ -58,6 +57,7 @@ handoff/
 │   ├── status-and-flag.test.mjs
 │   ├── check-handoff-flag.test.mjs
 │   ├── load-pending-handoff.test.mjs
+│   ├── setup.test.mjs
 │   └── integration.test.mjs
 ├── README.md
 └── CLAUDE.md                 — this file
@@ -116,15 +116,15 @@ CLAUDE_PLUGIN_DATA=/tmp/test-handoff \
   correctness. Use `os.tmpdir()`, never `/tmp`.
 - No external services. Transcript JSONL parsing is permitted as a fallback for
   context-bar derivation (`lib.mjs: lastAssistantUsageFromTranscript`, cached via
-  `cachedTranscriptUsage` on the transcript's path + mtime + size since 0.6.0) —
+  `cachedTranscriptUsage` on the transcript's path + mtime + size) —
   stdlib only, no network.
-- **Nudge concurrency (since 0.6.0):** correctness rests on `claimBand()` — an atomic
+- **Nudge concurrency:** correctness rests on `claimBand()` — an atomic
   exclusive-create marker per band, not a lock — so a band fires at most once no matter
   how many statusline invocations race. The in-flight overlap guard (`acquireInflightLock`)
   is a separate, explicitly best-effort **performance** guard (don't pile up; replay the
   cached render); it is never a mutex, never breaks a lock on age alone, and statusLine has
   no documented invocation timeout to lean on.
-- **Adaptive render (since 0.8.0):** context is read transcript-primary
+- **Adaptive render:** context is read transcript-primary
   (`pickContextTokens`) — the transcript's cached token sum when positive, else stdin's
   `current_usage`, else the render bails to `?`. Git branch/dirty is a `spawnSync`
   shell-out (`gitBranchDirty`, `GIT_TIMEOUT_MS`) that returns `null` on any failure (non-git

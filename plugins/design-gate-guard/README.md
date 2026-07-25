@@ -91,7 +91,7 @@ pattern the other guards use (`docs-sync:ack`, `model-guard:ack`).
 ## Development
 
 ```bash
-node --test plugins/design-gate-guard/tests/
+node --test plugins/design-gate-guard/tests/*.test.mjs
 ```
 
 ```bash

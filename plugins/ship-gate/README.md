@@ -64,7 +64,7 @@ if set, otherwise `os.tmpdir()/ship-gate-data`. Flags are plain text, not JSON.
 ## Tests
 
 ```
-node --test plugins/ship-gate/tests/
+node --test plugins/ship-gate/tests/*.test.mjs
 ```
 
 ## License

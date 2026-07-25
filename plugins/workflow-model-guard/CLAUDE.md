@@ -114,7 +114,7 @@ both, or the guard double-fires. Re-verify after major Claude Code upgrades.
 
 ```bash
 # Run all tests
-node --test plugins/workflow-model-guard/tests/
+node --test plugins/workflow-model-guard/tests/*.test.mjs
 
 # Manual smoke test (expensive workflow, no model → deny envelope)
 echo '{"tool_name":"Workflow","tool_input":{"script":"await parallel(items.map(i => () => agent(\"do\")))"}}' \
