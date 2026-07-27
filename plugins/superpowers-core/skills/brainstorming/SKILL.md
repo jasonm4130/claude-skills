@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: "You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation."
+description: "Use before feature or design work that carries real ambiguity or a load-bearing decision, ahead of writing implementation code — explores intent, requirements and design first. Do NOT use for trivial changes, mechanical edits, or work whose design is already settled."
 ---
 
 # Brainstorming Ideas Into Designs
@@ -29,7 +29,7 @@ For large/ambiguous work (see Size Gate above), do NOT invoke any implementation
 
 The following applies to the large/ambiguous tier. Medium work skips straight to writing-plans (see Size Gate above); trivial work skips this skill entirely.
 
-You MUST create a task for each of these items and complete them in order:
+Work through these in order:
 
 1. **Explore project context** — check files, docs, recent commits
 2. **Offer the visual companion just-in-time** — NOT upfront. The first time a question would genuinely be clearer shown than described, offer it then (its own message); on approval its browser tab opens for you. If no visual question ever arises, never offer it. See the Visual Companion section below.

@@ -45,7 +45,15 @@ Use for ANY technical issue:
 
 ## The Four Phases
 
-You MUST complete each phase before proceeding to the next.
+The order matters — a fix built before the cause is understood is a guess wearing a diff.
+Where a phase genuinely doesn't apply, say which one you skipped and why.
+
+(2026-07-28: this was "You MUST complete each phase before proceeding to the next." A
+no-guidance Opus 5 control, given a confident-but-wrong colleague diagnosis, a one-hour demo
+deadline and "it's a trivial one-liner", refused the fix, disproved the diagnosis from the
+snippet, went to root cause and proposed a failing test — unprompted. Per writing-skills'
+no-guidance-control rule the mandate had nothing left to enforce. The phase *content* below
+was not reproduced by the control and stays.)
 
 ### Phase 1: Root Cause Investigation
 
@@ -302,7 +310,7 @@ These techniques are part of systematic debugging and available in this director
 
 **Related skills:**
 - **superpowers-core:test-driven-development** - For creating failing test case (Phase 4, Step 1)
-- **Verification before claiming complete** - Follow the global CLAUDE.md discipline: run the check and quote its output before claiming the fix worked
+- **Never claim a result you didn't observe** - global CLAUDE.md: the red-capable loop you built in Phase 1 is what proves the fix; quote its actual output rather than asserting it passed
 
 ## Real-World Impact
 
