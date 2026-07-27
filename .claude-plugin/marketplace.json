@@ -33,7 +33,7 @@
       "name": "adversarial-agents",
       "source": "./plugins/adversarial-agents",
       "description": "Configurable adversarial panel review for any artefact — plans, code, design docs, prose, model outputs.",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "author": {
         "name": "Jason Matthew"
       },
@@ -271,7 +271,7 @@
       "name": "superpowers-core",
       "source": "./plugins/superpowers-core",
       "description": "Owned fork of the superpowers process skills (brainstorming, systematic-debugging, writing-plans, writing-skills, test-driven-development) plus the using-skills dispatcher.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": {
         "name": "Jason Matthew"
       },
