@@ -261,39 +261,24 @@ Tests-first force edge case discovery before implementing. Tests-after verify yo
 
 30 minutes of tests after ≠ TDD. You get coverage, lose proof tests work.
 
-## Common Rationalizations
+## Two signals worth reacting to
 
-| Excuse | Reality |
-|--------|---------|
-| "Too simple to test" | Simple code breaks. Test takes 30 seconds. |
-| "I'll test after" | Tests passing immediately prove nothing. |
-| "Tests after achieve same goals" | Tests-after = "what does this do?" Tests-first = "what should this do?" |
-| "Already manually tested" | Ad-hoc ≠ systematic. No record, can't re-run. |
-| "Deleting X hours is wasteful" | Sunk cost fallacy. Keeping unverified code is technical debt. |
-| "Keep as reference, write tests first" | You'll adapt it. That's testing after. Delete means delete. |
-| "Need to explore first" | Fine. Throw away exploration, start with TDD. |
-| "Test hard = design unclear" | Listen to test. Hard to test = hard to use. |
-| "TDD will slow me down" | TDD faster than debugging. Pragmatic = test-first. |
-| "Manual test faster" | Manual doesn't prove edge cases. You'll re-test every change. |
-| "Existing code has no tests" | You're improving it. Add tests for existing code. |
+- **A test that passes the moment you write it** proves nothing about your code — it means the
+  test doesn't reach the behaviour you think it does. Make it fail before you make it pass.
+- **A test that's hard to write** is telling you the design is hard to use. Move the seam rather
+  than contorting the test around it.
 
-## Red Flags - STOP and Start Over
+(2026-07-28: replaced an 11-row rationalization table and a 13-item red-flags list, both ending
+in "delete your code and start over". A no-guidance Opus 5 control, given a 20-minute deploy
+deadline, a "don't over-engineer it, it's a five-line function" instruction from a lead, and
+neighbouring helpers written without tests, chose test-first unprompted — and on speed grounds:
+"a second deploy costs more than the 20-minute window; the test costs about 60 seconds." It
+produced no rationalization for the table to rebut. Per writing-skills' no-guidance-control
+rule, guidance whose control doesn't fail gets deleted.
 
-- Code before test
-- Test after implementation
-- Test passes immediately
-- Can't explain why test failed
-- Tests added "later"
-- Rationalizing "just this once"
-- "I already manually tested it"
-- "Tests after achieve the same purpose"
-- "It's about spirit not ritual"
-- "Keep as reference" or "adapt existing code"
-- "Already spent X hours, deleting is wasteful"
-- "TDD is dogmatic, I'm being pragmatic"
-- "This is different because..."
-
-**All of these mean: Delete code. Start over with TDD.**
+The Iron Law above is deliberately NOT covered by that finding. It governs what to do once
+production code already exists without a test, and no control was run in that state — deleting
+it would be acting on an untested premise.)
 
 ## Example: Bug Fix
 

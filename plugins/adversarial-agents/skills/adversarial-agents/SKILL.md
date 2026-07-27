@@ -55,7 +55,7 @@ If the user supplies `--personas custom_a,custom_b`, treat each as a one-off inl
 
 ## Dispatch the panel
 
-Spawn N `Agent` sub-agents (subagent_type=general-purpose, model=haiku for cost) in a **single message** so they run concurrently. Each gets the same artefact text, the same pre-commit defense (if captured), the same tool guidance, and a different persona prompt.
+Spawn N `Agent` sub-agents (subagent_type=general-purpose, model=sonnet) in a **single message** so they run concurrently. Not haiku: adversarial critique is judgment, and `~/Work/Git/CLAUDE.md` reserves haiku for pure enumeration precisely because it misses subtle cross-source contradictions. Each gets the same artefact text, the same pre-commit defense (if captured), the same tool guidance, and a different persona prompt.
 
 For each persona, the dispatch prompt is:
 1. The persona's body from `personas/<name>.md` (or the inline string for custom personas).
