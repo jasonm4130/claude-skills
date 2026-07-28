@@ -109,8 +109,8 @@ literal path, pinned to **this** skill's version — the `args` contract moves
 between versions (in local dev, use the repo path directly):
 
 ```bash
-P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.6.0/workflows/sdd.mjs"
-[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.6.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
+P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.7.0/workflows/sdd.mjs"
+[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.7.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
 ```
 
 If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not
@@ -129,7 +129,7 @@ Workflow({ scriptPath: "<resolved sdd.mjs>", args: {
   globalConstraints: "<verbatim Global Constraints>",
   mergeBase: "<git merge-base main HEAD>",
   branchTip: "<git rev-parse HEAD in the workdir>",
-  tasks: [ { n: 1, title: "...", tier: "sonnet", deps: [] }, ... ],
+  tasks: [ { n: 1, title: "...", tier: "opus", effort: "medium", deps: [] }, ... ],
   setupCmd: "<optional: per-worktree env setup, e.g. 'npm ci'>",
   testCmd: "<strongly recommended; pass it whenever the repo has a canonical suite command>",
   limits: { fixRounds: 2, escalateAttempts: 2, maxParallel: 4, fableEscalation: true }
