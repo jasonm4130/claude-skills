@@ -163,6 +163,28 @@ test("every cached-path snippet pins the resolved plugin's exact version", () =>
   }
 });
 
+test("prose around a cached-path snippet doesn't name a stale version", () => {
+  // The pin above only checks the path itself. Twice now a bump has left the
+  // surrounding text (a MISSING: hint, a comment) naming the OLD version, which
+  // then tells the user to install something that isn't what the skill needs.
+  for (const { file, content } of filesWithRefs) {
+    const pluginsHere = [...new Set(refs.filter((r) => r.file === file).map((r) => r.plugin))];
+    for (const plugin of pluginsHere) {
+      const expected = pluginVersion(plugin);
+      const mentioned = [...content.matchAll(new RegExp(`${plugin}[ /](\\d+\\.\\d+\\.\\d+)`, "g"))];
+      for (const [whole, version] of mentioned) {
+        assert.equal(
+          version,
+          expected,
+          `${file}: text "${whole}" names ${plugin} ${version}, but ` +
+            `plugin.json declares ${expected}. Re-pin EVERY mention when bumping, ` +
+            `not just the cached path.`,
+        );
+      }
+    }
+  }
+});
+
 test("no cached-path snippet selects a version by highest-cached", () => {
   for (const { file, content } of filesWithRefs) {
     const offender = content

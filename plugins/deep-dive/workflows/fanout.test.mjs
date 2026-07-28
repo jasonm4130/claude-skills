@@ -15,7 +15,7 @@ const block = src.split("// >>> PURE")[1]?.split("// <<< PURE")[0];
 assert.ok(block, "fanout.mjs must contain a // >>> PURE ... // <<< PURE block");
 const PURE = new Function(
   block +
-    "\nreturn { partitionWaves, validateArgs, shouldEscalate, tallyMeta, researchPrompt, verifyPrompt, researchProblems, isPlaceholderHost, depsSatisfied };"
+    "\nreturn { partitionWaves, validateArgs, shouldEscalate, tallyMeta, researchPrompt, verifyPrompt, researchProblems, isPlaceholderHost, depsSatisfied, DISPATCH, MODEL_RANK };"
 )();
 
 test("partitionWaves: empty deps -> wave 1, non-empty deps -> wave 2", () => {
@@ -413,4 +413,36 @@ test("validateArgs rejects a dependency graph the two-wave runner cannot honour"
   // The valid shape — roots plus one dependent wave — still passes.
   assert.ok(validateArgs({ ...base, angles: [angle("a", []), angle("b", ["a"])] }));
   assert.ok(validateArgs({ ...base, angles: [angle("a", []), angle("b", []), angle("c", ["a", "b"])] }));
+});
+
+// --- dispatch tiers (2026-07-28) ---------------------------------------------
+
+test("tier-2 escalation actually escalates above the verifier that flagged it", () => {
+  const v = PURE.DISPATCH.verify();
+  const e = PURE.DISPATCH.escalate();
+  assert.ok(
+    PURE.MODEL_RANK[e.model] > PURE.MODEL_RANK[v.model],
+    `escalate (${e.model}) must outrank verify (${v.model}) — same model is a retry, not a second opinion`,
+  );
+});
+
+test("research dispatch carries the angle's own model and effort", () => {
+  const d = PURE.DISPATCH.research({ model: "sonnet", effort: "low" });
+  assert.equal(d.model, "sonnet");
+  assert.equal(d.effort, "low");
+});
+
+test("every dispatch names an effort", () => {
+  for (const [name, fn] of Object.entries(PURE.DISPATCH)) {
+    const d = fn({ model: "sonnet", effort: "medium" });
+    assert.ok(d.effort, `${name} dispatch must set an effort`);
+  }
+});
+
+test("validateArgs defaults angle effort to medium and validates it", () => {
+  const base = { topic: "t", angles: [{ question: "q" }, { question: "q2", effort: "low" }, { question: "q3", effort: "nope" }] };
+  const c = PURE.validateArgs(base);
+  assert.equal(c.angles[0].effort, "medium");
+  assert.equal(c.angles[1].effort, "low");
+  assert.equal(c.angles[2].effort, "medium");
 });

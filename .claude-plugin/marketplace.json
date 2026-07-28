@@ -15,7 +15,7 @@
       "name": "adr",
       "source": "./plugins/adr",
       "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to the subagent-driven-development loop. Front-end for adr → sdd.",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "author": {
         "name": "Jason Matthew"
       },
@@ -108,7 +108,7 @@
       "name": "deep-dive",
       "source": "./plugins/deep-dive",
       "description": "Model-tiered, adversarially-verified multi-source research via parallel sub-agents and synthesis with citations. Cheaper alternative to the built-in all-Opus deep-research.",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "author": {
         "name": "Jason Matthew"
       },
@@ -271,7 +271,7 @@
       "name": "superpowers-core",
       "source": "./plugins/superpowers-core",
       "description": "Owned fork of the superpowers process skills (brainstorming, systematic-debugging, writing-plans, writing-skills, test-driven-development) plus the using-skills dispatcher.",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "author": {
         "name": "Jason Matthew"
       },
