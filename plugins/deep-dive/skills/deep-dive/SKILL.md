@@ -70,9 +70,10 @@ confirmed DAG and hand it to the shipped workflow.
      topic: "<the research topic>",
      mode: "deep",                       // or "scout" for a cheap breadth-first scoping pass
      angles: [
-       { id, question, kind: "core"|"background"|"follow-up", model: "sonnet", deps: [] },
+       { id, question, kind: "core"|"background"|"follow-up", model: "sonnet", effort: "medium", deps: [] },
        // wave-2 angles carry deps: ["<id>"]; default workers to "sonnet" — only use "haiku"
        // for pure list/URL enumeration (it misses subtle cross-source contradictions).
+       // effort is low|medium|high, default medium — see Model tiering below.
      ],
      verify: { escalateOn: "low" }
    }})
@@ -83,19 +84,31 @@ workers missed a load-bearing cross-source contradiction that Sonnet workers cau
 use `"haiku"` for genuinely pure enumeration (gathering lists/URLs), accepting the correctness
 risk. Reserve Opus for this orchestrator session (planning + synthesis), not the workers.
 
-**Model tiering at a glance** — `fanout.mjs` sets `model:` on *every* sub-agent, so none inherit
-the orchestrator's Opus:
+**Model tiering at a glance** — `fanout.mjs` sets `model:` and `effort:` on *every* sub-agent via
+the `DISPATCH` table, so none inherit the orchestrator's Opus:
 
-| Role | Model | Where |
-|------|-------|-------|
-| research workers | `sonnet` (`haiku` only for pure enumeration) | `fanout.mjs` |
-| tier-1 verify + tier-2 escalation | `sonnet` | `fanout.mjs` |
-| planning, synthesis, critic/judge, debate | Opus | **this orchestrator session** — the only Opus in the pipeline |
+| Role | Model | Effort | Where |
+|------|-------|--------|-------|
+| research workers | `sonnet` (`haiku` only for pure enumeration) | `angle.effort` (default `medium`) | `fanout.mjs` |
+| tier-1 verify | `sonnet` | `medium` | `fanout.mjs` |
+| tier-2 escalation | `opus` | `high` | `fanout.mjs` |
+| planning, synthesis, critic/judge, debate | Opus | — | **this orchestrator session** |
 
-The bare aliases are honored by the runtime: across shipped runs every worker resolves to
-`claude-sonnet-4-6` / `claude-haiku-4-5`, zero Opus workers. If you ever see Opus workers, it's
-because something spawned `Agent` calls directly instead of going through the workflow (see
-Common mistakes) — those inherit the session model.
+**Tier-2 must outrank tier 1.** Until 2026-07-28 the escalation recheck ran at `sonnet` — the same
+model as the verifier whose flags it was rechecking, which is a retry with a different prompt, not
+a second opinion. It was invisible because `shouldEscalate` had never returned true; the path went
+live and shipped straight into it. `DISPATCH` now lives in the PURE block with a test asserting
+`MODEL_RANK[escalate] > MODEL_RANK[verify]`, so the rungs cannot collapse again silently.
+
+**Effort, not a cheaper model, is the worker lever.** Angles take an optional `effort`
+(`low|medium|high`, default `medium`). Low effort means fewer tool calls and no preamble — good for
+a narrowly-scoped angle, bad where the search itself is the work. The `sonnet` worker floor stays:
+unlike SDD's implementers, research workers are not handed a settled spec, and this skill's claim
+over the built-in deep-research workflow is precisely that it is model-tiered rather than all-Opus.
+
+Workers still resolve to Sonnet/Haiku; the only Opus in the pipeline is this orchestrator plus the
+tier-2 recheck. If you see Opus *workers*, something spawned `Agent` calls directly instead of
+going through the workflow (see Common mistakes) — those inherit the session model.
 
 The workflow runs wave-1, then any wave-2 (dependent) angles built on wave-1 findings, runs a
 factored tier-1 verifier per angle (blind to the draft, re-fetches sources), escalates to a

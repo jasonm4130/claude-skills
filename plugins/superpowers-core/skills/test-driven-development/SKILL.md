@@ -34,15 +34,41 @@ Thinking "skip TDD just this once"? Stop. That's rationalization.
 NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
 ```
 
-Write code before the test? Delete it. Start over.
+### When you've already written the code
 
-**No exceptions:**
-- Don't keep it as "reference"
-- Don't "adapt" it while writing tests
-- Don't look at it
-- Delete means delete
+TDD buys two separable things: **design pressure** on the interface, and **a test proven capable
+of failing**. Once production code exists, the first is already spent — the interface exists, for
+better or worse. The second is recoverable without deleting anything:
 
-Implement fresh from tests. Period.
+1. **Write the tests for the hard part first** — the edge cases that took the longest, not the
+   easy paths.
+2. **Prove each one can fail.** Deliberately break the logic under test — flip the boundary
+   comparison, off-by-one the arithmetic, drop the fractional carry — and confirm each mutation
+   turns something red *for the right reason*. Revert, confirm green. A mutation that kills no
+   test means that test is decoration; rewrite it before moving on. This is what substitutes for
+   the red you skipped, and it is the step that's easy to skip twice.
+3. **Disclose it.** Say in the PR that tests came after the implementation and that you verified
+   them by mutation rather than a real red→green. The reviewer decides what that costs.
+
+**What this does not recover:** backfilled tests encode what the code *does*, not what it *should
+do*. A test written first might have questioned the behaviour itself. So check the hard part
+against the actual requirement — the spec, the upstream API's limits — not only against your own
+implementation. If no written requirement exists, say that too.
+
+Deleting is still right when the code is young and cheap to redo. It is not automatically right
+when it carries hard-won logic you couldn't quickly re-derive — that trades a real artifact for a
+procedural one and tends to ship a worse second version.
+
+(2026-07-28: this section read "Write code before the test? Delete it. Start over. **No
+exceptions:** … Delete means delete." A no-guidance Opus 5 control — 180 lines of subtle
+token-bucket logic, three hours in, sprint ending, a colleague blocked — declined to delete and
+instead invented the mutation-testing recovery above, disclosed the violation unprompted, and
+named the encode-what-it-does limitation on its own. It did not exhibit the failure the absolute
+rule guards (backfilled tests that pass by construction and get called TDD); it identified and
+defeated that explicitly. Per writing-skills' no-guidance-control rule the absolutism goes and the
+recovery path it produced is now the guidance. n=1, one scenario shape — valuable logic under
+deadline. A trivial ten lines written two minutes ago is a different case, hence the last
+paragraph.)
 
 ## Before RED: name the seams
 
@@ -276,9 +302,9 @@ neighbouring helpers written without tests, chose test-first unprompted — and 
 produced no rationalization for the table to rebut. Per writing-skills' no-guidance-control
 rule, guidance whose control doesn't fail gets deleted.
 
-The Iron Law above is deliberately NOT covered by that finding. It governs what to do once
-production code already exists without a test, and no control was run in that state — deleting
-it would be acting on an untested premise.)
+The Iron Law's already-written-the-code clause was initially left alone as untested — that control
+had not been run. It has since been run separately, and the "When you've already written the code"
+section above is its result.)
 
 ## Example: Bug Fix
 

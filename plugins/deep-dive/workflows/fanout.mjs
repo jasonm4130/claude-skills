@@ -13,6 +13,24 @@ export const meta = {
 };
 
 // >>> PURE
+
+// Dispatch tiers for every sub-agent. Kept here (not inline at the call sites) so the
+// escalation invariant below is testable.
+//
+// Escalation must ACTUALLY escalate. Until 2026-07-28 the tier-2 recheck ran at `sonnet` —
+// the same model as the verifier whose flags it was rechecking — which is a retry with a
+// different prompt, not a second opinion. The bug was invisible because shouldEscalate had
+// never returned true; the path went live and shipped straight into it.
+const MODEL_RANK = { haiku: 0, sonnet: 1, opus: 2, fable: 3 };
+
+const DISPATCH = {
+  // Workers carry their own tier; effort is the lever, model is the floor.
+  research: (angle) => ({ model: angle.model, effort: angle.effort }),
+  // Tier-1 verification is broad and cheap.
+  verify: () => ({ model: "sonnet", effort: "medium" }),
+  // Tier-2 recheck is the second opinion — it must outrank tier 1 or it is not one.
+  escalate: () => ({ model: "opus", effort: "high" }),
+};
 function partitionWaves(angles) {
   const wave1 = angles.filter((a) => !a.deps || a.deps.length === 0);
   const wave2 = angles.filter((a) => a.deps && a.deps.length > 0);
@@ -41,6 +59,7 @@ function validateArgs(input) {
       question: a.question,
       kind: ["core", "background", "follow-up"].includes(a.kind) ? a.kind : "core",
       model: a.model === "haiku" ? "haiku" : "sonnet",
+      effort: ["low", "medium", "high"].includes(a.effort) ? a.effort : "medium",
       deps: Array.isArray(a.deps) ? a.deps : [],
     };
   });
@@ -388,7 +407,7 @@ if (typeof phase === "function") {
   // Run one angle fully: research -> tier-1 verify -> conditional tier-2 escalation.
   async function runAngle(angle, waveCtx) {
     let research = await agent(researchPrompt(cfg.topic, angle, cfg.mode, waveCtx), {
-      label: `research:${angle.id}`, phase: "Research", model: angle.model, schema: RESEARCH_SCHEMA,
+      label: `research:${angle.id}`, phase: "Research", ...DISPATCH.research(angle), schema: RESEARCH_SCHEMA,
     });
 
     // Shape is not evidence. A schema-valid result can still be placeholder junk — the whole reason
@@ -401,7 +420,7 @@ if (typeof phase === "function") {
         `${researchPrompt(cfg.topic, angle, cfg.mode, waveCtx)}
 
 YOUR PREVIOUS ATTEMPT WAS REJECTED: ${problems.join("; ")}. Cite only URLs you actually fetched from a search result — never example.com, never a placeholder, never an invented URL. Write a summary that could brief someone who has not read your findings. If you genuinely cannot find sources, say so in the summary and return only the findings you can actually support.`,
-        { label: `research:${angle.id}:retry`, phase: "Research", model: angle.model, schema: RESEARCH_SCHEMA },
+        { label: `research:${angle.id}:retry`, phase: "Research", ...DISPATCH.research(angle), schema: RESEARCH_SCHEMA },
       );
       problems = researchProblems(research, angle);
     }
@@ -410,7 +429,7 @@ YOUR PREVIOUS ATTEMPT WAS REJECTED: ${problems.join("; ")}. Cite only URLs you a
     }
 
     let verify = await agent(verifyPrompt(angle, research), {
-      label: `verify:${angle.id}`, phase: "Verify", model: "sonnet", schema: VERIFY_SCHEMA,
+      label: `verify:${angle.id}`, phase: "Verify", ...DISPATCH.verify(), schema: VERIFY_SCHEMA,
     });
     if (!verify) return { angle, failed: true, reason: "verifier returned no result" };
     // Bind the verifier's result to this angle too — same misattribution hazard as the research.
@@ -432,7 +451,7 @@ YOUR PREVIOUS ATTEMPT WAS REJECTED: ${problems.join("; ")}. Cite only URLs you a
       // in this block is the binding check.
       const recheck = await agent(
         `Independently re-verify ONLY these flagged claims for "${angle.question}" using a fresh search and WebFetch; correct the verdicts where warranted. Prior flags:\n${JSON.stringify(verify.flags)}`,
-        { label: `escalate:${angle.id}`, phase: "Verify", model: "sonnet", schema: VERIFY_SCHEMA },
+        { label: `escalate:${angle.id}`, phase: "Verify", ...DISPATCH.escalate(), schema: VERIFY_SCHEMA },
       );
       if (recheck) {
         if (recheck.angleId !== angle.id) {
