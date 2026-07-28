@@ -96,7 +96,7 @@ Resolve the loop and invoke it:
 
 ```bash
 P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.7.0/workflows/sdd.mjs"
-[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.6.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills, or /plugin install subagent-driven-development@jasonm4130-claude-skills if it was never installed"
+[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.7.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills, or /plugin install subagent-driven-development@jasonm4130-claude-skills if it was never installed"
 ```
 
 If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not

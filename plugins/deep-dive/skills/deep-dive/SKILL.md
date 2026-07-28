@@ -52,8 +52,8 @@ confirmed DAG and hand it to the shipped workflow.
    because the `args` contract moves between versions):
 
    ```bash
-   P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/deep-dive/0.6.0/workflows/fanout.mjs"
-   [ -f "$P" ] && echo "$P" || echo "MISSING: deep-dive 0.6.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
+   P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/deep-dive/0.7.0/workflows/fanout.mjs"
+   [ -f "$P" ] && echo "$P" || echo "MISSING: deep-dive 0.7.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
    ```
 
    If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not glob the
