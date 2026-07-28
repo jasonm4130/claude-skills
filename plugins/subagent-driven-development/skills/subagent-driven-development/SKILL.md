@@ -60,16 +60,35 @@ earlier runs — which is the normal case.
 ### 4. Enumerate tasks with tier hints and honest deps
 
 Turn the plan into a lightweight list — **no pasted task text**, just
-`{ n, title, tier, deps }`. Assign `tier` per task with the complexity signals:
+`{ n, title, tier, effort, deps }`. Assign per task with the complexity signals:
 
-| Signal | Tier |
-|--------|------|
-| 1–2 files, complete spec, transcription/mechanical | `haiku` |
-| multi-file, integration concerns (default floor) | `sonnet` |
-| design judgment, broad codebase understanding | `opus` |
+| Signal | Tier | Effort |
+|--------|------|--------|
+| 1–2 files, complete spec, transcription/mechanical | `opus` | `low` |
+| multi-file, integration concerns (default floor) | `opus` | `medium` |
+| design judgment, broad codebase understanding | `opus` | `high` |
 
-Default to the `sonnet` floor when unsure; the BLOCKED escalation ladder
+Default to `opus`/`medium` when unsure; the BLOCKED escalation ladder
 self-corrects a mis-tier at runtime.
+
+**Why effort, not a cheaper model** (2026-07-28): this table used a `sonnet`
+floor with `haiku` beneath it, which encoded *model downgrade* as the cost lever
+— correct when written, before effort existed as a real dial. Anthropic now names
+`low` effort as the fit for subagents specifically, and low effort means fewer
+tool calls, no plan preamble, terse confirmations. An implementer holding a
+complete task brief wants exactly that: the design is already settled, so the
+deliberation a higher tier buys is spent on a decision that's been made. Holding
+the model at `opus` keeps the capability floor; effort removes the volume you
+don't need.
+
+`Workflow`'s `agent()` takes `opts.effort`; the plain `Agent` tool does not. This
+guidance is therefore SDD-specific and does not generalize to Agent dispatches,
+where the model tier remains the only lever.
+
+Treat the floor as **provisional** — it is the open arm of the effort sweep in
+`dotfiles/docs/plans/2026-07-28-opus5-agent-config-alignment.md`. Anthropic's own
+instruction is to sweep on your own evals rather than inherit a setting, and no
+published benchmark compares Opus-5-at-low against Sonnet-5-at-high.
 
 **`deps` is the parallelism contract.** Tasks whose deps are all satisfied run
 concurrently in sibling worktrees (waves), so mark a dep wherever task B
@@ -90,8 +109,8 @@ literal path, pinned to **this** skill's version — the `args` contract moves
 between versions (in local dev, use the repo path directly):
 
 ```bash
-P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.6.0/workflows/sdd.mjs"
-[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.6.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
+P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.7.0/workflows/sdd.mjs"
+[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.7.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
 ```
 
 If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not
@@ -110,7 +129,7 @@ Workflow({ scriptPath: "<resolved sdd.mjs>", args: {
   globalConstraints: "<verbatim Global Constraints>",
   mergeBase: "<git merge-base main HEAD>",
   branchTip: "<git rev-parse HEAD in the workdir>",
-  tasks: [ { n: 1, title: "...", tier: "sonnet", deps: [] }, ... ],
+  tasks: [ { n: 1, title: "...", tier: "opus", effort: "medium", deps: [] }, ... ],
   setupCmd: "<optional: per-worktree env setup, e.g. 'npm ci'>",
   testCmd: "<strongly recommended; pass it whenever the repo has a canonical suite command>",
   limits: { fixRounds: 2, escalateAttempts: 2, maxParallel: 4, fableEscalation: true }
@@ -197,13 +216,19 @@ gate exists to catch.
 
 ## Model tiering at a glance
 
-| Role | Model |
-|------|-------|
-| implementer | `task.tier` (controller-assigned; `sonnet` floor) |
-| reviewer | `opus` if the task was `opus`, else `sonnet` |
-| fixer | `sonnet` |
-| final whole-branch review | `opus` |
-| BLOCKED escalation ceiling | `fable` — opt-in top rung tried once above a stuck `opus` (`fableEscalation`, default on) |
+| Role | Model | Effort |
+|------|-------|--------|
+| implementer | `task.tier` (controller-assigned) | `task.effort` (`medium` floor) |
+| reviewer | `opus` | `high` if the task was `high`, else `medium` |
+| fixer | `opus` | `medium` |
+| final whole-branch review | `opus` | `high` |
+| BLOCKED escalation ceiling | `fable` — opt-in top rung tried once above a stuck `opus` (`fableEscalation`, default on) | `high` |
+
+Reviewers sit a notch above the implementer they check: finding a defect is
+judgment, and it is the stage where low effort costs you the run. The `fable`
+rung stays gated on BLOCKED rather than assigned up front — published benchmarks
+put Opus 5 within a point of Fable 5 on SWE-bench Pro and ahead on Verified, so
+Fable earns its place on stuck and long-horizon work, not on routine tasks.
 
 ## Red flags — never
 
