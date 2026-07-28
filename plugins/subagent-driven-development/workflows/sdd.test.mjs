@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "sdd.mjs"), "utf8");
 const pure = src.split("// >>> PURE")[1].split("// <<< PURE")[0];
 const H = new Function(
-  `${pure}; return { TIERS, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchImpl, detectOscillation, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptVerification };`,
+  `${pure}; return { TIERS, EFFORTS, nextEffort, reviewerEffort, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchImpl, detectOscillation, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptVerification };`,
 )();
 
 const okArgs = () => ({
@@ -19,7 +19,7 @@ const okArgs = () => ({
 
 test("validateArgs accepts a valid object and defaults tiers/limits", () => {
   const c = H.validateArgs(okArgs());
-  assert.equal(c.tasks[0].tier, "sonnet");
+  assert.equal(c.tasks[0].tier, "opus");
   assert.equal(c.tasks[1].tier, "opus");
   assert.deepEqual(c.limits, { fixRounds: 2, escalateAttempts: 2, maxParallel: 4, fableEscalation: true });
 });
@@ -89,32 +89,35 @@ test("reviewerModel bumps to opus only for opus tasks", () => {
   assert.equal(H.reviewerModel("opus"), "opus");
 });
 
-test("maxAttemptsAtTier: opus gets the budget, others one", () => {
-  assert.equal(H.maxAttemptsAtTier("sonnet", { escalateAttempts: 2 }), 1);
-  assert.equal(H.maxAttemptsAtTier("opus", { escalateAttempts: 2 }), 2);
+test("maxAttemptsAtTier: the budget is spent at the top of the effort ladder, not below it", () => {
+  const limits = { escalateAttempts: 2 };
+  assert.equal(H.maxAttemptsAtTier("opus", "high", limits), 2);
+  assert.equal(H.maxAttemptsAtTier("opus", "low", limits), 1);
+  assert.equal(H.maxAttemptsAtTier("opus", "medium", limits), 1);
+  assert.equal(H.maxAttemptsAtTier("sonnet", "medium", limits), 1);
 });
 
 test("escalationStep: lower rungs step up one tier after their single attempt blocks", () => {
   const limits = { escalateAttempts: 2, fableEscalation: true };
-  assert.deepEqual(H.escalationStep("haiku", 1, limits), { action: "escalate", tier: "sonnet" });
-  assert.deepEqual(H.escalationStep("sonnet", 1, limits), { action: "escalate", tier: "opus" });
+  assert.deepEqual(H.escalationStep("haiku", "medium", 1, limits), { action: "escalate", tier: "sonnet", effort: "medium" });
+  assert.deepEqual(H.escalationStep("sonnet", "medium", 1, limits), { action: "escalate", tier: "opus", effort: "medium" });
 });
 
 test("escalationStep: opus retries to its budget, then escalates to the fable rung", () => {
   const limits = { escalateAttempts: 2, fableEscalation: true };
-  assert.deepEqual(H.escalationStep("opus", 1, limits), { action: "retry" });
-  assert.deepEqual(H.escalationStep("opus", 2, limits), { action: "escalate", tier: "fable" });
+  assert.deepEqual(H.escalationStep("opus", "high", 1, limits), { action: "retry" });
+  assert.deepEqual(H.escalationStep("opus", "high", 2, limits), { action: "escalate", tier: "fable", effort: "high" });
 });
 
 test("escalationStep: fable is the top rung — one attempt, then halt for a human", () => {
   const limits = { escalateAttempts: 2, fableEscalation: true };
-  assert.deepEqual(H.escalationStep("fable", 1, limits), { action: "halt" });
+  assert.deepEqual(H.escalationStep("fable", "high", 1, limits), { action: "halt" });
 });
 
 test("escalationStep: fableEscalation:false keeps the old opus->halt ceiling (never routes to fable)", () => {
   const limits = { escalateAttempts: 2, fableEscalation: false };
-  assert.deepEqual(H.escalationStep("opus", 2, limits), { action: "halt" });
-  assert.notDeepEqual(H.escalationStep("opus", 2, limits), { action: "escalate", tier: "fable" });
+  assert.deepEqual(H.escalationStep("opus", "high", 2, limits), { action: "halt" });
+  assert.notDeepEqual(H.escalationStep("opus", "high", 2, limits), { action: "escalate", tier: "fable", effort: "high" });
 });
 
 test("dispatchImpl normalizes a rejecting dispatch (e.g. a withdrawn Fable tier) to null, not a throw", async () => {
@@ -295,4 +298,48 @@ test("isShaish gates shell interpolation: hex only, so no metacharacter can pass
   assert.equal(H.isShaish("../../etc/passwd"), false);
   assert.equal(H.isShaish(""), false);
   assert.equal(H.isShaish("abc"), false, "too short to be any sha");
+});
+
+// --- effort dimension (2026-07-28) -------------------------------------------
+
+test("validateArgs defaults effort to medium and validates it", () => {
+  const a = okArgs();
+  a.tasks = [{ n: 1, title: "a" }, { n: 2, title: "b", effort: "low" }, { n: 3, title: "c", effort: "bogus" }];
+  const c = H.validateArgs(a);
+  assert.equal(c.tasks[0].effort, "medium");
+  assert.equal(c.tasks[1].effort, "low");
+  assert.equal(c.tasks[2].effort, "medium", "invalid effort falls back to the floor");
+});
+
+test("nextEffort walks low->medium->high->null", () => {
+  assert.equal(H.nextEffort("low"), "medium");
+  assert.equal(H.nextEffort("medium"), "high");
+  assert.equal(H.nextEffort("high"), null);
+});
+
+test("reviewerEffort sits a notch above the implementer", () => {
+  assert.equal(H.reviewerEffort("low"), "medium");
+  assert.equal(H.reviewerEffort("medium"), "medium");
+  assert.equal(H.reviewerEffort("high"), "high");
+});
+
+test("escalation climbs effort on opus before spending a pricier model", () => {
+  const lim = { escalateAttempts: 2, fableEscalation: true };
+  assert.deepEqual(H.escalationStep("opus", "low", 1, lim), { action: "escalate", tier: "opus", effort: "medium" });
+  assert.deepEqual(H.escalationStep("opus", "medium", 1, lim), { action: "escalate", tier: "opus", effort: "high" });
+});
+
+test("fable is reached only from an exhausted opus at top effort", () => {
+  const lim = { escalateAttempts: 2, fableEscalation: true };
+  assert.deepEqual(H.escalationStep("opus", "high", 2, lim), { action: "escalate", tier: "fable", effort: "high" });
+  assert.equal(H.escalationStep("opus", "high", 2, { ...lim, fableEscalation: false }).action, "halt");
+  assert.equal(H.escalationStep("fable", "high", 1, lim).action, "halt");
+});
+
+test("total attempts stay comparable to the old model ladder", () => {
+  const lim = { escalateAttempts: 2, fableEscalation: true };
+  // one retry only below top effort, escalateAttempts at high
+  assert.deepEqual(H.escalationStep("opus", "low", 0, lim), { action: "retry" });
+  assert.equal(H.escalationStep("opus", "low", 1, lim).action, "escalate");
+  assert.deepEqual(H.escalationStep("opus", "high", 1, lim), { action: "retry" });
 });

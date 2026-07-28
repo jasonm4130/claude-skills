@@ -17,6 +17,9 @@ export const meta = {
 
 // >>> PURE
 const TIERS = ["haiku", "sonnet", "opus"];
+// Effort is the cost/latency lever on Opus 5; model downgrade was the lever before it
+// existed. Anthropic names `low` as the fit for subagents specifically.
+const EFFORTS = ["low", "medium", "high"];
 
 function validateArgs(input) {
   if (typeof input === "string") {
@@ -43,7 +46,8 @@ function validateArgs(input) {
     return {
       n: t.n,
       title: t.title,
-      tier: TIERS.includes(t.tier) ? t.tier : "sonnet",
+      tier: TIERS.includes(t.tier) ? t.tier : "opus",
+      effort: EFFORTS.includes(t.effort) ? t.effort : "medium",
       deps: Array.isArray(t.deps) ? t.deps : [],
     };
   });
@@ -101,12 +105,26 @@ function nextTier(tier) {
   return i >= TIERS.length - 1 ? null : TIERS[i + 1];
 }
 
+function nextEffort(effort) {
+  const i = EFFORTS.indexOf(effort);
+  if (i < 0) return "medium";
+  return i >= EFFORTS.length - 1 ? null : EFFORTS[i + 1];
+}
+
 function reviewerModel(taskTier) {
   return taskTier === "opus" ? "opus" : "sonnet";
 }
 
-function maxAttemptsAtTier(tier, limits) {
-  return tier === "opus" ? Math.max(1, limits.escalateAttempts) : 1;
+// Reviewers sit a notch above the implementer they check: spotting a defect is judgment,
+// and it is the stage where low effort costs the whole run.
+function reviewerEffort(taskEffort) {
+  return taskEffort === "high" ? "high" : "medium";
+}
+
+// Extra attempts are spent only at the top of the effort ladder, so total tries per task
+// stay comparable to the old haiku->sonnet->opus->fable shape (5).
+function maxAttemptsAtTier(tier, effort, limits) {
+  return tier === "opus" && effort === "high" ? Math.max(1, limits.escalateAttempts) : 1;
 }
 
 // After the implementer reports BLOCKED at `tier` (having now blocked `attemptsAtTier` times at it),
@@ -117,12 +135,17 @@ function maxAttemptsAtTier(tier, limits) {
 // off, the ladder halts at Opus exactly as before. A Fable dispatch that fails outright still degrades
 // safely — runTask's `if (!impl)` guard turns a null result into a clean halt, never a crash or a
 // silent drop back to a lower tier.
-function escalationStep(tier, attemptsAtTier, limits) {
-  if (attemptsAtTier < maxAttemptsAtTier(tier, limits)) return { action: "retry" };
-  if (tier === "opus" && limits.fableEscalation) return { action: "escalate", tier: "fable" };
+function escalationStep(tier, effort, attemptsAtTier, limits) {
+  if (attemptsAtTier < maxAttemptsAtTier(tier, effort, limits)) return { action: "retry" };
   if (tier === "fable") return { action: "halt" };
+  if (tier === "opus") {
+    const upEffort = nextEffort(effort);
+    if (upEffort) return { action: "escalate", tier: "opus", effort: upEffort };
+    if (limits.fableEscalation) return { action: "escalate", tier: "fable", effort: "high" };
+    return { action: "halt" };
+  }
   const up = nextTier(tier);
-  return up === null ? { action: "halt" } : { action: "escalate", tier: up };
+  return up === null ? { action: "halt" } : { action: "escalate", tier: up, effort };
 }
 
 // Dispatch the implementer, normalizing BOTH failure shapes to null so runTask's clean-halt guard
@@ -489,20 +512,20 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
 
   async function runTask(task, base, wd) {
     // Implement with the BLOCKED escalation ladder.
-    let tier = task.tier, attemptsAtTier = 0, blocker = null, impl = null;
+    let tier = task.tier, effort = task.effort, attemptsAtTier = 0, blocker = null, impl = null;
     while (true) {
       attemptsAtTier++;
       impl = await dispatchImpl(agent, implPrompt(task, tier, blocker, base, wd), {
-        label: `impl:t${task.n}`, phase: "Implement", model: tier, schema: IMPL_SCHEMA,
+        label: `impl:t${task.n}`, phase: "Implement", model: tier, effort, schema: IMPL_SCHEMA,
       });
       if (!impl) return { halt: { taskN: task.n, reason: "implementer returned no result", reportPath: "" } };
       if (impl.status === "DONE" || impl.status === "DONE_WITH_CONCERNS") break;
       blocker = impl.concerns || impl.status;
-      const step = escalationStep(tier, attemptsAtTier, cfg.limits);
+      const step = escalationStep(tier, effort, attemptsAtTier, cfg.limits);
       if (step.action === "halt") {
         return { halt: { taskN: task.n, reason: `blocked after escalation: ${blocker}`, reportPath: impl.reportPath } };
       }
-      if (step.action === "escalate") { tier = step.tier; attemptsAtTier = 0; }
+      if (step.action === "escalate") { tier = step.tier; effort = step.effort; attemptsAtTier = 0; }
     }
 
     // Review + bounded fix loop.
@@ -510,7 +533,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     const roundClasses = [];
     while (true) {
       review = await agent(reviewPrompt(task, base, head, wd), {
-        label: `review:t${task.n}`, phase: "Review", model: reviewerModel(task.tier), schema: REVIEW_SCHEMA,
+        label: `review:t${task.n}`, phase: "Review", model: reviewerModel(task.tier), effort: reviewerEffort(task.effort), schema: REVIEW_SCHEMA,
       });
       if (!review) return { halt: { taskN: task.n, reason: "reviewer returned no result", reportPath: impl.reportPath } };
       (review.findings || []).filter((f) => f.planMandated).forEach((c) => planConflicts.push({ taskN: task.n, ...c }));
@@ -522,7 +545,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
       }
       rounds++;
       const fix = await agent(fixPrompt(task, actionable, wd), {
-        label: `fix:t${task.n}.${rounds}`, phase: "Fix", model: "sonnet", schema: FIX_SCHEMA,
+        label: `fix:t${task.n}.${rounds}`, phase: "Fix", model: "opus", effort: "medium", schema: FIX_SCHEMA,
       });
       if (!fix) return { halt: { taskN: task.n, reason: "fixer returned no result", reportPath: impl.reportPath } };
       head = fix.headSha || head;
@@ -611,7 +634,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
   if (!halted && results.length) {
     phase("Final");
     finalReview = await agent(finalPrompt(cfg.mergeBase, base), {
-      label: "final-review", phase: "Final", model: "opus", schema: FINAL_SCHEMA,
+      label: "final-review", phase: "Final", model: "opus", effort: "high", schema: FINAL_SCHEMA,
     });
     const findings = finalReview ? (finalReview.findings || []) : [];
     if (!finalReview) {
@@ -623,7 +646,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
       halted = { wave: "final", reason: "final review returned verdict 'changes' with no findings to act on", failures: [] };
     } else if (findings.length) {
       const fix = await agent(finalFixPrompt(findings), {
-        label: "final-fix", phase: "Final", model: "sonnet", schema: FIX_SCHEMA,
+        label: "final-fix", phase: "Final", model: "opus", effort: "medium", schema: FIX_SCHEMA,
       });
       if (!fix) {
         halted = { wave: "final", reason: "final fixer returned no result", failures: [] };
@@ -647,7 +670,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
           // returned head must not be unreviewed. Report-only keeps it bounded — findings here go to
           // the controller to adjudicate, they do NOT trigger another fix (that is the unbounded loop).
           const postFix = await agent(finalPrompt(cfg.mergeBase, base), {
-            label: "final-review-2", phase: "Final", model: "opus", schema: FINAL_SCHEMA,
+            label: "final-review-2", phase: "Final", model: "opus", effort: "high", schema: FINAL_SCHEMA,
           });
           finalFix = {
             headSha: acc.headSha, fixed: fix.fixed, testSummary: fix.testSummary, verified: true,
