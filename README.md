@@ -30,6 +30,7 @@ Add the marketplace once, then install the plugins you want.
 | `superpowers-core` | Owned fork of the superpowers process skills + the `using-skills` dispatcher | Node 18+ | `/plugin install superpowers-core@jasonm4130-claude-skills` |
 | `visual-plan` | Markdown-canonical ADR/plan, optional rich HTML companion | – | `/plugin install visual-plan@jasonm4130-claude-skills` |
 | `workflow-model-guard` | PreToolUse guard nudging model tiering in high-fan-out Workflows | Node 18+ | `/plugin install workflow-model-guard@jasonm4130-claude-skills` |
+| `writing-artifacts` | Positive writing system for durable artifacts (READMEs, ADRs, docs, runbooks) | – | `/plugin install writing-artifacts@jasonm4130-claude-skills` |
 
 Full details per plugin: see `plugins/<name>/README.md`.
 
