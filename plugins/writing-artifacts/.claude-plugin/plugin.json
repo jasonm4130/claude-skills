@@ -1,0 +1,22 @@
+{
+  "name": "writing-artifacts",
+  "description": "Positive writing system for durable written artifacts — READMEs, ADRs, PR descriptions, docs, runbooks. Reader-expectation prose, Diátaxis document jobs, plain-language structure.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Jason Matthew"
+  },
+  "homepage": "https://github.com/jasonm4130/claude-skills",
+  "repository": "https://github.com/jasonm4130/claude-skills",
+  "license": "MIT",
+  "keywords": [
+    "writing",
+    "documentation",
+    "prose",
+    "diataxis",
+    "plain-language",
+    "claude-code"
+  ],
+  "engines": {
+    "claude-code": ">=2.1.110"
+  }
+}

@@ -320,6 +320,24 @@
         "hooks"
       ],
       "category": "productivity"
+    },
+    {
+      "name": "writing-artifacts",
+      "source": "./plugins/writing-artifacts",
+      "description": "Positive writing system for durable written artifacts (READMEs, ADRs, PR descriptions, docs, runbooks): reader-expectation prose, Di\u00e1taxis document jobs, plain-language structure. Complements reply-style rules in global CLAUDE.md.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": [
+        "writing",
+        "documentation",
+        "prose",
+        "diataxis",
+        "plain-language"
+      ],
+      "category": "productivity"
     }
   ]
 }
