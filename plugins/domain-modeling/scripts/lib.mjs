@@ -4,6 +4,7 @@
 // can't share files across plugin boundaries, so the duplication is intentional.
 
 import { existsSync, mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
 import process from "node:process";
@@ -91,6 +92,20 @@ export function emitAdditionalContext(eventName, additionalContext) {
     },
   };
   process.stdout.write(JSON.stringify(payload) + "\n");
+}
+
+/**
+ * Path of the "already offered" claim file for a repo. One file per repo rather
+ * than lines in a shared list: the consumer creates it with O_CREAT|O_EXCL, so
+ * two concurrent sessions in the same repo can't both win the one-time offer.
+ * The repo path goes in the file body, so the claims stay greppable.
+ * @param {string} dataDir
+ * @param {string} repo absolute repo root
+ * @returns {string}
+ */
+export function repoClaimPath(dataDir, repo) {
+  const digest = createHash("sha256").update(repo).digest("hex").slice(0, 16);
+  return path.join(dataDir, `offered-${digest}.claim`);
 }
 
 /**

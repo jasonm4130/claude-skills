@@ -44,11 +44,14 @@ Noise is the binding constraint — an unconditional "no `CONTEXT.md` here" chec
 fires on nearly every repo, every session, forever. Hence the three gates: source
 work actually happened there, the repo is already `CLAUDE.md`-configured (so the
 user opted into agent tooling for it), and the offer is made **once per repo,
-ever**. The offered-list is written when the nudge reaches the user, not when
-it's raised, so a session that ends before the next prompt doesn't burn the ask.
+ever**. The claim is taken when the nudge reaches the user, not when it's
+raised, so a session that ends before the next prompt doesn't burn the ask —
+and it's taken with `O_CREAT|O_EXCL`, so two concurrent sessions in the same
+repo can both raise a flag and still only one of them speaks.
 
-To re-arm an offer, delete the repo's line from `context-md-offered.txt` in the
-plugin's data directory.
+To re-arm an offer, delete the repo's `offered-*.claim` file from the plugin's
+data directory (each claim names its repo in the file body, so
+`grep -rl <repo> <dataDir>` finds it).
 
 ## Boundaries
 

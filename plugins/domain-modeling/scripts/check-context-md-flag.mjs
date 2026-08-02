@@ -3,7 +3,7 @@
 // UserPromptSubmit hook: consume the CONTEXT.md flag → agent-directed
 // additionalContext, and record the repo as offered so it is never asked again.
 
-import { appendFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import {
@@ -11,6 +11,7 @@ import {
   safeJsonParse,
   resolveSessionId,
   resolveDataDir,
+  repoClaimPath,
   emitAdditionalContext,
 } from "./lib.mjs";
 
@@ -37,11 +38,16 @@ try {
   // best-effort — fire-once is desirable but a failed unlink shouldn't block emission
 }
 
-// Burn the one ask now that it is actually reaching the user.
+// Burn the one ask now that it is actually reaching the user. O_CREAT|O_EXCL is
+// what makes "once per repo" hold: two sessions in the same repo can both carry
+// a flag here, and only the one that creates the claim gets to speak.
 try {
-  appendFileSync(path.join(dataDir, "context-md-offered.txt"), `${repo}\n`);
-} catch {
-  // best-effort — worst case the offer repeats in a later session
+  writeFileSync(repoClaimPath(dataDir, repo), `${repo}\n`, { flag: "wx" });
+} catch (err) {
+  // Someone else claimed it first — they are making the offer, so stay quiet.
+  if (/** @type {NodeJS.ErrnoException} */ (err).code === "EEXIST") process.exit(0);
+  // Any other write failure: prefer making the offer over losing it. Worst case
+  // it repeats in a later session.
 }
 
 emitAdditionalContext(

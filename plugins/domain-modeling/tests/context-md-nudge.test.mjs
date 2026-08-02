@@ -3,9 +3,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, execSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+/** Mirrors lib.mjs repoClaimPath — asserted independently, not imported. */
+function claimPath(dataDir, repo) {
+  const digest = createHash("sha256").update(repo).digest("hex").slice(0, 16);
+  return path.join(dataDir, `offered-${digest}.claim`);
+}
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const scripts = path.join(here, "..", "scripts");
@@ -104,11 +111,29 @@ test("consumer emits context, records the repo as offered, and never re-asks", (
   assert.match(parsed.hookSpecificOutput.additionalContext, /once per repo, ever/);
   assert.ok(!existsSync(flag), "flag should be consumed");
 
-  const offered = readFileSync(path.join(dataDir, "context-md-offered.txt"), "utf8");
-  assert.match(offered, new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.equal(readFileSync(claimPath(dataDir, repo), "utf8").trim(), repo);
 
   // A later session in the same repo must stay silent.
   assert.ok(!existsSync(editAndStop(repo, "s8", dataDir)), "offered repos are never re-asked");
+});
+
+test("concurrent sessions in one repo: only one offer wins", (t) => {
+  const repo = mkRepo(["CLAUDE.md"]);
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const dataDir = mkDataDir(t);
+
+  // Both Stop hooks run before either prompt is submitted, so both see no claim
+  // and both raise a flag — the race the atomic claim exists to settle.
+  const flagA = editAndStop(repo, "cA", dataDir);
+  const flagB = editAndStop(repo, "cB", dataDir);
+  assert.ok(existsSync(flagA) && existsSync(flagB), "both sessions flag the repo");
+
+  const outA = run(consumeScript, { session_id: "cA" }, dataDir);
+  const outB = run(consumeScript, { session_id: "cB" }, dataDir);
+
+  const spoke = [outA, outB].filter((o) => o.trim().length > 0);
+  assert.equal(spoke.length, 1, "exactly one session may make the offer");
+  assert.match(JSON.parse(spoke[0]).hookSpecificOutput.additionalContext, /no CONTEXT\.md/);
 });
 
 test("a nudge that never reached the user does not burn the one ask", (t) => {
@@ -118,7 +143,7 @@ test("a nudge that never reached the user does not burn the one ask", (t) => {
 
   // Session ends without a following UserPromptSubmit — flag written, unconsumed.
   assert.ok(existsSync(editAndStop(repo, "s9", dataDir)));
-  assert.ok(!existsSync(path.join(dataDir, "context-md-offered.txt")));
+  assert.ok(!existsSync(claimPath(dataDir, repo)));
 
   // Next session still offers.
   assert.ok(existsSync(editAndStop(repo, "s10", dataDir)));
