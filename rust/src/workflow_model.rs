@@ -79,9 +79,20 @@ pub fn run(payload: Option<Value>) {
         Some(s) => Some(s.to_string()),
         None => {
             match hook::nested_str(&payload, "tool_input", "scriptPath").filter(|s| !s.is_empty()) {
-                Some(path) => match std::fs::read_to_string(path) {
-                    Ok(text) => Some(text),
-                    // Unreadable path → don't guess, allow.
+                // Read BYTES and decode lossily — do not use `read_to_string`.
+                //
+                // `read_to_string` fails on invalid UTF-8, but the JS original's
+                // `readFileSync(path, "utf8")` replaces bad sequences with U+FFFD
+                // and inspects the result. Treating a mis-encoded file as
+                // unreadable made the guard fail OPEN on exactly the scripts most
+                // likely to be machine-generated — a fan-out script with one stray
+                // byte was denied by node and silently allowed here. Found by
+                // cross-family review, reproduced, and pinned by a differential
+                // case that writes a real file with an invalid byte.
+                Some(path) => match std::fs::read(path) {
+                    Ok(bytes) => Some(String::from_utf8_lossy(&bytes).into_owned()),
+                    // Genuinely unreadable path (missing, no permission) → don't
+                    // guess, allow. This matches the JS catch.
                     Err(_) => return,
                 },
                 None => None,

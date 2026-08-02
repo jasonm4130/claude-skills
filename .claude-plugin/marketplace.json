@@ -109,7 +109,7 @@
       "name": "design-gate-guard",
       "source": "./plugins/design-gate-guard",
       "description": "PreToolUse Bash gate for the brainstorming HARD-GATE — asks the user before a new-project scaffold command (npm create vite, create-next-app, cargo new, rails new, django-admin startproject, …) so the model can't jump to implementation before a design is approved. Stateless and fail-open; add design-gate:ack to the command to proceed after approval.",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "author": {
         "name": "Jason Matthew"
       },
@@ -252,7 +252,7 @@
       "name": "workflow-model-guard",
       "source": "./plugins/workflow-model-guard",
       "description": "PreToolUse hooks that keep sub-model choices deliberate — denies high-fan-out Workflow scripts with no per-agent model: override, asks before all-Opus built-in named workflows (e.g. deep-research), and denies ad-hoc Agent dispatches that omit model unless the agent type pins one in frontmatter.",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "author": {
         "name": "Jason Matthew"
       },

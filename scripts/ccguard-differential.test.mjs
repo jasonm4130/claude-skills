@@ -25,8 +25,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -381,6 +382,31 @@ test("workflow-model: agrees on script shapes", { skip: haveWorkflow ? false : s
   ];
   for (const script of scripts) {
     assertAgrees("workflow-model", JSON.stringify({ tool_name: "Workflow", tool_input: { script } }), script);
+  }
+
+  // scriptPath against REAL files. The inline-script cases above never exercise
+  // the file-reading branch, which is where the port's one real divergence lived:
+  // `read_to_string` rejects invalid UTF-8, while `readFileSync(path, "utf8")`
+  // replaces it and carries on. A fan-out script with one stray byte was denied
+  // by node and silently allowed by the binary.
+  const tmp = mkdtempSync(join(tmpdir(), "ccguard-diff-"));
+  const fanout = "await parallel(xs.map(x => () => agent(x)))";
+  /** @type {[string, Buffer][]} */
+  const files = [
+    ["clean.mjs", Buffer.from(`${fanout}\n`, "utf8")],
+    ["invalid-utf8.mjs", Buffer.concat([Buffer.from(`${fanout} // `, "utf8"), Buffer.from([0xff, 0xfe]), Buffer.from("\n")])],
+    ["lone-surrogate.mjs", Buffer.concat([Buffer.from(`${fanout} // `, "utf8"), Buffer.from([0xed, 0xa0, 0x80]), Buffer.from("\n")])],
+    ["empty.mjs", Buffer.alloc(0)],
+    ["tiered.mjs", Buffer.from("agent('a', { model: 'sonnet' })\n", "utf8")],
+  ];
+  for (const [name, bytes] of files) {
+    const p = join(tmp, name);
+    writeFileSync(p, bytes);
+    assertAgrees(
+      "workflow-model",
+      JSON.stringify({ tool_name: "Workflow", tool_input: { scriptPath: p } }),
+      `scriptPath ${name}`,
+    );
   }
 
   const others = [
