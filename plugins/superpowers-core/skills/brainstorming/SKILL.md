@@ -72,7 +72,7 @@ digraph brainstorming {
 
 **The terminal state is invoking writing-plans.** Do NOT invoke frontend-design, mcp-builder, or any other *implementation* skill.
 
-One non-implementation exception, taken before the plan: if the design turned on where a boundary goes, what an interface should hide, or why something is hard to test, invoke `codebase-design:codebase-design` via the Skill tool now, then continue to writing-plans. That is a design-vocabulary pass, not implementation — and it is an instruction, not a suggestion: a "see also" cross-reference does not reliably cause invocation, which is why that skill sat at zero uses for its first fortnight.
+One non-implementation exception, taken before the plan: if the design turned on where a boundary goes, what an interface should hide, or why something is hard to test, invoke `codebase-design:codebase-design` via the Skill tool now, then continue to writing-plans. That is a design-vocabulary pass, not implementation — and it is an instruction, not a suggestion: a "see also" cross-reference does not reliably cause invocation, which is why that skill sat at zero uses for its first fortnight. It ships as a **separate plugin**, so if the call returns `Unknown skill`, say so in one line and continue to writing-plans — a missing optional plugin must never block the terminal state.
 
 ## The Process
 

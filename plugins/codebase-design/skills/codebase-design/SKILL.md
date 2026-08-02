@@ -1,6 +1,6 @@
 ---
 name: codebase-design
-description: Use when a module is hard to test, a function needs more arguments than it should, one change touches three files that should be one, a caller has to know the callee's internals to use it, or someone asks where a boundary belongs. Also when another skill needs the deep-module vocabulary (module, interface, seam, depth, adapter, leverage, locality). Do NOT use for UI/visual design (use frontend-design), or for a general cleanup pass over a diff (use simplify).
+description: Use when a module is hard to test, a function needs more arguments than it should, one change touches three files that should be one, a caller has to know the callee's internals to use it, or someone asks where a boundary belongs. Also when another skill needs the deep-module vocabulary (module, interface, seam, depth, adapter, leverage, locality). Do NOT use for UI/visual design (use frontend-design), or for a general cleanup pass over a diff.
 ---
 
 # Codebase Design
