@@ -13,7 +13,7 @@ governs skill selection and currency verification for every turn.
 | `brainstorming` | vendored | Design exploration before creative/build work — size-gated (trivial → skip, medium → lean plan, large/ambiguous → full spec) |
 | `systematic-debugging` | vendored | Root-cause investigation before proposing a fix, for any bug/test-failure/unexpected behavior |
 | `writing-plans` | vendored | Turns a spec/requirements into a sequenced implementation plan, with an open-questions list |
-| `writing-skills` | vendored | Creating, editing, or verifying skills before deployment |
+| `writing-skills` | rewritten | This repo's skill conventions + the wording findings from its own tests; defers to Anthropic's live spec for the format |
 | `test-driven-development` | vendored | Failing-test-first discipline before implementation code |
 | `using-skills` | owned, new | The dispatcher — match-and-proportion skill selection + currency/verification rules |
 
