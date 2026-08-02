@@ -24,6 +24,31 @@ this repo's `adr` skill so there's a single ADR convention.*
   no specs, no decision logs.
 - Routes hard-to-reverse, non-obvious trade-offs to the `adr` skill, not the
   glossary.
+- Offers the glossary **once per repo** via hooks, so a repo that would benefit
+  from one doesn't go unnoticed (see below).
+
+## The missing-glossary offer
+
+The skill itself is lazy by design — it creates `CONTEXT.md` only when a term is
+resolved during work it's already driving. That leaves a gap: a repo that never
+had a glossary never gets one, and the compounding payoff never starts. Three
+hooks close it.
+
+`PostToolUse` records which repos the session edited *source* in (prose and
+config are ignored — a README edit is not domain work). `Stop` flags the first
+such repo that has a `CLAUDE.md` but no `CONTEXT.md` or `CONTEXT-MAP.md`.
+`UserPromptSubmit` turns that flag into a one-line offer and records the repo as
+offered.
+
+Noise is the binding constraint — an unconditional "no `CONTEXT.md` here" check
+fires on nearly every repo, every session, forever. Hence the three gates: source
+work actually happened there, the repo is already `CLAUDE.md`-configured (so the
+user opted into agent tooling for it), and the offer is made **once per repo,
+ever**. The offered-list is written when the nudge reaches the user, not when
+it's raised, so a session that ends before the next prompt doesn't burn the ask.
+
+To re-arm an offer, delete the repo's line from `context-md-offered.txt` in the
+plugin's data directory.
 
 ## Boundaries
 
@@ -37,3 +62,6 @@ this repo's `adr` skill so there's a single ADR convention.*
 - `skills/domain-modeling/SKILL.md` — the discipline.
 - `skills/domain-modeling/CONTEXT-FORMAT.md` — the glossary format (single +
   multi-context).
+- `scripts/posttooluse-mark-source-edit.mjs` — records repos with source edits.
+- `scripts/stop-check-context-md.mjs` — flags a repo missing a glossary.
+- `scripts/check-context-md-flag.mjs` — emits the one-per-repo offer.

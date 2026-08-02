@@ -165,7 +165,7 @@
       "name": "domain-modeling",
       "source": "./plugins/domain-modeling",
       "description": "Actively build and sharpen a project's ubiquitous language — an opinionated CONTEXT.md glossary — by challenging terms, disambiguating overloaded words, and stress-testing domain relationships. Cross-references adr for decision records. Adapted from mattpocock/skills (MIT).",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "author": {
         "name": "Jason Matthew"
       },
