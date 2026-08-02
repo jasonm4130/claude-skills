@@ -110,6 +110,23 @@ Codex-reviewed: 3 rounds + audit, chain `881f87716802`, 14 unique findings.
 - `git add X && git commit` in one command: X isn't in the index when the hook
   runs — `pathsFromGitAdd()` parses add segments and unions them in.
 - `git commit <pathspec>` is NOT parsed (documented limitation).
+- **Argument splitting is quote-aware (`splitArgs`), and it has to be.** A bare
+  `.split(/\s+/)` fragments any quoted path containing a space:
+  `git add "Daily/2026-08-03 - Daily.md"` yielded `Daily/2026-08-03` + `-` +
+  `Daily.md"`. The `-` was dropped as a flag, `Daily.md` passed the markdown skip,
+  and the extensionless `Daily/2026-08-03` was classified as CODE — so a
+  markdown-only commit was denied. Found on an Obsidian vault, where every daily
+  note has a space in its name. Both directions are tested: a quoted *code* path
+  with a space must still be caught.
+- **Heredoc bodies are stripped before anything parses the command
+  (`stripHeredocs`).** A body is text being written, not commands to run, so
+  `cat >> notes.md <<'EOF' … git add x && git commit … EOF` must not read as a
+  commit. This bit twice for real while writing the quoting tests above — the
+  fixture strings tripped the gate the tests exercise. Stripping happens first, so
+  commit detection, the `docs-sync:ack` marker and the `git add` union all see the
+  stripped form; an ack inside a heredoc correctly does NOT bypass.
+  `design-gate-guard` solves a harder version of this with a full tokenizer,
+  because it needs segment *heads*; here only the bodies must go.
 
 ## Conventions
 

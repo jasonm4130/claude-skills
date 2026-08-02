@@ -53,6 +53,12 @@ What the commit "includes" is the union of already-staged files, paths named in
 committing with `-a`. Pathspecs passed directly to `git commit <paths>` are not
 parsed (rare in agent usage).
 
+Paths are split quote-aware, so `git add "My Notes/2026-08-03 - Daily.md"` is one
+path rather than three fragments — without that, a quoted name containing a space
+loses its extension and gets misread as code, denying an ordinary markdown commit.
+Heredoc bodies are stripped before any of this runs: a `cat <<EOF … EOF` block that
+merely *documents* `git commit` is text being written, not a commit.
+
 Never flagged (the explicit not-to-flag list — noise kills commit gates):
 
 - tests (`tests/` dirs, `*.test.*` files)

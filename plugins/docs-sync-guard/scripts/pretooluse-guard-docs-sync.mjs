@@ -59,8 +59,104 @@ function git(cwd, args) {
 }
 
 /**
+ * Remove heredoc bodies from a command before anything else parses it.
+ *
+ * A heredoc body is literal text being written, not commands to run. Without
+ * this, `cat >> notes.md <<'EOF' … git add x && git commit … EOF` reads as a real
+ * commit and the gate denies a command that never commits anything. Hit twice for
+ * real while writing tests for the quoting fix below — the test file's own
+ * fixture strings tripped the gate that the tests exercise.
+ *
+ * Deliberately simpler than design-gate-guard's full tokenizer: that one needs to
+ * know which command *starts* a segment, so it must track quotes to find segment
+ * boundaries. Here we only need the bodies gone, and a heredoc body always runs
+ * from the line after the introducer to a line equal to the delimiter.
+ * @param {string} command
+ * @returns {string}
+ */
+function stripHeredocs(command) {
+  const lines = command.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    out.push(lines[i]);
+    // `<<`, optional `-` (tab-stripping), optional quotes around the delimiter.
+    const m = /<<-?\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z_][\w.-]*))/.exec(lines[i]);
+    if (!m) continue;
+    const delim = m[1] ?? m[2] ?? m[3];
+    const strip = /<<-/.test(lines[i]);
+    // Consume the body, up to and including the terminator line.
+    while (++i < lines.length) {
+      const cmp = strip ? lines[i].replace(/^\t+/, "") : lines[i];
+      if (cmp === delim) break;
+    }
+  }
+  return out.join("\n");
+}
+
+/**
+ * Split a command-line argument string the way a shell words it: honouring single
+ * quotes, double quotes and backslash escapes, and splitting only on UNQUOTED
+ * whitespace.
+ *
+ * A bare `.split(/\s+/)` fragments any quoted path containing a space. Real case:
+ * `git add "Daily/2026-08-03 - Daily.md"` yielded `Daily/2026-08-03`, `-`,
+ * `Daily.md"` — the `-` was dropped as a flag, `Daily.md` passed the markdown
+ * skip, and the extensionless `Daily/2026-08-03` was classified as CODE, denying
+ * a markdown-only commit in an Obsidian vault where every note has a space in its
+ * name.
+ * @param {string} s
+ * @returns {string[]}
+ */
+function splitArgs(s) {
+  const out = [];
+  let cur = "";
+  let started = false;
+  /** @type {string | null} */
+  let quote = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quote) {
+      // Inside "" a backslash escapes " \ $ ` ; inside '' nothing is special.
+      if (quote === '"' && c === "\\" && i + 1 < s.length && '"\\$`'.includes(s[i + 1])) {
+        cur += s[++i];
+        started = true;
+        continue;
+      }
+      if (c === quote) quote = null;
+      else {
+        cur += c;
+        started = true;
+      }
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      quote = c;
+      started = true;
+      continue;
+    }
+    if (c === "\\" && i + 1 < s.length) {
+      cur += s[++i];
+      started = true;
+      continue;
+    }
+    if (/\s/.test(c)) {
+      if (started) {
+        out.push(cur);
+        cur = "";
+        started = false;
+      }
+      continue;
+    }
+    cur += c;
+    started = true;
+  }
+  if (started) out.push(cur);
+  return out;
+}
+
+/**
  * Extract paths named in `git add …` segments of a compound command — they aren't
- * in the index yet when the hook inspects it. Flags are skipped; quotes stripped.
+ * in the index yet when the hook inspects it. Flags are skipped.
  * @param {string} command
  * @returns {string[]}
  */
@@ -69,9 +165,9 @@ function pathsFromGitAdd(command) {
   for (const segment of command.split(/&&|\|\||;|\|/)) {
     const m = /\bgit\s+(?:-C\s+\S+\s+)?add\s+(.*)$/.exec(segment.trim());
     if (!m) continue;
-    for (const tok of m[1].split(/\s+/)) {
+    for (const tok of splitArgs(m[1])) {
       if (!tok || tok.startsWith("-")) continue;
-      paths.push(tok.replace(/^["']|["']$/g, ""));
+      paths.push(tok);
     }
   }
   return paths;
@@ -82,8 +178,13 @@ const payload = /** @type {PreToolUseInput | null} */ (safeJsonParse(raw));
 
 if (!payload || payload.tool_name !== "Bash") process.exit(0);
 
-const command =
-  typeof payload.tool_input?.command === "string" ? payload.tool_input.command : "";
+// Heredoc bodies are stripped BEFORE any detection: text being written to a file
+// is not a command. Everything below — commit detection, the ack marker, and the
+// `git add` path union — reads the stripped form, so a heredoc that merely
+// mentions a commit neither triggers the gate nor bypasses it.
+const command = stripHeredocs(
+  typeof payload.tool_input?.command === "string" ? payload.tool_input.command : "",
+);
 
 // Only gate commits; `git -C x commit` counts, `git commitish-tool` doesn't.
 if (!/\bgit\b[^;&|]*\bcommit\b/.test(command)) process.exit(0);
