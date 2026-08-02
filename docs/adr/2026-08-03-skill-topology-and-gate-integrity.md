@@ -34,9 +34,10 @@ audits have returned PASS 0 times in 50 against diff mode's 28%.
 
 ## Decisions
 
-1. **Delete `adversarial-agents`, `visual-plan`, `domain-modeling`.** Zero
-   invocations; `codex-review` occupies the adversarial niche cross-family, and the
-   one controlled ablation of context files found no measurable correctness gain.
+1. **Delete `adversarial-agents` and `visual-plan`.** Zero invocations;
+   `codex-review` occupies the adversarial niche cross-family, and the one
+   controlled ablation of context files found no measurable correctness gain.
+   ~~Also delete `domain-modeling`~~ — **reversed the same day, see below.**
 2. **Fix the plumbing, then guard it.** Readers check every candidate data dir; all
    hook-emitted skill names are plugin-qualified; a repo-consistency test now fails
    the build on an unqualified name.
@@ -48,12 +49,37 @@ audits have returned PASS 0 times in 50 against diff mode's 28%.
 5. **Keep `codebase-design`, rewritten** around observable states with one imperative
    hand-off from `brainstorming`. Review 2026-08-24; delete if still at zero.
 
+## Amendment (same day): `domain-modeling` is kept
+
+Decision 1 originally deleted `domain-modeling` too, on the stated grounds that it
+had zero invocations and no mechanical inbound edge. That reasoning was sound and
+the evidence for it was incomplete: a local branch,
+`feat/context-md-missing-glossary-nudge`, had already built exactly the missing
+edge — a `PostToolUse`/`Stop`/`UserPromptSubmit` trio that offers a `CONTEXT.md`
+glossary once per repo that lacks one, with 11 passing tests and the `PostToolUse`
+matcher scoped to edit tools rather than every call. It was committed at 06:53 and
+06:57 local, roughly four minutes before the analysis agents ran, and those agents
+read the branch's tree as HEAD — which is also why one of them reported a
+`domain-modeling` version that does not exist on `main`.
+
+Deleting it would have applied a different standard to `domain-modeling` than
+decision 5 applies to `codebase-design`: give a zero-use skill one imperative
+inbound edge, then review it. Both are now on the 2026-08-24 review, and the
+question for both is the same — did the edge produce invocations?
+
+The generalisable lesson is not about this plugin. **Zero invocations is evidence
+about the trigger, not about the skill.** Four of the five skills deleted or
+reviewed here had no mechanical inbound edge at all, so their usage counts
+measured the absence of a trigger and nothing else. Check for a pending fix before
+concluding a skill is dead.
+
 ## Consequences
 
 Fewer skills, each with exactly one unambiguous inbound edge. The `handoff` nudge
 starts firing for the first time, which will be noisy before it is useful — the
-threshold may need tuning. Deleting `domain-modeling` orphans an unattributed local
-branch that added hooks to it (see below).
+threshold may need tuning. `domain-modeling` gains three hooks of its own, so the
+per-turn hook cost rises; the `PostToolUse` matcher is scoped to edit tools to keep
+that bounded.
 
 Two bets that could be wrong. The audit severity floor is modelled, not observed: it
 flips 17/91 CONCERNS to PASS on historical data, but the live effect is unmeasured.

@@ -586,6 +586,19 @@ test("shouldResetBands: epsilon absorbs sub-point wobble", () => {
 
 // --- gitBranchDirty (Task 2) ---
 
+// `gitBranchDirty` defaults to a 250ms budget, which is right for PRODUCTION —
+// the statusLine must drop the git segment rather than stall the bar. It is wrong
+// for a TEST, because it makes the assertion depend on machine load: under the
+// full suite (700+ tests spawning git and node in parallel) a `git status` can
+// exceed 250ms, `gitBranchDirty` correctly returns null, and the test fails for a
+// reason that has nothing to do with the logic under test. Observed on 2026-08-03
+// — green three times in isolation, red once in the full run.
+//
+// The positive-path tests therefore pass an explicit generous budget. The
+// non-git-directory and timeout tests deliberately keep the default, since the
+// default IS what they exercise.
+const SLOW_CI_TIMEOUT = 10_000;
+
 function initRepo(t) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "handoff-git-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -601,20 +614,20 @@ function initRepo(t) {
 
 test("gitBranchDirty: clean repo on a branch reports label + dirty 0", (t) => {
   const { dir } = initRepo(t);
-  assert.deepEqual(gitBranchDirty(dir), { label: "main", dirty: 0 });
+  assert.deepEqual(gitBranchDirty(dir, SLOW_CI_TIMEOUT), { label: "main", dirty: 0 });
 });
 
 test("gitBranchDirty: counts an untracked file as dirty", (t) => {
   const { dir } = initRepo(t);
   writeFileSync(path.join(dir, "b.txt"), "2");
-  assert.deepEqual(gitBranchDirty(dir), { label: "main", dirty: 1 });
+  assert.deepEqual(gitBranchDirty(dir, SLOW_CI_TIMEOUT), { label: "main", dirty: 1 });
 });
 
 test("gitBranchDirty: detached HEAD reports @<sha>", (t) => {
   const { dir, g } = initRepo(t);
   const sha = g(["rev-parse", "--short", "HEAD"]).stdout.trim();
   g(["checkout", "-q", sha]);
-  const r = gitBranchDirty(dir);
+  const r = gitBranchDirty(dir, SLOW_CI_TIMEOUT);
   assert.equal(r?.label, "@" + sha);
 });
 

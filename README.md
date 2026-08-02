@@ -20,6 +20,7 @@ Add the marketplace once, then install the plugins you want.
 | `deep-dive` | Model-tiered, adversarially-verified multi-source research | – | `/plugin install deep-dive@jasonm4130-claude-skills` |
 | `design-gate-guard` | PreToolUse gate asking before a new-project scaffold runs ahead of an approved design | – on arm64 macOS · Node 18+ elsewhere | `/plugin install design-gate-guard@jasonm4130-claude-skills` |
 | `docs-sync-guard` | Blocking git-commit gate against docs drift, plus a non-blocking consolidation audit triggered by accumulated commits | Node 18+ | `/plugin install docs-sync-guard@jasonm4130-claude-skills` |
+| `domain-modeling` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms; offers one once per repo that lacks it | Node 18+ | `/plugin install domain-modeling@jasonm4130-claude-skills` |
 | `frontend-design` | Light-inline design guidance, or a paste-ready browser brief for wide/detailed work | – | `/plugin install frontend-design@jasonm4130-claude-skills` |
 | `handoff` | Context-fill-triggered handoff doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
 | `session-retro` | Session retrospectives that capture learnings to memory | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |

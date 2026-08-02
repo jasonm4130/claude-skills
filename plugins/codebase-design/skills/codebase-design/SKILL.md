@@ -104,7 +104,7 @@ Good interfaces make testing natural:
 - An **Adapter** sits at a **Seam** and satisfies the **Interface**.
 - **Depth** produces **Leverage** for callers and **Locality** for maintainers.
 
-This is *architecture* vocabulary. It is distinct from *domain* vocabulary — the words the business uses for the things the system handles — and the two should stay apart. When both matter, name a module's interface in domain terms and describe its shape in these terms.
+This is *architecture* vocabulary. It is distinct from *domain* vocabulary (the `CONTEXT.md` glossary the `domain-modeling` skill maintains) — keep the two apart. When both matter, name a module's interface in domain terms and describe its shape in these terms.
 
 ## Rejected framings
 
