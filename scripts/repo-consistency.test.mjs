@@ -105,7 +105,11 @@ test("hook-emitted skill references are plugin-qualified", () => {
   }
   assert.ok(skillOwner.size > 0, "found no skills to check — the walk is broken");
 
-  const offenders = [];
+  // Every source file that can EMIT hook text. Both the interpreted guards and
+  // the compiled ones (rust/src/*.rs, shipped as plugins/*/bin/ccguard) build
+  // their reason strings in source, so scanning only .mjs would leave the Rust
+  // reasons unguarded — and those are the ones that actually run now.
+  const sources = [];
   for (const d of dirs) {
     let files = [];
     try {
@@ -115,20 +119,33 @@ test("hook-emitted skill references are plugin-qualified", () => {
     } catch {
       continue;
     }
-    for (const f of files) {
-      // Only text the script actually EMITS counts. Comments routinely discuss
-      // the bare name (including the ones explaining this very bug), and a
-      // comment is never handed to the agent.
-      const src = readFileSync(join(root, "plugins", d, "scripts", f), "utf8")
-        .replace(/\/\*[\s\S]*?\*\//g, "")
-        .split("\n")
-        .filter((l) => !/^\s*(\/\/|\*)/.test(l))
-        .join("\n");
-      for (const [skill, owner] of skillOwner) {
-        // "the <skill> skill" / "run <skill> skill" with no "<plugin>:" prefix.
-        const bare = new RegExp(`(?<![\\w:-])${skill}\\s+skill\\b`, "i");
-        if (bare.test(src)) offenders.push(`${d}/scripts/${f}: "${skill} skill" → "${owner}:${skill}"`);
+    for (const f of files) sources.push({ label: `${d}/scripts/${f}`, path: join(root, "plugins", d, "scripts", f) });
+  }
+  try {
+    for (const e of readdirSync(join(root, "rust", "src"), { withFileTypes: true })) {
+      if (e.isFile() && e.name.endsWith(".rs")) {
+        sources.push({ label: `rust/src/${e.name}`, path: join(root, "rust", "src", e.name) });
       }
+    }
+  } catch {
+    // no rust crate — fine, the .mjs guards are the whole surface.
+  }
+
+  const offenders = [];
+  for (const { label, path } of sources) {
+    // Only text the source actually EMITS counts. Comments routinely discuss the
+    // bare name (including the ones explaining this very bug), and a comment is
+    // never handed to the agent. The line filter catches `//`, `///`, `//!` and
+    // block-comment continuations, so it covers both languages.
+    const src = readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .filter((l) => !/^\s*(\/\/|\*)/.test(l))
+      .join("\n");
+    for (const [skill, owner] of skillOwner) {
+      // "the <skill> skill" / "run <skill> skill" with no "<plugin>:" prefix.
+      const bare = new RegExp(`(?<![\\w:-])${skill}\\s+skill\\b`, "i");
+      if (bare.test(src)) offenders.push(`${label}: "${skill} skill" → "${owner}:${skill}"`);
     }
   }
   assert.deepEqual(offenders, [], `unqualified skill names in hook output:\n${offenders.join("\n")}`);

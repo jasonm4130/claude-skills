@@ -18,7 +18,7 @@ Add the marketplace once, then install the plugins you want.
 | `codebase-design` | Deep-module design vocabulary — interface/seam/depth, the deletion test, tiered design-it-twice | – | `/plugin install codebase-design@jasonm4130-claude-skills` |
 | `codex-review` | Cross-provider plan/design review via OpenAI Codex (Terra) | Node 18+ · [Codex CLI](https://github.com/openai/codex) | `/plugin install codex-review@jasonm4130-claude-skills` |
 | `deep-dive` | Model-tiered, adversarially-verified multi-source research | – | `/plugin install deep-dive@jasonm4130-claude-skills` |
-| `design-gate-guard` | PreToolUse gate asking before a new-project scaffold runs ahead of an approved design | Node 18+ | `/plugin install design-gate-guard@jasonm4130-claude-skills` |
+| `design-gate-guard` | PreToolUse gate asking before a new-project scaffold runs ahead of an approved design | – on arm64 macOS · Node 18+ elsewhere | `/plugin install design-gate-guard@jasonm4130-claude-skills` |
 | `docs-sync-guard` | Blocking git-commit gate against docs drift, plus a non-blocking consolidation audit triggered by accumulated commits | Node 18+ | `/plugin install docs-sync-guard@jasonm4130-claude-skills` |
 | `frontend-design` | Light-inline design guidance, or a paste-ready browser brief for wide/detailed work | – | `/plugin install frontend-design@jasonm4130-claude-skills` |
 | `handoff` | Context-fill-triggered handoff doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
@@ -26,7 +26,7 @@ Add the marketplace once, then install the plugins you want.
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
 | `subagent-driven-development` | Deterministic workflow-driven implement/review/fix loop | – | `/plugin install subagent-driven-development@jasonm4130-claude-skills` |
 | `superpowers-core` | Owned fork of the superpowers process skills + the `using-skills` dispatcher | Node 18+ | `/plugin install superpowers-core@jasonm4130-claude-skills` |
-| `workflow-model-guard` | PreToolUse guard nudging model tiering in high-fan-out Workflows | Node 18+ | `/plugin install workflow-model-guard@jasonm4130-claude-skills` |
+| `workflow-model-guard` | PreToolUse guard nudging model tiering in high-fan-out Workflows | – on arm64 macOS · Node 18+ elsewhere | `/plugin install workflow-model-guard@jasonm4130-claude-skills` |
 | `writing-artifacts` | Positive writing system for durable artifacts (READMEs, ADRs, docs, runbooks) | – | `/plugin install writing-artifacts@jasonm4130-claude-skills` |
 
 Full details per plugin: see `plugins/<name>/README.md`.

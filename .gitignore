@@ -8,4 +8,9 @@ __pycache__/
 .DS_Store
 tmp/
 .worktrees/
+# Cargo build output. This machine redirects it via a global cargo config, so
+# rust/target/ never appears here — but it will on a default toolchain, and the
+# one thing that must NEVER be ignored is plugins/*/bin/ccguard, which is a build
+# artifact that is deliberately committed (see rust/README.md).
+rust/target/
 /.claude/handoffs/

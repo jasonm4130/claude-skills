@@ -104,6 +104,30 @@ and `updatedInput` can silently rewrite the dispatch model (rejected as design: 
 the decision). The legacy `Task` matcher also fires for `Agent` calls — never register
 both, or the guard double-fires. Re-verify after major Claude Code upgrades.
 
+## The compiled guards (0.4.0)
+
+Both hooks now run a committed Rust binary, with the `.mjs` as fallback:
+
+```
+"${CLAUDE_PLUGIN_ROOT}/bin/ccguard" agent-model    || node "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs"
+"${CLAUDE_PLUGIN_ROOT}/bin/ccguard" workflow-model || node "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs"
+```
+
+35.7ms → 3.1ms on the Agent guard, which fires on every dispatch. The binary exits
+non-zero only when it cannot execute at all (127 missing, 126 wrong architecture),
+so Linux and Intel Macs fall through to the node path and behave identically.
+
+**The `.mjs` files are not dead code — do not delete them.** They are both the
+fallback and the reference implementation that
+`scripts/ccguard-differential.test.mjs` checks the binary against. **Any behaviour
+change must land in BOTH**, or that test fails. Note the Agent guard reads
+`~/.claude/agents/*.md` and the project's `.claude/agents/*.md`: the Rust port
+sorts directory entries where `readdirSync` does not, which only becomes visible
+if two definitions declare the same frontmatter `name` — sorted at least makes the
+winner reproducible.
+
+Source lives in `rust/` (shared with `design-gate-guard`); see `rust/README.md`.
+
 ## Dependencies
 
 - **Node.js 18+ on PATH.** No third-party packages, no `package.json`. Stdlib only.
@@ -115,6 +139,8 @@ both, or the guard double-fires. Re-verify after major Claude Code upgrades.
 ```bash
 # Run all tests
 node --test plugins/workflow-model-guard/tests/*.test.mjs
+node --test scripts/ccguard-differential.test.mjs        # binary vs .mjs equivalence
+cargo test --release --manifest-path rust/Cargo.toml     # the binary's own units
 
 # Manual smoke test (expensive workflow, no model → deny envelope)
 echo '{"tool_name":"Workflow","tool_input":{"script":"await parallel(items.map(i => () => agent(\"do\")))"}}' \
