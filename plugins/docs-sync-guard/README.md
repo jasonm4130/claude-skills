@@ -7,7 +7,10 @@ Two mechanisms against docs drift, sited by how confident each can be:
    "no doc impact" call) happens in the same commit, not never.
 2. **The consolidation trigger** (0.3.0, never blocking) — once a repo has moved far
    enough since anyone last checked its docs *against each other*, an in-session nudge
-   suggests `/docs-consolidate`. Docs that were each updated correctly in isolation
+   suggests the `docs-sync-guard:docs-consolidate` skill (named plugin-qualified in
+   the nudge — a bare name is one the model resolves by guessing, and it guesses
+   wrong; enforced by `scripts/repo-consistency.test.mjs`). Docs that were each
+   updated correctly in isolation
    can still contradict one another.
 
 The split is deliberate. Google sites its false-positive bar by pipeline position:

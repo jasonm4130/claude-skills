@@ -60,7 +60,7 @@ if (existsSync(nudgeFlag)) {
   if (reasons.includes("compact imminent")) {
     emitAdditionalContext(
       "UserPromptSubmit",
-      `[session-retro] This session: ${reasons}. Run the retro skill now to capture decisions/learnings before compaction, unless the user objects.`,
+      `[session-retro] This session: ${reasons}. Run the session-retro:retro skill now to capture decisions/learnings before compaction, unless the user objects.`,
     );
     process.exit(0);
   }
@@ -134,7 +134,7 @@ if (worthyCount >= minSessions && daysSince >= minDays && !batchNudgedRecently) 
       : `${Math.floor(daysSince)}+ days since the last retro`;
   emitAdditionalContext(
     "UserPromptSubmit",
-    `[session-retro] ${worthyCount} retro-worthy sessions accrued (${cadence}). Run the retro skill now to batch-capture learnings, unless the user objects.`,
+    `[session-retro] ${worthyCount} retro-worthy sessions accrued (${cadence}). Run the session-retro:retro skill now to batch-capture learnings, unless the user objects.`,
   );
 }
 process.exit(0);

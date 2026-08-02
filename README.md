@@ -14,21 +14,18 @@ Add the marketplace once, then install the plugins you want.
 | Plugin | Description | Requirements | Install command |
 |---|---|---|---|
 | `adr` | Intent → grounded, cited, build-ready ADR, handed to the SDD loop | – | `/plugin install adr@jasonm4130-claude-skills` |
-| `adversarial-agents` | Configurable adversarial panel review for any artefact | – | `/plugin install adversarial-agents@jasonm4130-claude-skills` |
 | `claude-design` | Paste-ready Claude Design brief + the Claude Code driving path (`/design`, `/design-sync`) | – | `/plugin install claude-design@jasonm4130-claude-skills` |
 | `codebase-design` | Deep-module design vocabulary — interface/seam/depth, the deletion test, tiered design-it-twice | – | `/plugin install codebase-design@jasonm4130-claude-skills` |
 | `codex-review` | Cross-provider plan/design review via OpenAI Codex (Terra) | Node 18+ · [Codex CLI](https://github.com/openai/codex) | `/plugin install codex-review@jasonm4130-claude-skills` |
 | `deep-dive` | Model-tiered, adversarially-verified multi-source research | – | `/plugin install deep-dive@jasonm4130-claude-skills` |
 | `design-gate-guard` | PreToolUse gate asking before a new-project scaffold runs ahead of an approved design | Node 18+ | `/plugin install design-gate-guard@jasonm4130-claude-skills` |
 | `docs-sync-guard` | Blocking git-commit gate against docs drift, plus a non-blocking consolidation audit triggered by accumulated commits | Node 18+ | `/plugin install docs-sync-guard@jasonm4130-claude-skills` |
-| `domain-modeling` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms | – | `/plugin install domain-modeling@jasonm4130-claude-skills` |
 | `frontend-design` | Light-inline design guidance, or a paste-ready browser brief for wide/detailed work | – | `/plugin install frontend-design@jasonm4130-claude-skills` |
 | `handoff` | Context-fill-triggered handoff doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
 | `session-retro` | Session retrospectives that capture learnings to memory | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
 | `subagent-driven-development` | Deterministic workflow-driven implement/review/fix loop | – | `/plugin install subagent-driven-development@jasonm4130-claude-skills` |
 | `superpowers-core` | Owned fork of the superpowers process skills + the `using-skills` dispatcher | Node 18+ | `/plugin install superpowers-core@jasonm4130-claude-skills` |
-| `visual-plan` | Markdown-canonical ADR/plan, optional rich HTML companion | – | `/plugin install visual-plan@jasonm4130-claude-skills` |
 | `workflow-model-guard` | PreToolUse guard nudging model tiering in high-fan-out Workflows | Node 18+ | `/plugin install workflow-model-guard@jasonm4130-claude-skills` |
 | `writing-artifacts` | Positive writing system for durable artifacts (READMEs, ADRs, docs, runbooks) | – | `/plugin install writing-artifacts@jasonm4130-claude-skills` |
 
@@ -114,4 +111,6 @@ MIT — see `LICENSE`.
 
 ## Acknowledgements
 
-`adversarial-agents` was prompted by Matt Pocock's [`grill-me`](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me) skill. The panel-of-personas + severity-promotion pattern draws on Alireza Rezvani's [adversarial-reviewer](https://github.com/alirezarezvani/claude-skills) and zscole's [adversarial-spec](https://github.com/zscole/adversarial-spec). The full research synthesis behind the original design decisions lives in the originating (private) dotfiles repo's plan doc, `docs/plans/2026-05-16-skills-overhaul-research.md` — not in this repo.
+`codebase-design` is adapted from Matt Pocock's [`skills`](https://github.com/mattpocock/skills) (MIT); the full notice is in that plugin's own README and SKILL.md.
+
+The retired `adversarial-agents` plugin (removed 2026-08-03 after zero invocations in ten weeks — `codex-review` occupies the same niche cross-family) was prompted by Matt Pocock's [`grill-me`](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me), and drew its panel-of-personas + severity-promotion pattern from Alireza Rezvani's [adversarial-reviewer](https://github.com/alirezarezvani/claude-skills) and zscole's [adversarial-spec](https://github.com/zscole/adversarial-spec).

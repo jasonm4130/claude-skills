@@ -29,7 +29,7 @@ depended on being read from a skill list.
 Upstream superpowers ships a broader, more opinionated skill set and its own
 dispatcher (`using-superpowers`) tuned for a generic setup. This fork keeps
 only the five process skills that don't overlap with plugins already owned in
-this repo (SDD, codex-review, visual-plan, adr, …), and replaces the
+this repo (SDD, codex-review, adr, …), and replaces the
 dispatcher with `using-skills`, whose specificity-wins rule defers to those
 owned, narrower skills instead of colliding with them.
 

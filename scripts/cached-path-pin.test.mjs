@@ -2,8 +2,8 @@
 // scripts/cached-path-pin.test.mjs
 //
 // Guards every *cached-path resolution snippet* a skill hands to the agent —
-// workflows AND versioned assets (visual-plan resolves assets/plan.css, not a
-// workflow). `${CLAUDE_PLUGIN_ROOT}` is unavailable in model scope, so these
+// workflows AND versioned assets (a skill may resolve a bundled asset rather
+// than a workflow). `${CLAUDE_PLUGIN_ROOT}` is unavailable in model scope, so these
 // snippets address the plugin cache by literal path. Two ways that goes wrong:
 //
 //   1. Selecting the highest *cached* version (`sort -V | tail -1`). Cache
@@ -118,7 +118,6 @@ test("the scan finds the known cached-path resolvers", () => {
   for (const expected of [
     "plugins/adr/skills/adr/SKILL.md",
     "plugins/deep-dive/skills/deep-dive/SKILL.md",
-    "plugins/visual-plan/skills/visual-plan/SKILL.md",
     "plugins/subagent-driven-development/skills/subagent-driven-development/SKILL.md",
   ]) {
     assert.ok(

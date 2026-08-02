@@ -109,8 +109,8 @@ literal path, pinned to **this** skill's version — the `args` contract moves
 between versions (in local dev, use the repo path directly):
 
 ```bash
-P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.7.0/workflows/sdd.mjs"
-[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.7.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
+P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.8.0/workflows/sdd.mjs"
+[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.8.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
 ```
 
 If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not
@@ -213,6 +213,31 @@ gate exists to catch.
   user choose. Merging is irreversible and stays human-gated **in this session**;
   the workflow never merges. Default to `gh pr merge --merge` only when the user
   asks to merge.
+
+### 7a. Offer the decision record — once, here
+
+This is the only moment in the whole chain where the full picture exists: what
+the plan intended, what the branch actually did, and what the final review found.
+Every other artefact step in this repo fires *before* implementation, which is why
+the record of what was really decided tends never to get written.
+
+**If — and only if — the run settled something load-bearing and hard to reverse**
+(a schema or data-model change, a public API shape, a dependency added or dropped,
+a `planConflicts` entry you adjudicated against the plan, or a BLOCKED escalation
+the user resolved), offer exactly one line before finishing:
+
+> "This run settled `<the decision>`. Want an ADR at `docs/adr/YYYY-MM-DD-<slug>.md`?"
+
+Offer once, take no for an answer, and never write it unprompted. Routine runs —
+mechanical edits, a plan that executed as written, no conflicts — get no offer at
+all; a record of a decision nobody made is noise, and this repo already has 89
+specs of which 6 were touched in a fortnight.
+
+If the user accepts, keep it to a one-pager: the decision, why, what it costs, and
+what the branch is. Cite the branch and the `planConflicts`/`finalReview` entries
+that drove it — you have them in hand, so the grounding is free. Do not open the
+`adr` skill's full four-phase flow; that is a front-door for deciding what to
+build, and the deciding already happened.
 
 ## Model tiering at a glance
 

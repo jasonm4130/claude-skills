@@ -29,6 +29,11 @@ most common break point: a new-project scaffold command. Any command segment tha
   (split on `&&`, `||`, `;`, `|`, newlines) — so `create-react-app` inside a
   commit message / echo string does not fire (that segment starts with
   `git`/`echo`), but `mkdir app && cd app && npm create vite` does.
+- **Name the skill plugin-qualified** — the `ask` reason says
+  `superpowers-core:brainstorming`, not "the brainstorming skill". A bare name is
+  one the model resolves by guessing, and it guesses wrong; `session-retro` lost 4
+  nudges to exactly that before it was caught. Enforced by
+  `scripts/repo-consistency.test.mjs`.
 - **Ack bypass** — `design-gate:ack` anywhere in the command → allow (self-
   documents in history). Same pattern as `docs-sync:ack` / `model-guard:ack`.
 

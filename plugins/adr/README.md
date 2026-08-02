@@ -5,8 +5,7 @@ build-ready* ADR at `docs/adr/YYYY-MM-DD-<slug>.md` — every claim cited,
 load-bearing decisions surfaced to the human — then hands it to the
 `subagent-driven-development` loop. This collapses the
 `brainstorm → spec → writing-plans → sdd` chain into `adr → sdd` for "I know what
-I want, build it" work, while `brainstorming` stays for exploratory work and
-`visual-plan` for visual planning.
+I want, build it" work, while `brainstorming` stays for exploratory work.
 
 ## The arc
 

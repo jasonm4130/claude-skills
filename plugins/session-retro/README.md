@@ -55,11 +55,11 @@ On first load, Claude Code will prompt you to approve the hooks. This is normal 
 
 Individual retro-worthy sessions no longer nudge you — they accumulate silently. Once enough have piled up, you'll see a Claude-authored line like:
 
-> "[session-retro] 3 retro-worthy sessions since the last retro (8+ days). Run the retro skill now to batch-capture learnings, unless the user objects."
+> "[session-retro] 3 retro-worthy sessions since the last retro (8+ days). Run the session-retro:retro skill now to batch-capture learnings, unless the user objects."
 
 The agent will offer to run the retro directly. The exception is a compaction nudge, which still fires immediately:
 
-> "[session-retro] This session: compact imminent. Run the retro skill now to capture decisions/learnings before compaction, unless the user objects."
+> "[session-retro] This session: compact imminent. Run the session-retro:retro skill now to capture decisions/learnings before compaction, unless the user objects."
 
 ### Manual invocation
 

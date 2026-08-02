@@ -58,7 +58,7 @@ export function buildResumePrompt(relPath) {
 }
 
 export function buildAuditPrompt(relPath) {
-  return `You are performing a final holistic audit of the design/plan document at \`${relPath}\`. A separate detailed review process has already examined this artifact section by section; your job is NOT another section-by-section pass. Assess the artifact as a whole: internal consistency across sections, completeness (is anything load-bearing missing entirely?), feasibility of the overall approach, and systemic risks that only appear when reading it end to end. Where the document makes claims about this repository, you may check them (read-only). Report at most 5 findings, whole-artifact in scope, same [P1]/[P2]/[P3] tagging. End your final message with exactly one line: AUDIT: PASS or AUDIT: CONCERNS.`;
+  return `You are performing a final holistic audit of the design/plan document at \`${relPath}\`. A separate detailed review process has already examined this artifact section by section; your job is NOT another section-by-section pass. Assess the artifact as a whole: internal consistency across sections, completeness (is anything load-bearing missing entirely?), feasibility of the overall approach, and systemic risks that only appear when reading it end to end. Where the document makes claims about this repository, you may check them (read-only). Report at most 5 findings, whole-artifact in scope, same [P1]/[P2]/[P3] tagging. A [P1] is a defect that makes the artifact fail on a scenario you can name; a [P2] is a defect you can name that degrades rather than breaks. Anything you cannot tie to a named failure scenario is not a finding — omit it entirely rather than tagging it [P3]. The detailed review has already run: AUDIT: PASS with zero findings is the expected outcome for an artifact that survived it, and is the result you should return unless a whole-artifact defect actually survives. Returning CONCERNS is a claim that a specific named thing is still broken — not that the artifact could be more thorough. End your final message with exactly one line: AUDIT: PASS or AUDIT: CONCERNS (CONCERNS only if at least one [P1], or two or more [P2], survive).`;
 }
 
 export function buildRetryPrompt(mode) {
@@ -120,9 +120,9 @@ End your final message with exactly one line: VERDICT: APPROVED or VERDICT: REVI
 
 /** @param {string} pinnedRange @param {string[]} undiffable @returns {string} */
 export function buildDiffAuditPrompt(pinnedRange, undiffable = []) {
-  return `You are performing a final holistic audit of the change \`${pinnedRange}\`. A separate detailed review has already gone through it hunk by hunk; your job is NOT another line-by-line pass. Run \`${DIFF_CMD(pinnedRange)}\` and assess the change AS A WHOLE: does it hang together, does it do what its code implies consistently across every file it touches, are there systemic risks or incoherences that only appear when reading it end to end, and is anything load-bearing missing entirely (an error path, a test, a caller not updated)? Report at most 5 findings, whole-change in scope, same [P1]/[P2]/[P3] tagging.${undiffableNote(undiffable)}
+  return `You are performing a final holistic audit of the change \`${pinnedRange}\`. A separate detailed review has already gone through it hunk by hunk; your job is NOT another line-by-line pass. Run \`${DIFF_CMD(pinnedRange)}\` and assess the change AS A WHOLE: does it hang together, does it do what its code implies consistently across every file it touches, are there systemic risks or incoherences that only appear when reading it end to end, and is anything load-bearing missing entirely (an error path, a test, a caller not updated)? Report at most 5 findings, whole-change in scope, same [P1]/[P2]/[P3] tagging. A [P1] is a defect that makes the change fail on a scenario you can name; a [P2] is a defect you can name that degrades rather than breaks. Anything you cannot tie to a named failure scenario is not a finding — omit it entirely rather than tagging it [P3]. The detailed review has already run: AUDIT: PASS with zero findings is the expected outcome for a change that survived it, and is the result you should return unless a whole-change defect actually survives. Returning CONCERNS is a claim that a specific named thing is still broken — not that the change could be more thorough.${undiffableNote(undiffable)}
 
-End your final message with exactly one line: AUDIT: PASS or AUDIT: CONCERNS.`;
+End your final message with exactly one line: AUDIT: PASS or AUDIT: CONCERNS (CONCERNS only if at least one [P1], or two or more [P2], survive).`;
 }
 
 const DEFAULT_TIMEOUT_S = 300;
@@ -319,7 +319,13 @@ export function resolveDiff(repoRoot, range, limits) {
   return { text, pinnedRange, base, head, lines, bytes, files, undiffable };
 }
 
-export const OUTCOMES = ["audit-pass", "audit-concerns-user-approved", "audit-concerns-dismissed", "cap-revise", "aborted"];
+// `audit-concerns-unattended` exists because `audit-concerns-user-approved` was
+// being written by background runs where no user was ever asked — 86 of 141
+// chains carried that label, and sampling showed the block rule at SKILL.md
+// step 5 was silently bypassed in every unattended session checked. A label
+// asserting a human disposition that never happened corrupts the only success
+// metric this gate has. Unattended runs now close honestly instead.
+export const OUTCOMES = ["audit-pass", "audit-concerns-user-approved", "audit-concerns-dismissed", "audit-concerns-unattended", "cap-revise", "aborted"];
 
 export function logPathDefault() {
   return process.env.CODEX_REVIEW_LOG || joinPath(homedir(), ".claude", "codex-review-log.jsonl");
