@@ -2,7 +2,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, execSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+  realpathSync,
+  symlinkSync,
+} from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -29,9 +38,16 @@ function run(script, payload, dataDir) {
   });
 }
 
-/** Fresh git repo, optionally seeded with named root files. */
+/**
+ * Fresh git repo, optionally seeded with named root files.
+ *
+ * The path is canonicalized to match what `findRepoRoot` records: on macOS
+ * `os.tmpdir()` sits behind the `/var` -> `/private/var` symlink, so the
+ * lexical path a test holds and the real path production stores are different
+ * strings for the same directory.
+ */
 function mkRepo(files = []) {
-  const dir = mkdtempSync(path.join(tmpdir(), "dm-repo-"));
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "dm-repo-")));
   execFileSync("git", ["init", "-q"], { cwd: dir });
   for (const f of files) writeFileSync(path.join(dir, f), "x");
   return dir;
@@ -168,4 +184,73 @@ test("edit outside any git repo → silent", (t) => {
   const dataDir = mkDataDir(t);
   run(markScript, { session_id: "s12", tool_name: "Edit", tool_input: { file_path: path.join(dir, "x.ts") } }, dataDir);
   assert.ok(!existsSync(path.join(dataDir, "source-edits-s12.txt")));
+});
+
+// --- regressions found by cross-provider diff review, 2026-08-03 ---
+
+test("extension-less config does not arm the nudge", (t) => {
+  // `path.extname` is "" for all of these, so a deny-list keyed on extension
+  // alone lets config-only work spend the repo's single offer.
+  const repo = mkRepo(["CLAUDE.md"]);
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const dataDir = mkDataDir(t);
+  for (const f of [".env", ".gitignore", "Dockerfile", "Makefile", "LICENSE"]) {
+    run(markScript, { session_id: "s13", tool_name: "Write", tool_input: { file_path: path.join(repo, f) } }, dataDir);
+  }
+  assert.ok(
+    !existsSync(path.join(dataDir, "source-edits-s13.txt")),
+    "config-only work must not count as source work",
+  );
+});
+
+test("the same repo reached through a symlink takes the same claim", (t) => {
+  const repo = mkRepo(["CLAUDE.md"]);
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const linkDir = realpathSync(mkdtempSync(path.join(tmpdir(), "dm-link-")));
+  t.after(() => rmSync(linkDir, { recursive: true, force: true }));
+  const link = path.join(linkDir, "alias");
+  symlinkSync(repo, link);
+  const dataDir = mkDataDir(t);
+
+  mkdirSync(path.join(repo, "src"), { recursive: true });
+  run(markScript, { session_id: "s14", tool_name: "Edit", tool_input: { file_path: path.join(repo, "src/a.ts") } }, dataDir);
+  run(markScript, { session_id: "s14", tool_name: "Edit", tool_input: { file_path: path.join(link, "src/b.ts") } }, dataDir);
+
+  const lines = readFileSync(path.join(dataDir, "source-edits-s14.txt"), "utf8")
+    .split("\n")
+    .filter(Boolean);
+  assert.deepEqual(lines, [repo], "the alias must resolve to one repo, not two");
+});
+
+test("a CONTEXT.md written after Stop silences the offer and keeps the claim unspent", (t) => {
+  const repo = mkRepo(["CLAUDE.md"]);
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const dataDir = mkDataDir(t);
+  const flag = editAndStop(repo, "s15", dataDir);
+  assert.ok(existsSync(flag), "precondition: the Stop hook flagged this repo");
+
+  // The user creates it themselves during the turn boundary.
+  writeFileSync(path.join(repo, "CONTEXT.md"), "# Glossary\n");
+
+  const out = run(consumeScript, { session_id: "s15" }, dataDir);
+  assert.equal(out.trim(), "", "must not claim a file it can see exists");
+  assert.ok(
+    !existsSync(claimPath(dataDir, repo)),
+    "an offer never made must not spend the one-per-repo claim",
+  );
+});
+
+test("a deeply nested edit still finds the repo root", (t) => {
+  // A fixed 64-iteration bound spent its final pass on the leaf and returned
+  // null without ever testing the root.
+  const repo = mkRepo(["CLAUDE.md"]);
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const dataDir = mkDataDir(t);
+  const deep = path.join(repo, ...Array.from({ length: 70 }, (_, i) => `d${i}`));
+  mkdirSync(deep, { recursive: true });
+  run(markScript, { session_id: "s16", tool_name: "Edit", tool_input: { file_path: path.join(deep, "app.ts") } }, dataDir);
+  const lines = readFileSync(path.join(dataDir, "source-edits-s16.txt"), "utf8")
+    .split("\n")
+    .filter(Boolean);
+  assert.deepEqual(lines, [repo]);
 });

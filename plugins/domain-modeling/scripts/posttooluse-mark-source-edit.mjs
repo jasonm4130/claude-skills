@@ -47,7 +47,12 @@ const filePath =
       : null;
 if (!filePath) process.exit(0);
 
-if (NON_SOURCE_EXT.has(path.extname(filePath).toLowerCase())) process.exit(0);
+// An extension-less file is config, not domain source: `path.extname` returns
+// "" for every dotfile and for bare names alike (`.env`, `.gitignore`,
+// `Dockerfile`, `Makefile`, `LICENSE`), so without this they all slip past the
+// deny-list below and arm an offer that can only ever be made once.
+const ext = path.extname(filePath).toLowerCase();
+if (ext === "" || NON_SOURCE_EXT.has(ext)) process.exit(0);
 
 const repoRoot = findRepoRoot(path.dirname(path.resolve(filePath)));
 if (!repoRoot) process.exit(0);

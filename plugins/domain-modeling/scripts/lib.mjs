@@ -3,7 +3,7 @@
 // Duplicated surface mirrors plugins/ship-gate/scripts/lib.mjs — CC plugins
 // can't share files across plugin boundaries, so the duplication is intentional.
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
@@ -111,13 +111,31 @@ export function repoClaimPath(dataDir, repo) {
 /**
  * Walk up from `start` to the nearest directory containing `.git` (a dir for a
  * normal clone, a file for a worktree/submodule). Returns null if none found.
+ *
+ * The result is canonicalized, because the repo root is what `repoClaimPath`
+ * hashes into the one-per-repo claim. Reaching the same checkout through a
+ * symlink (`/tmp/repo-link` -> `/work/repo`) otherwise yields two different
+ * digests, and a guarantee that reads "once per repo, ever" quietly becomes
+ * once per path spelling.
  * @param {string} start absolute path to a file or directory
  * @returns {string | null}
  */
 export function findRepoRoot(start) {
   let dir = path.resolve(start);
-  // Guard against a runaway loop on exotic filesystems.
-  for (let i = 0; i < 64; i++) {
+  try {
+    dir = realpathSync(dir);
+  } catch {
+    // The directory may not exist yet (a Write creating a new tree). A lexical
+    // path is still worth walking — it just doesn't get the symlink guarantee.
+  }
+  // `path.dirname` is pure string manipulation, so this converges on the
+  // filesystem root on its own; the bound is belt-and-braces against an exotic
+  // path that never reduces. It is derived from the path's own depth rather
+  // than fixed, because a fixed bound is a silent miss for anything deeper: at
+  // exactly 64 levels the old limit spent its last iteration on the leaf and
+  // returned null without ever testing the root.
+  const limit = dir.split(path.sep).length + 1;
+  for (let i = 0; i < limit; i++) {
     if (existsSync(path.join(dir, ".git"))) return dir;
     const parent = path.dirname(dir);
     if (parent === dir) return null;

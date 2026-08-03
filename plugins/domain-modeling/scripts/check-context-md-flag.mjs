@@ -38,6 +38,19 @@ try {
   // best-effort — fire-once is desirable but a failed unlink shouldn't block emission
 }
 
+// Re-check the condition before speaking. The flag was written at Stop, and the
+// user gets a whole turn boundary to act before their next prompt arrives — long
+// enough to create the CONTEXT.md themselves. Emitting on the stale flag would
+// tell them a file they just wrote doesn't exist, and would spend the permanent
+// one-per-repo claim to say it.
+if (
+  !existsSync(path.join(repo, "CLAUDE.md")) ||
+  existsSync(path.join(repo, "CONTEXT.md")) ||
+  existsSync(path.join(repo, "CONTEXT-MAP.md"))
+) {
+  process.exit(0);
+}
+
 // Burn the one ask now that it is actually reaching the user. O_CREAT|O_EXCL is
 // what makes "once per repo" hold: two sessions in the same repo can both carry
 // a flag here, and only the one that creates the claim gets to speak.
