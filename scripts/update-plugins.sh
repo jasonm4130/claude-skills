@@ -24,24 +24,48 @@ claude plugin marketplace update "$MARKETPLACE" >/dev/null
 
 [ -f "$META" ] || { echo "marketplace metadata not found: $META" >&2; exit 1; }
 
-updated=0
+# Every fetched payload currently in the cache, as "name<TAB>version".
+#
+# The summary is computed by diffing this before and after, rather than by
+# counting update calls, because one call is not one plugin. `claude plugin
+# update <name>` refreshes the whole marketplace payload, so a single invocation
+# can land several plugins at once — measured 2026-08-03: design-gate-guard 0.2.2
+# and workflow-model-guard 0.4.2 both appeared at 11:16:02 from one call, and the
+# loop below then skipped workflow-model-guard as already-current. Counting calls
+# reported "Fetched 1 update(s)" for two updated plugins, which is exactly the
+# wrong direction for a tool you consult to answer "did my plugin update?".
+snapshot() {
+  find "$CACHE" -mindepth 2 -maxdepth 2 -type d 2>/dev/null \
+    | sed "s|^$CACHE/||" \
+    | tr '/' '\t' \
+    | sort
+}
+
+before=$(snapshot)
+
 # For each plugin the (refreshed) marketplace offers: if it's installed and the
 # available version's cache dir doesn't exist yet, fetch it. Keying off the version
-# dir avoids parsing/among-versions guessing — it's the fetched-payload marker.
+# dir avoids parsing/among-versions guessing — it's the fetched-payload marker, and
+# it also means a plugin already pulled in by an earlier call costs nothing here.
 while IFS=$'\t' read -r name avail; do
   [ -d "$CACHE/$name" ] || continue          # not installed → skip
   [ -d "$CACHE/$name/$avail" ] && continue    # available version already fetched → current
   echo "Updating $name → $avail"
-  if claude plugin update "${name}@${MARKETPLACE}" >/dev/null; then
-    updated=$((updated + 1))
-  else
-    echo "  (update failed for $name)" >&2
-  fi
+  claude plugin update "${name}@${MARKETPLACE}" >/dev/null \
+    || echo "  (update failed for $name)" >&2
 done < <(jq -r '.plugins[] | "\(.name)\t\(.version)"' "$META")
 
-if [ "$updated" -eq 0 ]; then
+fetched=$(comm -13 <(printf '%s\n' "$before") <(snapshot))
+
+if [ -z "$fetched" ]; then
   echo "All installed plugins already current — nothing to fetch."
 else
   echo
-  echo "Fetched $updated update(s). Now run /reload-plugins in your Claude Code session to apply."
+  # Name every plugin that actually landed, not just how many. A failed update
+  # cannot show up here: nothing was written, so nothing appears in the diff.
+  while IFS=$'\t' read -r name version; do
+    [ -n "$name" ] && echo "  $name → $version"
+  done <<< "$fetched"
+  echo
+  echo "Fetched $(grep -c . <<< "$fetched") update(s). Now run /reload-plugins in your Claude Code session to apply."
 fi
