@@ -91,9 +91,12 @@ a new version:
   marketplace metadata), then **either** open `/plugin` and update from the menu, **or**
   run `claude plugin update <name>@jasonm4130-claude-skills` (restart to apply).
 
-Two traps worth knowing: `/reload-plugins` only re-reads the *installed* cache — it does
-**not** fetch new versions; and a bare `/plugin install <name>@jasonm4130-claude-skills`
-**no-ops** when the plugin is already installed.
+Three traps worth knowing: `/reload-plugins` only re-reads the *installed* cache — it does
+**not** fetch new versions; a bare `/plugin install <name>@jasonm4130-claude-skills`
+**no-ops** when the plugin is already installed; and `claude plugin update <name>` is not
+scoped to that name — it refreshes the whole marketplace payload, so one call can pull
+several plugins at once. `update-plugins.sh` reports what actually landed in the cache
+rather than how many calls it made, so its summary stays accurate either way.
 
 ## Releasing (maintainer)
 
