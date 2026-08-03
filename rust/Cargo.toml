@@ -21,11 +21,17 @@ serde_json = "1"
 # the JS original's two negative lookaheads were removed without changing what
 # they match.
 #
-# Known, accepted divergence from JS: regex-lite's `\w`/`\s`/`\b` and its
-# case-insensitive folding are ASCII-only. JS `\w` is ASCII-only too and every
-# pattern here is ASCII, so the only reachable difference is exotic Unicode
-# whitespace inside a quoted token — which the tokenizer has already handled as
-# token content by that point.
+# Divergence from JS to keep in mind: regex-lite's `\w`/`\s`/`\b` and its
+# case-insensitive folding are ASCII-only, while JS `\s` is not.
+#
+# This was once recorded here as accepted-and-unreachable, on the grounds that
+# exotic Unicode whitespace only ever appears inside a quoted token the tokenizer
+# has already consumed. That holds for design_gate.rs, which tokenizes before
+# matching. It does NOT hold for workflow_model.rs, which matches raw script
+# text — and that guard was silently allowing fan-out scripts whose `agent (`
+# calls were separated by U+00A0. Patterns there now spell the JS `\s` set out
+# explicitly (see `JS_WS`); `\w` and `\b` remain ASCII-only, which is faithful
+# because JS `\w`/`\b` are ASCII-only too.
 regex-lite = "0.1"
 
 [profile.release]

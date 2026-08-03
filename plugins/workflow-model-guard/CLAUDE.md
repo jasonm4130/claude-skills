@@ -109,13 +109,21 @@ both, or the guard double-fires. Re-verify after major Claude Code upgrades.
 Both hooks now run a committed Rust binary, with the `.mjs` as fallback:
 
 ```
-"${CLAUDE_PLUGIN_ROOT}/bin/ccguard" agent-model    || node "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs"
-"${CLAUDE_PLUGIN_ROOT}/bin/ccguard" workflow-model || node "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs"
+"${CLAUDE_PLUGIN_ROOT}/bin/ccguard" agent-model    "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs"    || node "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs"
+"${CLAUDE_PLUGIN_ROOT}/bin/ccguard" workflow-model "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs" || node "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs"
 ```
 
-35.7ms → 3.1ms on the Agent guard, which fires on every dispatch. The binary exits
-non-zero only when it cannot execute at all (127 missing, 126 wrong architecture),
-so Linux and Intel Macs fall through to the node path and behave identically.
+35.7ms → 3.1ms on the Agent guard, which fires on every dispatch.
+
+The `.mjs` path appears twice on purpose, covering two different failures. The
+`||` catches a binary that never executes (127 missing, 126 wrong architecture),
+where stdin is untouched and node just reads the payload — that is what keeps
+Linux and Intel Macs working. The **argv** catches a binary that ran but hit a
+payload it cannot represent, where the `||` is useless because stdin has already
+been drained and a shell cannot rewind a pipe; the binary spawns node itself and
+forwards the answer. Since 0.4.2 — before it, an `$HOME`-less environment made the
+Agent guard deny dispatches node allows, with no way to hand the question over.
+Details in `rust/README.md`.
 
 **The `.mjs` files are not dead code — do not delete them.** They are both the
 fallback and the reference implementation that

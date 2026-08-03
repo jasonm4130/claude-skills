@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ccguard\" workflow-model || node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs\"",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ccguard\" workflow-model \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs\" || node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs\"",
             "timeout": 5
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ccguard\" agent-model || node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs\"",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ccguard\" agent-model \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs\" || node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs\"",
             "timeout": 5
           }
         ]

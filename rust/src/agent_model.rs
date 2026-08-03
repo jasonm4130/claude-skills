@@ -73,18 +73,20 @@ fn find_definition(dir: &Path, agent_type: &str) -> Option<Frontmatter> {
     by_filename
 }
 
-pub fn run(payload: Option<Value>) {
+pub fn run(payload: Option<Value>) -> hook::Outcome {
     // Only guard the Agent tool. (The legacy "Task" matcher also fires for Agent
     // calls, so hooks.json registers this under "Agent" only — never both.)
-    let Some(payload) = payload else { return };
+    let Some(payload) = payload else {
+        return hook::Outcome::Handled;
+    };
     if hook::top_str(&payload, "tool_name") != Some("Agent") {
-        return;
+        return hook::Outcome::Handled;
     }
 
     // Explicit tier — any value, including opus/fable — means the choice was
     // deliberate. Setting it IS the ack; there is no separate marker.
     if hook::nested_str(&payload, "tool_input", "model").is_some_and(|m| !m.is_empty()) {
-        return;
+        return hook::Outcome::Handled;
     }
 
     let agent_type = hook::nested_str(&payload, "tool_input", "subagent_type").unwrap_or("");
@@ -92,7 +94,7 @@ pub fn run(payload: Option<Value>) {
     // Forks always inherit the parent model; the model param is ignored for them,
     // so a deny could never be resolved.
     if agent_type == "fork" {
-        return;
+        return hook::Outcome::Handled;
     }
 
     // A custom definition with a pinned frontmatter model resolves cheap on its
@@ -103,18 +105,41 @@ pub fn run(payload: Option<Value>) {
         if let Some(cwd) = hook::top_str(&payload, "cwd").filter(|c| !c.is_empty()) {
             dirs.push(Path::new(cwd).join(".claude").join("agents"));
         }
-        if let Some(home) = std::env::var_os("HOME") {
+
+        // `$HOME` is how node's `os.homedir()` answers too — but only when it is
+        // set. With it unset, `os.homedir()` falls back to the passwd database
+        // and still finds `~/.claude/agents`, while this program has no way to
+        // ask without linking libc. Reading no user definitions is not a neutral
+        // outcome: it turns a pinned `model: sonnet` into a deny node would not
+        // issue. Note it and decline below rather than answer differently.
+        let home = std::env::var_os("HOME");
+        let home_unreadable = home.is_none();
+        if let Some(home) = home {
             dirs.push(Path::new(&home).join(".claude").join("agents"));
         }
+
+        let mut resolved_inheriting = false;
         for dir in dirs {
             if let Some(fm) = find_definition(&dir, agent_type) {
                 match fm.model.as_deref() {
-                    Some(m) if !m.is_empty() && m != "inherit" => return,
+                    Some(m) if !m.is_empty() && m != "inherit" => return hook::Outcome::Handled,
                     // First resolving definition decides; it inherits → fall
                     // through to deny.
-                    _ => break,
+                    _ => {
+                        resolved_inheriting = true;
+                        break;
+                    }
                 }
             }
+        }
+
+        // Decline only when the deny would be a guess: no definition resolved in
+        // any directory we could read, AND there is a directory we could not.
+        // A definition that resolved and said "inherit" has already decided the
+        // question — the unreadable user dir is lower precedence and could not
+        // have overturned it.
+        if home_unreadable && !resolved_inheriting {
+            return hook::Outcome::Declined;
         }
     }
 
@@ -133,6 +158,7 @@ frontier reasoning. An explicit model always passes this guard."
     );
 
     hook::emit_permission_decision("deny", &reason);
+    hook::Outcome::Handled
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 {
   "name": "design-gate-guard",
   "description": "PreToolUse Bash gate for the brainstorming HARD-GATE — asks the user before a new-project scaffold command (npm create vite, create-next-app, cargo new, rails new, django-admin startproject, …) so the model can't jump to implementation before a design is approved. Stateless and fail-open; add design-gate:ack to the command to proceed after approval.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "author": {
     "name": "Jason Matthew"
   },

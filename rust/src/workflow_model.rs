@@ -29,18 +29,37 @@ struct Signals {
     loopy: bool,
 }
 
+/// JavaScript's `\s`, spelled out.
+///
+/// `regex-lite`'s `\s` is ASCII-only; JS's is not, and the gap is reachable here.
+/// This guard regexes RAW SCRIPT TEXT — unlike `design_gate`, which tokenizes
+/// first and has therefore already consumed exotic whitespace as token content by
+/// the time any pattern runs. `Cargo.toml` originally recorded the ASCII-only
+/// divergence as unreachable on the strength of that tokenizer argument; the
+/// argument is sound for the guard it was written about and does not extend to
+/// this one. Cross-family review caught it: `await agent\u{a0}("x")` four times
+/// counted as zero `agent()` calls here and four in node, so node denied the
+/// fan-out and the binary allowed it.
+///
+/// Written as Rust escapes so the regex engine only ever sees literal characters
+/// — `regex-lite` need not interpret any Unicode escape syntax of its own. The set
+/// is ECMA-262 `WhiteSpace` ∪ `LineTerminator`, which is exactly what JS `\s`
+/// matches.
+const JS_WS: &str = "[\t\n\u{b}\u{c}\r \u{a0}\u{1680}\u{2000}-\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}\u{feff}]";
+
 /// `agent_count` is a static lower bound: loops and `.map()` over items mean the
 /// real spawn count is higher, so fan-out/loop presence is the stronger cue.
 fn signals(script: &str) -> Signals {
-    let agent_count = Regex::new(r"\bagent\s*\(")
+    let agent_count = Regex::new(&format!(r"\bagent{JS_WS}*\("))
         .map(|re| re.find_iter(script).count())
         .unwrap_or(0);
 
     let fanout = script.contains("parallel(") || script.contains("pipeline(");
 
     let matches = |p: &str| Regex::new(p).is_ok_and(|re| re.is_match(script));
-    let loopy =
-        matches(r"\bwhile\s*\(") || matches(r"\bfor\s*\(") || script.contains("budget.remaining");
+    let loopy = matches(&format!(r"\bwhile{JS_WS}*\("))
+        || matches(&format!(r"\bfor{JS_WS}*\("))
+        || script.contains("budget.remaining");
 
     Signals {
         agent_count,
@@ -66,7 +85,14 @@ fn describe(s: &Signals) -> String {
     parts.join(" + ")
 }
 
-pub fn run(payload: Option<Value>) {
+pub fn run(payload: Option<Value>) -> hook::Outcome {
+    decide(payload);
+    // Script inspection is self-contained — no environment lookups, no encoding
+    // this program cannot represent (bad bytes are decoded lossily, as node does).
+    hook::Outcome::Handled
+}
+
+fn decide(payload: Option<Value>) {
     // Only guard the Workflow tool. Anything else → proceed normally.
     let Some(payload) = payload else { return };
     if hook::top_str(&payload, "tool_name") != Some("Workflow") {
@@ -120,7 +146,8 @@ editable script). Cheaper: switch this session to Sonnet \
     // Bypass 1: any `model:` means Claude already weighed tiers (even one override
     // counts). Bypass 2: explicit ack that all-Opus is intended — prevents an
     // infinite deny loop.
-    let has_model = Regex::new(r"\bmodel\s*:").is_ok_and(|re| re.is_match(&script));
+    let has_model =
+        Regex::new(&format!(r"\bmodel{JS_WS}*:")).is_ok_and(|re| re.is_match(&script));
     if has_model || script.contains("model-guard:ack") {
         return;
     }
