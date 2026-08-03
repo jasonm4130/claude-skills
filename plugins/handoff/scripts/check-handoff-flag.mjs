@@ -10,7 +10,7 @@ import {
   readStdin,
   safeJsonParse,
   resolveSessionId,
-  resolveDataDir,
+  dataDirCandidates,
   emitAdditionalContext,
 } from "./lib.mjs";
 
@@ -22,10 +22,13 @@ import {
 const raw = await readStdin();
 const parsed = /** @type {UserPromptSubmitInput | null} */ (safeJsonParse(raw));
 const sid = resolveSessionId(parsed);
-const dataDir = resolveDataDir("handoff-data");
-const flagFile = path.join(dataDir, `handoff-nudge-${sid}.flag`);
+// The statusLine writer and this hook resolve different data dirs in production
+// (see dataDirCandidates in lib.mjs), so look in every candidate, not just ours.
+const flagFile = dataDirCandidates("handoff-data")
+  .map((dir) => path.join(dir, `handoff-nudge-${sid}.flag`))
+  .find((p) => existsSync(p));
 
-if (!existsSync(flagFile)) {
+if (flagFile === undefined) {
   process.exit(0);
 }
 
@@ -47,8 +50,11 @@ try {
 const match = flagContent.match(/context at (\d+)%/);
 const pct = match ? match[1] : "?";
 
+// Name the skill plugin-qualified. An unqualified "the handoff skill" is a name
+// the model guesses — `Skill(handoff)` resolves to "Unknown skill: handoff",
+// which is exactly how the session-retro nudge failed 4 times before its fix.
 const context =
   Number(pct) >= 85
-    ? `[handoff] Context at ${pct}% — run the handoff skill NOW, then tell the user to /clear and resume from the handoff. Do not start new work.`
-    : `[handoff] Context at ${pct}% (past threshold). Wrap the current step, then run the handoff skill before starting anything new; suggest /clear to the user.`;
+    ? `[handoff] Context at ${pct}% — run the handoff:handoff skill NOW, then tell the user to /clear and resume from the handoff. Do not start new work.`
+    : `[handoff] Context at ${pct}% (past threshold). Wrap the current step, then run the handoff:handoff skill before starting anything new; suggest /clear to the user.`;
 emitAdditionalContext("UserPromptSubmit", context);

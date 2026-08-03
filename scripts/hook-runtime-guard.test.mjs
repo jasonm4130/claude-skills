@@ -31,10 +31,31 @@
 //
 // Revisit only when the oldest Claude Code worth supporting is >= 2.1.139, or when a
 // real minimum-version mechanism ships. Then delete this test with the migration.
+//
+// ---------------------------------------------------------------------------
+// ccguard (2026-08-03): the compiled guards do NOT change the above.
+//
+// `design-gate-guard` and `workflow-model-guard` now run a committed Rust binary
+// (`bin/ccguard <subcommand>`) with `|| node "…/scripts/….mjs"` as fallback. That
+// is still shell form — the shell is what evaluates the `||` — so every argument
+// above continues to apply unchanged.
+//
+// Worth noting for whoever revisits this: the failure mode in point 2 is specific
+// to node being an *interpreter taking a script argument*. A binary invoked
+// directly has no analogue, because there is no source-code-as-payload step to
+// degrade into. So a full migration away from node would dissolve this test's
+// central problem rather than work around it — but only once no hook shells out
+// to node at all, which is not the case today.
+//
+// The fallback's residual risk, accepted: if the binary were to emit output and
+// *then* fail, node would run too and stdout would carry two envelopes. The
+// binary writes only at the very end of a decision and the release profile sets
+// `panic = "abort"`, so there is no partial-output-then-nonzero-exit path.
+// ---------------------------------------------------------------------------
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -70,14 +91,34 @@ test("no hook uses exec form (`args`) — unsupported before Claude Code 2.1.139
   );
 });
 
-test("every hook command points at a script that exists", () => {
+test("every hook command points at a target that exists", () => {
+  // ALL plugin-root references, not just the first: a command may name both a
+  // compiled binary and its `.mjs` fallback (see the ccguard note in the header),
+  // and checking only the head would leave the fallback path unverified — which
+  // is precisely the path that runs when something has already gone wrong.
   for (const { plugin, event, hook } of allHooks()) {
     const command = hook.command;
     if (typeof command !== "string") continue;
-    const m = /\$\{CLAUDE_PLUGIN_ROOT\}\/(\S+?\.mjs|\S+?)"/.exec(command);
-    if (!m) continue;
-    const target = join(pluginsDir, plugin, m[1]);
-    assert.ok(existsSync(target), `${plugin} ${event}: hook targets missing file ${target}`);
+    for (const m of command.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"]+)"/g)) {
+      const target = join(pluginsDir, plugin, m[1]);
+      assert.ok(existsSync(target), `${plugin} ${event}: hook targets missing file ${target}`);
+    }
+  }
+});
+
+test("every committed hook binary is executable", () => {
+  // git tracks the +x mode bit, so this survives clone — but a binary added
+  // without it produces a "Permission denied" exit 126, which the `||` fallback
+  // silently swallows into the slow node path. Silent is the problem: the guard
+  // would still work and nobody would notice the binary was dead weight.
+  for (const plugin of readdirSync(pluginsDir)) {
+    const binDir = join(pluginsDir, plugin, "bin");
+    if (!existsSync(binDir)) continue;
+    for (const entry of readdirSync(binDir)) {
+      const target = join(binDir, entry);
+      const mode = statSync(target).mode;
+      assert.ok(mode & 0o111, `${plugin}: bin/${entry} is not executable (mode ${mode.toString(8)})`);
+    }
   }
 });
 

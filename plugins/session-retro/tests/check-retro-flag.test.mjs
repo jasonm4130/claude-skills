@@ -133,7 +133,7 @@ test("compact imminent flag: emits [session-retro] context immediately", async (
   const ac = parsed.hookSpecificOutput.additionalContext;
   assert.match(ac, /\[session-retro\]/);
   assert.match(ac, /compact imminent/);
-  assert.match(ac, /Run the retro skill now/);
+  assert.match(ac, /Run the session-retro:retro skill now/);
 });
 
 test("no flag, no worthy log: silent exit (no stdout)", async (t) => {
@@ -167,7 +167,7 @@ test("batch nudge fires: 3 worthy, no last-retro, no recent batch nudge", async 
   const parsed = JSON.parse(stdout);
   assert.match(
     parsed.hookSpecificOutput.additionalContext,
-    /\[session-retro\] 3 retro-worthy sessions .* Run the retro skill now/,
+    /\[session-retro\] 3 retro-worthy sessions .* Run the session-retro:retro skill now/,
   );
   assert.match(
     parsed.hookSpecificOutput.additionalContext,

@@ -388,3 +388,76 @@ test("docs-sync: the exemption is not a bypass — real code in the same commit 
     r.cleanup();
   }
 });
+
+// ---- quoted paths containing spaces (2026-08-03) ----
+//
+// `pathsFromGitAdd` split the add segment on bare whitespace, so a quoted path
+// containing a space fragmented. `git add "Daily/2026-08-03 - Daily.md"` became
+// `Daily/2026-08-03` + `-` + `Daily.md"`: the `-` was dropped as a flag,
+// `Daily.md` passed the markdown skip, and the extensionless `Daily/2026-08-03`
+// was treated as CODE — denying an ordinary markdown-only commit. Found for real
+// on an Obsidian vault, where every daily note has a space in its name.
+
+test("docs-sync: a quoted markdown path containing spaces is still markdown", () => {
+  const r = repo({ "Daily/2026-08-03 - Daily.md": "note", "README.md": "d" }, []);
+  try {
+    const cmd = 'git add "Daily/2026-08-03 - Daily.md" && git commit -m "note"';
+    assert.equal(run(bash(cmd, r.root)).stdout.trim(), "", "markdown-only commit must pass");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("docs-sync: single-quoted and backslash-escaped spaces are handled too", () => {
+  const r = repo({ "My Docs/a b.md": "x", "README.md": "d" }, []);
+  try {
+    for (const cmd of [
+      `git add 'My Docs/a b.md' && git commit -m "x"`,
+      `git add My\\ Docs/a\\ b.md && git commit -m "x"`,
+    ]) {
+      assert.equal(run(bash(cmd, r.root)).stdout.trim(), "", `should pass: ${cmd}`);
+    }
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("docs-sync: a commit mentioned inside a heredoc body is not a commit", () => {
+  // Text being written to a file is not a command. Without stripping, writing a
+  // README that documents `git add x && git commit` denies the write itself.
+  const r = repo({ "src/main.js": "x", "README.md": "d" }, ["src/main.js"]);
+  try {
+    const cmd = "cat >> notes.md <<'EOF'\ngit add src/main.js && git commit -m x\nEOF";
+    assert.equal(run(bash(cmd, r.root)).stdout.trim(), "", "heredoc body must not trigger the gate");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("docs-sync: a real commit AFTER a heredoc terminator still denies", () => {
+  // Guard against over-correction: stripping the body must not swallow the
+  // commands that follow it.
+  const r = repo({ "src/main.js": "x", "README.md": "d" }, ["src/main.js"]);
+  try {
+    const cmd = "cat <<EOF\nhello\nEOF\ngit commit -m x";
+    const d = parseDecision(run(bash(cmd, r.root)).stdout);
+    assert.equal(d.permissionDecision, "deny");
+    assert.match(d.permissionDecisionReason, /src\/main\.js/);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("docs-sync: a quoted CODE path with spaces is still caught", () => {
+  // Guard against over-correction: fixing the split must not make the gate blind
+  // to real code whose path happens to contain a space.
+  const r = repo({ "My Code/app.js": "x", "README.md": "d" }, []);
+  try {
+    const cmd = 'git add "My Code/app.js" && git commit -m "x"';
+    const d = parseDecision(run(bash(cmd, r.root)).stdout);
+    assert.equal(d.permissionDecision, "deny");
+    assert.match(d.permissionDecisionReason, /My Code\/app\.js/);
+  } finally {
+    r.cleanup();
+  }
+});

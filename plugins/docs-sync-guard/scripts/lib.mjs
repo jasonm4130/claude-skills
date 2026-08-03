@@ -192,9 +192,13 @@ export function resolveSessionId(payload) {
  * @param {string} additionalContext
  */
 export function emitAdditionalContext(eventName, additionalContext) {
-  process.stdout.write(
-    JSON.stringify({ hookSpecificOutput: { hookEventName: eventName, additionalContext } }) + "\n",
-  );
+  const payload = {
+    hookSpecificOutput: {
+      hookEventName: eventName,
+      additionalContext,
+    },
+  };
+  process.stdout.write(JSON.stringify(payload) + "\n");
 }
 
 /**

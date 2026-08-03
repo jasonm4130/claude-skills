@@ -7,7 +7,10 @@ Two mechanisms against docs drift, sited by how confident each can be:
    "no doc impact" call) happens in the same commit, not never.
 2. **The consolidation trigger** (0.3.0, never blocking) — once a repo has moved far
    enough since anyone last checked its docs *against each other*, an in-session nudge
-   suggests `/docs-consolidate`. Docs that were each updated correctly in isolation
+   suggests the `docs-sync-guard:docs-consolidate` skill (named plugin-qualified in
+   the nudge — a bare name is one the model resolves by guessing, and it guesses
+   wrong; enforced by `scripts/repo-consistency.test.mjs`). Docs that were each
+   updated correctly in isolation
    can still contradict one another.
 
 The split is deliberate. Google sites its false-positive bar by pipeline position:
@@ -49,6 +52,12 @@ What the commit "includes" is the union of already-staged files, paths named in
 `git add` segments of the same compound command, and modified tracked files when
 committing with `-a`. Pathspecs passed directly to `git commit <paths>` are not
 parsed (rare in agent usage).
+
+Paths are split quote-aware, so `git add "My Notes/2026-08-03 - Daily.md"` is one
+path rather than three fragments — without that, a quoted name containing a space
+loses its extension and gets misread as code, denying an ordinary markdown commit.
+Heredoc bodies are stripped before any of this runs: a `cat <<EOF … EOF` block that
+merely *documents* `git commit` is text being written, not a commit.
 
 Never flagged (the explicit not-to-flag list — noise kills commit gates):
 

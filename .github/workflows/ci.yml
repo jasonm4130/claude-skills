@@ -69,6 +69,47 @@ jobs:
       - name: Run SDD bash helper smoke tests
         run: bash plugins/subagent-driven-development/scripts/scripts.test.sh
 
+  rust-guards:
+    # macOS-only by design: the committed binary is arm64 macOS (see rust/README.md).
+    # `macos-latest` is arm64, so this both compiles the crate and is the one runner
+    # where scripts/ccguard-differential.test.mjs actually executes rather than skips.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Cargo unit tests
+        run: cargo test --release --manifest-path rust/Cargo.toml
+      - name: Committed binaries were built from the committed source
+        # The binary is a build artifact living in git because the marketplace has
+        # no build step. That only stays honest if CI proves the committed binary
+        # came from the committed source — otherwise a source edit ships with a
+        # stale binary and every guard silently runs old logic.
+        #
+        # Comparing bytes would NOT work: Rust builds are not bit-reproducible
+        # across toolchain versions or build paths. So compare the source
+        # fingerprint that build.rs bakes in instead — same source, same
+        # fingerprint, whoever compiled it.
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --manifest-path rust/Cargo.toml
+          TARGET=$(cargo metadata --format-version 1 --no-deps --manifest-path rust/Cargo.toml \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).target_directory))')
+          FRESH=$("$TARGET/release/ccguard" --source-fingerprint)
+          echo "fresh build fingerprint: $FRESH"
+          for p in design-gate-guard workflow-model-guard; do
+            GOT=$("plugins/$p/bin/ccguard" --source-fingerprint)
+            if [ "$GOT" != "$FRESH" ]; then
+              echo "::error::plugins/$p/bin/ccguard is stale ($GOT != $FRESH) — rebuild and re-copy it (see rust/README.md)"
+              exit 1
+            fi
+          done
+          echo "committed binaries match the committed source"
+      - name: Differential test against the .mjs reference
+        run: node --test scripts/ccguard-differential.test.mjs
+
   version-bump-check:
     runs-on: ubuntu-latest
     steps:

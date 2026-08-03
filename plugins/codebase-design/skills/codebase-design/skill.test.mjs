@@ -24,7 +24,7 @@ test("defines the deep-module glossary and the deletion test", () => {
 });
 
 test("keeps architecture vocabulary distinct from domain vocabulary", () => {
-  assert.match(s, /domain-modeling|CONTEXT\.md/);
+  assert.match(s, /distinct from \*domain\* vocabulary/);
 });
 
 test("deepening doc classifies dependencies and mandates replace-don't-layer", () => {

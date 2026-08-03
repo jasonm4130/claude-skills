@@ -26,8 +26,9 @@ sub-agent dispatch examples carry explicit model tiers so they satisfy this repo
 
 - **Not `frontend-design` / `claude-design`** — those are *visual/UI* design; this
   is *structural* design.
-- **Not `domain-modeling`** — that maintains the *domain* language (`CONTEXT.md`);
-  this is *architecture* language. Keep them distinct.
+- **Not domain vocabulary** — a project's *domain* language (what the business
+  calls things) is a different axis from *architecture* language (module,
+  interface, seam). Keep them distinct.
 - **Not a bug hunt or quality-cleanup pass** — this is interface/seam design.
 
 ## Files

@@ -1,6 +1,6 @@
 ---
 name: codebase-design
-description: Use when designing or improving a module's interface, finding deepening opportunities, deciding where a seam goes, making code more testable or AI-navigable, or when another skill needs the deep-module vocabulary (module, interface, seam, depth, adapter, leverage, locality). Do NOT use for UI/visual design (use frontend-design) or a pure quality-cleanup pass.
+description: Use when a module is hard to test, a function needs more arguments than it should, one change touches three files that should be one, a caller has to know the callee's internals to use it, or someone asks where a boundary belongs. Also when another skill needs the deep-module vocabulary (module, interface, seam, depth, adapter, leverage, locality). Do NOT use for UI/visual design (use frontend-design), or for a general cleanup pass over a diff.
 ---
 
 # Codebase Design
@@ -104,7 +104,7 @@ Good interfaces make testing natural:
 - An **Adapter** sits at a **Seam** and satisfies the **Interface**.
 - **Depth** produces **Leverage** for callers and **Locality** for maintainers.
 
-This is *architecture* vocabulary. It is distinct from *domain* vocabulary (the `CONTEXT.md` glossary the `domain-modeling` skill maintains) — keep the two apart. When both matter, name a module's interface in domain terms and its shape in these terms.
+This is *architecture* vocabulary. It is distinct from *domain* vocabulary (the `CONTEXT.md` glossary the `domain-modeling` skill maintains) — keep the two apart. When both matter, name a module's interface in domain terms and describe its shape in these terms.
 
 ## Rejected framings
 

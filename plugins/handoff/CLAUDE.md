@@ -46,7 +46,7 @@ handoff/
 ├── scripts/
 │   ├── lib.mjs               — shared stdin/env/flag helpers; concurrency primitives (claimBand/resetBands, acquireInflightLock, cachedTranscriptUsage); adaptive-render helpers (pickContextTokens, shouldResetBands, gitBranchDirty, modelColor/selectRateLimits/tokensSuffix, visibleWidth/truncateEnd/assembleStatusLine)
 │   ├── status-and-flag.mjs   — statusLine: renders the adaptive line via assembleStatusLine and writes the nudge flag at threshold; nudges are idempotent per band (atomic claim marker, not a lock) and the ladder resets on a real decrease in context, not just on dropping below threshold; the overlap guard replays the last render when another invocation is in flight — a performance guard, not a mutex
-│   ├── check-handoff-flag.mjs— UserPromptSubmit: consumes flag → additionalContext
+│   ├── check-handoff-flag.mjs— UserPromptSubmit: consumes flag → additionalContext. Resolves the flag across EVERY candidate data dir (`dataDirCandidates`), because the statusLine writer and this hook do not agree on one — see below
 │   ├── load-pending-handoff.mjs — SessionStart: loads .pending handoff → additionalContext
 │   └── setup.mjs             — one-time helper that wires statusLine into ~/.claude/settings.json
 ├── skills/
@@ -62,6 +62,31 @@ handoff/
 ├── README.md
 └── CLAUDE.md                 — this file
 ```
+
+## The data-dir split (0.10.0)
+
+`status-and-flag.mjs` runs as a top-level `statusLine` command through the
+`~/.claude/handoff-statusline.mjs` wrapper — **not** through the plugin hook
+runtime — so `CLAUDE_PLUGIN_DATA` is never set for it and `resolveDataDir` returns
+the `os.tmpdir()` fallback. `check-handoff-flag.mjs` is a real `UserPromptSubmit`
+hook and does get the env var. Two processes, two directories: the nudge flag was
+written to one and looked for in the other, and the plugin's core feature was
+silently dark from install (2026-05-25) until 0.10.0.
+
+The fix is on the reader: `dataDirCandidates()` returns the ordered candidate dirs
+and `check-handoff-flag.mjs` takes the flag from whichever has it. Writer-internal
+state (band markers, render cache, transcript-usage cache) keeps using
+`resolveDataDir` — it only needs to be self-consistent, never shared.
+
+**Anything new that crosses the statusLine↔hook boundary must use
+`dataDirCandidates`, not `resolveDataDir`.** `docs-sync-guard` hit the same class
+of bug and solved it differently (its defer marker lives in `.git/`); either
+approach works, but a bare `resolveDataDir` on both sides does not.
+
+Nudge text names the skill **plugin-qualified** (`handoff:handoff`). An
+unqualified name is one the model has to guess and it guesses wrong —
+`Skill(handoff)` returns `Unknown skill: handoff`. Enforced repo-wide by
+`scripts/repo-consistency.test.mjs`.
 
 ## Dependencies
 

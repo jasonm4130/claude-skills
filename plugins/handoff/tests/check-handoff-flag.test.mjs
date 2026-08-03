@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
@@ -88,8 +88,60 @@ test("check-handoff-flag: below-85 tier uses 'wrap the current step' wording", a
   assert.equal(result.code, 0);
   const out = JSON.parse(result.stdout);
   const ctx = out.hookSpecificOutput.additionalContext;
-  assert.match(ctx, /\[handoff\].*run the handoff skill/i, `unexpected wording: ${ctx}`);
+  assert.match(ctx, /\[handoff\].*run the handoff:handoff skill/i, `unexpected wording: ${ctx}`);
   assert.match(ctx, /wrap the current step/i, `unexpected wording: ${ctx}`);
+});
+
+// Regression: a nudge must name the skill plugin-qualified. An unqualified name
+// is one the model has to guess, and it guesses wrong — `Skill(handoff)` returns
+// "Unknown skill: handoff". session-retro shipped this exact bug and lost 4
+// nudges to it before anyone noticed.
+test("check-handoff-flag: both tiers name the skill plugin-qualified", async (t) => {
+  const dir = mkTmp();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  for (const [sid, pct] of [["qual-low", 72], ["qual-high", 91]]) {
+    writeFileSync(
+      path.join(dir, `handoff-nudge-${sid}.flag`),
+      `context at ${pct}% (threshold 70%)`,
+    );
+    const result = await run(JSON.stringify({ session_id: sid }), {
+      CLAUDE_PLUGIN_DATA: dir,
+    });
+    const ctx = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
+    assert.match(ctx, /handoff:handoff/, `${sid} lost the qualified name: ${ctx}`);
+    assert.doesNotMatch(
+      ctx,
+      /(?<!:)\bthe handoff skill\b/,
+      `${sid} still names the skill unqualified: ${ctx}`,
+    );
+  }
+});
+
+// Regression for the cross-process dir mismatch: the statusLine writer has no
+// CLAUDE_PLUGIN_DATA and lands on the tmpdir fallback, while this hook does have
+// it. The reader must still find the flag.
+test("check-handoff-flag: reads a flag the writer left in the tmpdir fallback", async (t) => {
+  const readerDir = mkTmp();
+  const writerDir = path.join(os.tmpdir(), "handoff-data");
+  mkdirSync(writerDir, { recursive: true });
+  const sid = "cross-dir-flag";
+  const writerFlag = path.join(writerDir, `handoff-nudge-${sid}.flag`);
+  writeFileSync(writerFlag, "context at 88% (threshold 70%)");
+  t.after(() => {
+    rmSync(readerDir, { recursive: true, force: true });
+    rmSync(writerFlag, { force: true });
+  });
+
+  const result = await run(JSON.stringify({ session_id: sid }), {
+    CLAUDE_PLUGIN_DATA: readerDir,
+  });
+
+  assert.equal(result.code, 0);
+  assert.notEqual(result.stdout.trim(), "", "hook stayed silent — flag not found");
+  const ctx = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
+  assert.match(ctx, /88%/, `unexpected wording: ${ctx}`);
+  assert.equal(existsSync(writerFlag), false, "flag was not consumed");
 });
 
 test("check-handoff-flag: >=85 tier uses urgent NOW/clear wording", async (t) => {

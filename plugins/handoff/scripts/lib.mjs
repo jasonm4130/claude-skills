@@ -70,6 +70,35 @@ export function resolveSessionId(payload) {
 }
 
 /**
+ * Ordered, deduped candidate data directories for a flag that crosses a process
+ * boundary.
+ *
+ * Why this exists: the writer (`status-and-flag.mjs`) runs as a top-level
+ * `statusLine` command via the `~/.claude/handoff-statusline.mjs` wrapper — NOT
+ * through the plugin hook runtime — so `CLAUDE_PLUGIN_DATA` is never set for it
+ * and it lands on the `os.tmpdir()` fallback. The reader
+ * (`check-handoff-flag.mjs`) is a genuine `UserPromptSubmit` hook and DOES get
+ * the env var. Two processes, two different resolved directories, and the nudge
+ * flag never crossed between them: the plugin's core feature was silently dark
+ * from install (2026-05-25) until this was fixed, with orphaned
+ * `handoff-nudge-*.flag` files accumulating in tmpdir while the hook's own
+ * directory stayed empty.
+ *
+ * A reader must therefore check every candidate, not just its own. Writers keep
+ * using `resolveDataDir` — writer-internal state (band markers, render cache)
+ * only needs to be self-consistent.
+ * @param {string} fallbackName
+ * @returns {string[]}
+ */
+export function dataDirCandidates(fallbackName) {
+  const dirs = [];
+  const fromEnv = process.env.CLAUDE_PLUGIN_DATA;
+  if (typeof fromEnv === "string" && fromEnv.length > 0) dirs.push(fromEnv);
+  dirs.push(path.join(os.tmpdir(), fallbackName));
+  return [...new Set(dirs)];
+}
+
+/**
  * Resolve CLAUDE_PLUGIN_DATA, creating the directory if needed.
  * Falls back to `os.tmpdir() + "/<fallbackName>"`.
  * @param {string} fallbackName

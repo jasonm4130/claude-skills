@@ -269,7 +269,7 @@ const reason =
   `design-gate-guard: "${shown}" looks like a new-project scaffold. Per the ` +
   "brainstorming HARD-GATE, don't scaffold or implement until a design has been " +
   "presented and the user has approved it. If you haven't brainstormed a design " +
-  "yet, run the brainstorming skill first. If the design was already approved (or " +
+  "yet, run the superpowers-core:brainstorming skill first. If the design was already approved (or " +
   "this isn't a fresh project), add `design-gate:ack` to the command to proceed.";
 
 emitPermissionDecision("ask", reason);

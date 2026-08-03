@@ -1,6 +1,6 @@
 ---
 name: adr
-description: Use when the user knows what they want built and says "/adr", "write an ADR for X", "decide and build X", or "ADR-driven". Turns an intent into a grounded, cited, build-ready ADR at docs/adr/YYYY-MM-DD-<slug>.md — load-bearing decisions surfaced to the human — then hands off to the subagent-driven-development loop. For exploratory "not sure what I want yet" work use brainstorming first; for visual planning use visual-plan.
+description: Use when the user knows what they want built and says "/adr", "write an ADR for X", "decide and build X", or "ADR-driven". Turns an intent into a grounded, cited, build-ready ADR at docs/adr/YYYY-MM-DD-<slug>.md — load-bearing decisions surfaced to the human — then hands off to the subagent-driven-development loop. For exploratory "not sure what I want yet" work use brainstorming first.
 ---
 
 # ADR-Driven Development (front-end for `adr → sdd`)
@@ -19,8 +19,7 @@ intent → GROUND → ADR (you approve) → SDD loop → you ratify
 **Stay thin.** This skill is a four-phase orchestrator — prose plus the two
 embedded blocks below. The determinism lives in `sdd.mjs`, not here. One ADR doc,
 not a multi-file apparatus. For exploratory "not sure what I want yet" work use
-`brainstorming` first; for visual planning/recaps use `visual-plan` (which keeps
-the visual niche — `adr` carries its own build-oriented template).
+`brainstorming` first.
 
 ## Phase 1 — Ground (scaled)
 
@@ -59,7 +58,7 @@ absent) using the template below.
 # <Title>
 **Status:** Proposed | Accepted | Superseded   **Date:** YYYY-MM-DD
 
-## Context            <!-- grounded; every claim cites a file/symbol or dated source -->
+## Context            <!-- grounded; every LOAD-BEARING claim cites a file/symbol or dated source -->
 ## Decisions          <!-- each load-bearing decision: options + the choice; these bind every task as global constraints -->
 ## Success criteria   <!-- CHECKABLE; each marked oracle-backed or [checker]; this is the loop's done-oracle -->
 ## Consequences       <!-- incl. hard-to-reverse bets / risks -->
@@ -71,6 +70,19 @@ absent) using the template below.
 ### Task 2: <title>
 …
 ```
+
+**Budget the prose.** Everything above `## Decomposition` targets **one page —
+roughly 500 words, hard ceiling 900**. Decomposition is exempt; it scales with the
+work. The reference ADR is a ten-minute one-pager, and an ADR that takes longer to
+write than that is a format fighting its author.
+
+Measured drift this exists to stop: `transcoder/docs/adr/` averages 1,674 words
+per ADR, up to 5,283 — three to ten times the target. The inflation is almost
+entirely citation ceremony, so: cite the claims a reader would otherwise have to
+go verify, not every sentence, and keep `## Grounding sources` to the handful of
+files and dated sources that actually moved the decision. A bibliography is not
+grounding. If a section needs more than its share, that is a signal the decision
+isn't settled yet — go back to Phase 1 rather than writing longer.
 
 ## Phase 3 — Tiered decision gate (human-in-the-loop)
 
@@ -95,8 +107,8 @@ found" guard). Nothing builds from an ADR the loop can't read.
 Resolve the loop and invoke it:
 
 ```bash
-P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.7.0/workflows/sdd.mjs"
-[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.7.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills, or /plugin install subagent-driven-development@jasonm4130-claude-skills if it was never installed"
+P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.8.0/workflows/sdd.mjs"
+[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.8.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills, or /plugin install subagent-driven-development@jasonm4130-claude-skills if it was never installed"
 ```
 
 If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not

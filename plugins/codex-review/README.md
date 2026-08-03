@@ -80,12 +80,14 @@ node plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs stat
    data-destroying) that per-task review structurally cannot see; and a per-task external reviewer pays
    N× the paid-call cost and N× the reviewer's over-rejection surface to catch strictly less. See
    `docs/plans/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md`.
-2. **adversarial-agents persona** — a `codex` persona dispatched via Bash CLI instead of an Agent subagent.
 
-Diff mode has now earned its keep (above), which was the precondition. Neither of these is built yet:
-both put a **paid external call on a hot path** (every SDD run, every panel), so each needs its own
-trial before it goes in — the same discipline that made diff mode worth keeping. Do not wire either into
-an automated gate on the strength of diff mode's numbers alone.
+Diff mode has now earned its keep (above), which was the precondition. This is not built yet: it puts a
+**paid external call on a hot path** (every SDD run), so it needs its own trial before it goes in — the
+same discipline that made diff mode worth keeping. Do not wire it into an automated gate on the strength
+of diff mode's numbers alone.
+
+(A second candidate, an `adversarial-agents` codex persona, is moot — that plugin was retired
+2026-08-03 after zero invocations in ten weeks.)
 
 Not planned: PR-number input (`--pr 34`) — a git range already covers it — and reviewing a diff against
 its plan, which is exactly what the self-assessment redaction rule forbids.

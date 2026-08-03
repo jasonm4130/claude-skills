@@ -84,8 +84,14 @@ pattern the other guards use (`docs-sync:ack`, `model-guard:ack`).
 
 ## Requirements
 
-- **Node.js 18+ on PATH.** No third-party packages, no `package.json`. Stdlib only.
-  Claude Code ships a self-contained native binary and its documented system requirements do **not** include Node, so this is an external prerequisite the host does not provide — install it via Homebrew, WinGet, or your distro's package manager. On a machine without it the hook cannot run and Claude Code shows a non-blocking `hook error` per matching event, so the guard fails open. There is no silent-skip: probing for node needs shell syntax that is not portable across the shells Claude Code picks per platform, and the exec-form alternative is unsupported before 2.1.139 with no way to enforce that floor (`engines` is not a recognised manifest field). See `scripts/hook-runtime-guard.test.mjs` for the full reasoning.
+- **On arm64 macOS: nothing.** Since 0.2.0 the hook runs `bin/ccguard`, a committed
+  static binary with no runtime dependency at all (36.1ms → 2.9ms; see
+  `rust/README.md`).
+- **Everywhere else: Node.js 18+ on PATH.** The hook command is
+  `bin/ccguard design-gate || node "…/scripts/pretooluse-guard-design-gate.mjs"`, so on
+  Linux or an Intel Mac the binary fails to exec and the original `.mjs` guard runs
+  instead — same behaviour, just without the speedup. That fallback needs Node, and
+  Claude Code ships a self-contained native binary whose documented system requirements do **not** include it, so it is an external prerequisite the host does not provide — install it via Homebrew, WinGet, or your distro's package manager. On a machine with neither the binary nor Node the hook cannot run and Claude Code shows a non-blocking `hook error` per matching event, so the guard fails open. There is no silent-skip: probing for node needs shell syntax that is not portable across the shells Claude Code picks per platform, and the exec-form alternative is unsupported before 2.1.139 with no way to enforce that floor (`engines` is not a recognised manifest field). See `scripts/hook-runtime-guard.test.mjs` for the full reasoning.
 - **Claude Code >= 2.1.110** — for `hooks.json` plugin hook registration.
 
 ## Development

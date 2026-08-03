@@ -69,7 +69,7 @@ emitAdditionalContext(
   `This repo has moved ${scale} since its documentation was last checked for internal ` +
     `consistency. Docs that were each updated correctly in isolation can still contradict ` +
     `one another, and they only grow unless something prunes them.\n\n` +
-    `Consider running /docs-consolidate — it audits and reports, it does not rewrite ` +
+    `Consider running the docs-sync-guard:docs-consolidate skill — it audits and reports, it does not rewrite ` +
     `anything on its own. /docs-consolidate --defer silences this until the repo has ` +
     `moved that far again. Nothing here blocks: finish what you were doing first.`,
 );

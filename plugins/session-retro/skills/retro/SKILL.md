@@ -1,4 +1,5 @@
 ---
+name: retro
 description: >
   Run an interactive session retrospective. Reads the per-session event log
   (maintained by the PostToolUse hook) and uses git diff/status/log as

@@ -83,3 +83,70 @@ test("plugin READMEs' marketplace add commands point at the repo, not a plugin n
     }
   }
 });
+
+// A hook fires correctly and then emits an instruction the agent cannot execute.
+// This bug class has now shipped twice: session-retro's nudge said "Run the retro
+// skill" and the agent called `Skill(retro)` → "Unknown skill: retro" four times,
+// never once recovering; handoff's said "run the handoff skill". A bare name is a
+// name the model has to guess, and across an audit of 8 used skills it guessed
+// wrong in 4 of them. Every skill a hook names must be plugin-qualified.
+test("hook-emitted skill references are plugin-qualified", () => {
+  const skillOwner = new Map();
+  for (const d of dirs) {
+    let skills = [];
+    try {
+      skills = readdirSync(join(root, "plugins", d, "skills"), { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name);
+    } catch {
+      continue; // hooks-only plugin
+    }
+    for (const s of skills) skillOwner.set(s, d);
+  }
+  assert.ok(skillOwner.size > 0, "found no skills to check — the walk is broken");
+
+  // Every source file that can EMIT hook text. Both the interpreted guards and
+  // the compiled ones (rust/src/*.rs, shipped as plugins/*/bin/ccguard) build
+  // their reason strings in source, so scanning only .mjs would leave the Rust
+  // reasons unguarded — and those are the ones that actually run now.
+  const sources = [];
+  for (const d of dirs) {
+    let files = [];
+    try {
+      files = readdirSync(join(root, "plugins", d, "scripts"), { withFileTypes: true })
+        .filter((e) => e.isFile() && e.name.endsWith(".mjs") && !e.name.endsWith(".test.mjs"))
+        .map((e) => e.name);
+    } catch {
+      continue;
+    }
+    for (const f of files) sources.push({ label: `${d}/scripts/${f}`, path: join(root, "plugins", d, "scripts", f) });
+  }
+  try {
+    for (const e of readdirSync(join(root, "rust", "src"), { withFileTypes: true })) {
+      if (e.isFile() && e.name.endsWith(".rs")) {
+        sources.push({ label: `rust/src/${e.name}`, path: join(root, "rust", "src", e.name) });
+      }
+    }
+  } catch {
+    // no rust crate — fine, the .mjs guards are the whole surface.
+  }
+
+  const offenders = [];
+  for (const { label, path } of sources) {
+    // Only text the source actually EMITS counts. Comments routinely discuss the
+    // bare name (including the ones explaining this very bug), and a comment is
+    // never handed to the agent. The line filter catches `//`, `///`, `//!` and
+    // block-comment continuations, so it covers both languages.
+    const src = readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .filter((l) => !/^\s*(\/\/|\*)/.test(l))
+      .join("\n");
+    for (const [skill, owner] of skillOwner) {
+      // "the <skill> skill" / "run <skill> skill" with no "<plugin>:" prefix.
+      const bare = new RegExp(`(?<![\\w:-])${skill}\\s+skill\\b`, "i");
+      if (bare.test(src)) offenders.push(`${label}: "${skill} skill" → "${owner}:${skill}"`);
+    }
+  }
+  assert.deepEqual(offenders, [], `unqualified skill names in hook output:\n${offenders.join("\n")}`);
+});

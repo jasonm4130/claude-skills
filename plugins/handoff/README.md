@@ -251,6 +251,16 @@ rather than waiting for the next absolute 10%-boundary.
   re-run `setup.mjs` if unsure).
 - Check the last-pct file is updating: `cat $TMPDIR/handoff-data/last-context-pct-<session-id>.txt`
   (or wherever `CLAUDE_PLUGIN_DATA` points).
+- **Writer and reader resolve different directories, by design of the host.** The
+  statusLine script is a top-level `settings.json` command, not a plugin hook, so
+  it never receives `CLAUDE_PLUGIN_DATA` and lands on the `os.tmpdir()` fallback;
+  `check-handoff-flag.mjs` is a genuine `UserPromptSubmit` hook and does receive
+  it. From install (2026-05-25) until 0.10.0 the flag was therefore written to one
+  directory and looked for in another, and the nudge never fired once — 7 orphaned
+  `handoff-nudge-*.flag` files in tmpdir against an empty plugin data dir. Readers
+  now check every candidate (`dataDirCandidates` in `lib.mjs`). If you are
+  debugging a missed nudge, look in **both** places before concluding it wasn't
+  written.
 - Make sure the threshold env var is not set higher than the current context %.
 - If the bar shows a much lower % than CC's native "% until auto-compact",
   set `HANDOFF_EFFECTIVE_MAX_TOKENS` to match your `autoCompactWindow` — see

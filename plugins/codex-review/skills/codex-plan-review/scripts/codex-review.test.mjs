@@ -78,6 +78,37 @@ test("prompts reference the path only, never inline content; retry prompts are m
   assert.ok(!buildRetryPrompt("audit").includes("VERDICT:"));
 });
 
+// Regression: the 2026-07-15 clean-pass fix landed in the review/diff prompts
+// and was never applied to the two audit builders. Plan-mode audits then
+// returned PASS 0 times in 50 while diff audits passed 28% — the asymmetry in
+// the prompts showed up directly in the verdict distribution.
+test("audit prompts grant a respected clean pass and gate CONCERNS on severity", () => {
+  for (const p of [buildAuditPrompt("docs/plan.md"), buildDiffAuditPrompt("main...HEAD")]) {
+    assert.match(p, /AUDIT: PASS with zero findings is the expected outcome/,
+      "audit prompt lost its respected-clean-pass grant");
+    assert.match(p, /at least one \[P1\], or two or more \[P2\]/,
+      "audit prompt lost its severity floor");
+    assert.match(p, /cannot tie to a named failure scenario is not a finding/,
+      "audit prompt lost its reproducibility gate");
+  }
+});
+
+// Regression: `audit-concerns-user-approved` was being written by unattended
+// runs where no human was ever asked, putting false attribution into the log.
+test("audit-concerns-unattended is a valid outcome and passes the CONCERNS lifecycle check", () => {
+  assert.ok(OUTCOMES.includes("audit-concerns-unattended"));
+  const logPath = join(tmp(), "log.jsonl");
+  const { chainId } = reserveChain({ logPath, repo: "r", repoKey: "/x/r", artifact: "a.md", contentHash: "dddd000000000000", trigger: "auto" });
+  // Without a recorded CONCERNS audit the lifecycle check must reject it.
+  assert.throws(
+    () => appendNote(logPath, { chainId, unique: 1, outcome: "audit-concerns-unattended", comment: "" }),
+    (e) => /** @type {any} */ (e).code === "LIFECYCLE_MISMATCH",
+  );
+  assert.equal(appendResult(logPath, { chainId, mode: "audit", verdict: "CONCERNS" }), true);
+  appendNote(logPath, { chainId, unique: 1, outcome: "audit-concerns-unattended", comment: "no interactive turn" });
+  assert.equal(readLogLines(logPath).filter((l) => l.mode === "note").at(-1).outcome, "audit-concerns-unattended");
+});
+
 test("review and diff prompts grant a respected clean pass and gate findings on reproducibility", () => {
   // Counters the documented LLM-reviewer over-rejection bias: an adversarial reviewer with no
   // legitimate "nothing to fix" state, tuned to always find something, systematically rejects

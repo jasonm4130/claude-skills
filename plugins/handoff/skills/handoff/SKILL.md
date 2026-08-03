@@ -1,4 +1,5 @@
 ---
+name: handoff
 description: >
   Write a structured handoff / resume document for this session so the next
   session can pick up exactly where this one left off. Use when the user asks
