@@ -5,10 +5,17 @@ A **pilot**, deliberately scoped: `design-gate-guard` and `workflow-model-guard`
 only. Every other plugin's hooks remain `.mjs` and are not affected.
 
 ```
+ccguard <subcommand> [fallback.mjs]
+
 ccguard design-gate      # design-gate-guard  — PreToolUse, matcher Bash
 ccguard agent-model      # workflow-model-guard — PreToolUse, matcher Agent
 ccguard workflow-model   # workflow-model-guard — PreToolUse, matcher Workflow
 ```
+
+The optional second argument is the `.mjs` guard to hand a payload to when the
+binary cannot decide it itself — see [Equivalence](#equivalence-with-the-mjs-guards).
+hooks.json always passes it; without it the binary still runs, but fails open on
+those payloads instead of delegating.
 
 ## Why compile these three
 
@@ -86,11 +93,30 @@ shipped payload, so the version-bump gate requires it.
 The `.mjs` guards are **kept, not deleted**. They are the fallback when the binary
 cannot run, and they are the reference implementation the binary is tested against.
 
-`hooks.json` runs `"${CLAUDE_PLUGIN_ROOT}/bin/ccguard" <sub> || node "…/scripts/….mjs"`.
-The binary exits non-zero only when it fails to execute at all (127 missing, 126
-wrong architecture), so on Linux or an Intel Mac the node path takes over and the
-guard still works. Still shell form — the shell is what evaluates the `||` — so
-every argument in `scripts/hook-runtime-guard.test.mjs` continues to apply.
+`hooks.json` runs
+`"${CLAUDE_PLUGIN_ROOT}/bin/ccguard" <sub> "…/scripts/….mjs" || node "…/scripts/….mjs"`.
+The `.mjs` path appears twice because there are two different failures to cover,
+and each mechanism handles exactly one of them.
+
+The `||` covers a binary that never executes (127 missing, 126 wrong
+architecture). Stdin is untouched in that case, so node reads the payload and the
+guard works normally — this is what keeps the plugins working on Linux and Intel
+Macs. Still shell form, so every argument in
+`scripts/hook-runtime-guard.test.mjs` continues to apply.
+
+The **argv** covers a binary that ran fine but hit a payload it cannot represent —
+today, a JSON string carrying a lone surrogate, which `JSON.parse` accepts and no
+Rust `String` can hold. The `||` cannot help here: by the time the binary knows,
+it has drained stdin, and a shell cannot rewind a pipe, so the node on the
+right-hand side reads zero bytes and decides nothing. That is not a theory —
+`printf '…' | sh -c 'ccguard design-gate || node …'` prints nothing at all, and
+`ccguard-differential.test.mjs` pins it. So the binary delegates itself: it spawns
+node on the payload it is holding and forwards the answer. If node is missing
+too, it fails open, which is where a machine without node already stood.
+
+The net contract: **there is no payload on which the guard is allowed to differ
+from the `.mjs` reference.** Delegation is an implementation detail of holding
+that line, not a licensed divergence.
 
 `scripts/ccguard-differential.test.mjs` runs both implementations over the same
 inputs and compares stdout byte-for-byte plus exit status: every case the existing

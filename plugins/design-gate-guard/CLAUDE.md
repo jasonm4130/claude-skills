@@ -60,11 +60,22 @@ most common break point: a new-project scaffold command. Any command segment tha
 The hook now runs a committed Rust binary, with the `.mjs` as fallback:
 
 ```
-"${CLAUDE_PLUGIN_ROOT}/bin/ccguard" design-gate || node "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-design-gate.mjs"
+"${CLAUDE_PLUGIN_ROOT}/bin/ccguard" design-gate "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-design-gate.mjs" || node "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-design-gate.mjs"
 ```
 
 36.1ms → 2.9ms, because ~78% of the old cost was node's cold start rather than the
-guard's ~7ms of work. The binary exits non-zero only when it cannot execute at all
+guard's ~7ms of work.
+
+The `.mjs` path appears twice on purpose, covering two different failures. The
+`||` catches a binary that never executes (127 missing, 126 wrong architecture),
+where stdin is untouched and node just reads the payload. The **argv** catches a
+binary that ran but hit a payload it cannot represent — a command carrying a lone
+surrogate is the live case — where the `||` is useless because stdin has already
+been drained and a shell cannot rewind a pipe; the binary spawns node itself and
+forwards the answer. Since 0.2.2 — before it, one unpaired surrogate anywhere in a
+command switched this gate off silently. Details in `rust/README.md`.
+
+The binary exits non-zero only when it cannot execute at all
 (127 missing, 126 wrong architecture), so Linux and Intel Macs fall through to the
 node path and behave identically, just slower.
 

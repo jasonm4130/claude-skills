@@ -28,23 +28,107 @@ pub fn read_stdin() -> String {
     String::from_utf8_lossy(&buf).into_owned()
 }
 
+/// The payload could not be parsed here, and node might well parse it fine.
+///
+/// `serde_json` is stricter than `JSON.parse` in at least one reachable way: a
+/// string containing a lone surrogate (`"\ud800"`) is legal JSON that
+/// `JSON.parse` accepts and carries in a JS string, while no Rust `String` can
+/// hold one — it is not valid UTF-8. There is no "parse it anyway" here to reach
+/// for; the payload is genuinely outside what this program can represent.
+#[derive(Debug)]
+pub struct Unparseable;
+
 /// Parse JSON without failing loudly, mirroring `safeJsonParse`.
 ///
-/// Returns `None` for empty input, malformed JSON, and — matching the JS
-/// contract exactly — any valid JSON that is not an object. `safeJsonParse`
+/// Returns `Ok(None)` — nothing to guard — for empty input and, matching the JS
+/// contract exactly, for any valid JSON that is not an object. `safeJsonParse`
 /// rejects `null`, arrays, numbers and strings via its `typeof !== "object"` and
 /// explicit null checks; a bare `[1,2]` must not be treated as a payload here
-/// either, or the guards would read fields off something that has none.
-pub fn parse_payload(raw: &str) -> Option<Value> {
+/// either, or the guards would read fields off something that has none. In all
+/// those cases node reaches the same "do nothing" answer, so exiting 0 is right.
+///
+/// Returns `Err(Unparseable)` when the parse itself failed, which is NOT the same
+/// answer. The caller must decline (see [`decline`]) rather than exit 0: under
+/// `ccguard || node`, a zero exit means node never runs, so treating an
+/// unparseable payload as "nothing to do" silently disables the guard for it.
+/// That was a live bypass — a single lone surrogate anywhere in a Bash command
+/// turned the design gate off.
+///
+/// Genuinely malformed input (`{not json`) also lands here and is also declined,
+/// costing one node spawn to reach the same do-nothing answer. Distinguishing
+/// "malformed for both" from "malformed only for me" would mean reimplementing
+/// `JSON.parse`'s error taxonomy to save a process spawn on input that does not
+/// occur in practice.
+pub fn parse_payload(raw: &str) -> Result<Option<Value>, Unparseable> {
     if raw.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let value: Value = serde_json::from_str(raw).ok()?;
-    if value.is_object() {
-        Some(value)
-    } else {
-        None
+    let value: Value = serde_json::from_str(raw).map_err(|_| Unparseable)?;
+    Ok(value.is_object().then_some(value))
+}
+
+/// Hand the payload to the `.mjs` guard, forward its answer, and exit.
+///
+/// **Why this spawns node rather than exiting non-zero.** hooks.json invokes the
+/// binary as `ccguard <sub> <guard>.mjs || node <guard>.mjs`, and the `||` looks
+/// like it would do this for free. It cannot. By the time any guard here can tell
+/// it needs to decline, `read_stdin` has already drained the pipe — the shell has
+/// no way to rewind it, so the node in that `||` reads zero bytes and decides
+/// nothing. Measured, not assumed: `printf '…' | sh -c 'ccguard design-gate ||
+/// node …'` prints nothing at all. That `||` earns its place for the one case it
+/// does handle — a binary that never execs (absent, or built for another
+/// architecture), where stdin is still untouched — and no other.
+///
+/// So delegation has to be done by the process holding the bytes. Stdout is
+/// inherited, so node writes its decision straight to the real stdout with no
+/// re-encoding, and its exit status becomes ours.
+///
+/// Only sound when nothing has been written to stdout yet: node writes its own
+/// decision, and two decisions on stdout is a protocol violation.
+///
+/// If node cannot be spawned — which is the state this whole binary exists to
+/// tolerate — there is nothing left to consult, so exit 0 and let the tool call
+/// proceed. That is the same fail-open the `.mjs` guards already have on a machine
+/// without node, reached here only on payloads the binary could not represent.
+pub fn delegate(raw: &str, fallback: Option<&str>) -> ! {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let Some(script) = fallback else {
+        std::process::exit(0);
+    };
+
+    let child = Command::new("node")
+        .arg(script)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::inherit())
+        .spawn();
+
+    let Ok(mut child) = child else {
+        std::process::exit(0);
+    };
+
+    if let Some(mut sink) = child.stdin.take() {
+        // A guard that reads only a prefix and exits would give us EPIPE here.
+        // Its decision is still on stdout and still authoritative, so this is not
+        // a failure — carry on to the status.
+        let _ = sink.write_all(raw.as_bytes());
     }
+
+    match child.wait() {
+        Ok(status) => std::process::exit(status.code().unwrap_or(0)),
+        Err(_) => std::process::exit(0),
+    }
+}
+
+/// What a guard did with a payload it was handed.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// A decision was reached, or there was legitimately none to make. Exit 0.
+    Handled,
+    /// This guard cannot reproduce the reference implementation's answer for this
+    /// payload. Exit via [`decline`] having written nothing.
+    Declined,
 }
 
 /// Read a nested string field, e.g. `("tool_input", "command")`.
@@ -136,13 +220,35 @@ mod tests {
 
     #[test]
     fn rejects_non_object_json() {
-        assert!(parse_payload("[1,2]").is_none());
-        assert!(parse_payload("null").is_none());
-        assert!(parse_payload("\"str\"").is_none());
-        assert!(parse_payload("7").is_none());
-        assert!(parse_payload("").is_none());
-        assert!(parse_payload("{not json").is_none());
-        assert!(parse_payload("{}").is_some());
+        // Parsed fine, just not a payload — node agrees there is nothing to do.
+        assert!(matches!(parse_payload("[1,2]"), Ok(None)));
+        assert!(matches!(parse_payload("null"), Ok(None)));
+        assert!(matches!(parse_payload("\"str\""), Ok(None)));
+        assert!(matches!(parse_payload("7"), Ok(None)));
+        assert!(matches!(parse_payload(""), Ok(None)));
+        assert!(matches!(parse_payload("{}"), Ok(Some(_))));
+    }
+
+    #[test]
+    fn declines_what_it_cannot_parse() {
+        // The bypass this exists to close: legal JSON that `JSON.parse` accepts
+        // and `serde_json` does not. Exiting 0 here would mean the `|| node`
+        // fallback never runs and the guard is silently skipped.
+        assert!(matches!(
+            parse_payload(r#"{"tool_input":{"command":"npm create vite \ud800"}}"#),
+            Err(Unparseable)
+        ));
+        // Malformed for both implementations — declined too, since telling the
+        // two cases apart is not worth reimplementing `JSON.parse`'s errors.
+        assert!(matches!(parse_payload("{not json"), Err(Unparseable)));
+    }
+
+    #[test]
+    fn declining_is_reachable_from_every_guard_entry() {
+        // The Outcome enum is the only channel a guard has for "I could not
+        // answer this". If it ever collapses to a single variant the delegation
+        // path is dead code and the divergences it covers are back.
+        assert_ne!(Outcome::Handled, Outcome::Declined);
     }
 
     #[test]

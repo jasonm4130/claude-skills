@@ -350,7 +350,14 @@ pub fn compile_patterns() -> Vec<Regex> {
         .collect()
 }
 
-pub fn run(payload: Option<Value>) {
+pub fn run(payload: Option<Value>) -> hook::Outcome {
+    decide(payload);
+    // Every path above is reproducible here: this guard reads one string field
+    // and matches ASCII patterns against it. Nothing to hand back to node.
+    hook::Outcome::Handled
+}
+
+fn decide(payload: Option<Value>) {
     // Only guard the Bash tool. Anything else → proceed normally.
     let Some(payload) = payload else { return };
     if hook::top_str(&payload, "tool_name") != Some("Bash") {

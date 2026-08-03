@@ -67,32 +67,49 @@ function runnable(bin) {
  * @param {string} cmd
  * @param {string[]} args
  * @param {string} stdin
+ * @param {NodeJS.ProcessEnv} [env]
  */
-function run(cmd, args, stdin) {
-  const res = spawnSync(cmd, args, { input: stdin, encoding: "utf8" });
+function run(cmd, args, stdin, env) {
+  const res = spawnSync(cmd, args, { input: stdin, encoding: "utf8", ...(env ? { env } : {}) });
   return { status: res.status, stdout: res.stdout ?? "" };
 }
 
 /**
- * Assert both implementations agree on one payload.
+ * Assert the two implementations agree on one payload.
+ *
+ * The binary is invoked exactly as hooks.json invokes it — `ccguard <sub>
+ * <guard>.mjs` — because the second argument is load-bearing. Some payloads
+ * cannot be decided in Rust at all (a JSON string holding a lone surrogate is
+ * legal for `JSON.parse` and unrepresentable in a Rust `String`), and for those
+ * the binary spawns that guard and forwards its answer. Run the binary without
+ * the argument and it has nothing to delegate to, so it fails open and this
+ * comparison would be measuring a configuration nobody ships.
+ *
+ * Delegation is deliberately invisible here: whether the binary answered or node
+ * did, stdout and exit status must match node byte-for-byte. That is the whole
+ * property — there is no payload on which the guard is allowed to differ.
+ *
  * @param {string} sub
  * @param {string} stdin
  * @param {string} label
+ * @param {{env?: NodeJS.ProcessEnv}} [opts]
  */
-function assertAgrees(sub, stdin, label) {
+function assertAgrees(sub, stdin, label, opts = {}) {
   const [bin, mjs] = IMPLS[sub];
-  const rust = run(bin, [sub], stdin);
-  const js = run("node", [mjs], stdin);
+  const rust = run(bin, [sub, mjs], stdin, opts.env);
+  const js = run("node", [mjs], stdin, opts.env);
+
+  const where = `${sub} / ${label}\n  input: ${JSON.stringify(stdin).slice(0, 300)}`;
 
   assert.equal(
     rust.stdout,
     js.stdout,
-    `stdout divergence on ${sub} / ${label}\n  input: ${JSON.stringify(stdin).slice(0, 300)}\n  rust: ${JSON.stringify(rust.stdout).slice(0, 300)}\n  js:   ${JSON.stringify(js.stdout).slice(0, 300)}`,
+    `stdout divergence on ${where}\n  rust: ${JSON.stringify(rust.stdout).slice(0, 300)}\n  js:   ${JSON.stringify(js.stdout).slice(0, 300)}`,
   );
   assert.equal(
     rust.status,
     js.status,
-    `exit-status divergence on ${sub} / ${label}: rust ${rust.status}, js ${js.status}`,
+    `exit-status divergence on ${where}: rust ${rust.status}, js ${js.status}`,
   );
 }
 
@@ -417,4 +434,130 @@ test("workflow-model: agrees on script shapes", { skip: haveWorkflow ? false : s
   ];
   for (const c of others) assertAgrees("workflow-model", JSON.stringify(c), JSON.stringify(c.tool_input));
   for (const raw of RAW_PAYLOADS) assertAgrees("workflow-model", raw, raw.slice(0, 60));
+});
+
+// ---------------------------------------------------------------------------
+// Regression corpus — inputs on which the binary and the .mjs guards were found
+// to disagree in production. Each was reported by the 2026-08-03 cross-provider
+// diff review of 44cb251^..0fd0e5d and reproduced at the console before being
+// fixed. They are grouped here, rather than folded into the corpora above,
+// because the shared property is provenance: every one of them is a case the
+// original corpus was shaped not to think of.
+// ---------------------------------------------------------------------------
+
+/**
+ * A lone surrogate: legal in JSON and in a JS string, unrepresentable in a Rust
+ * `String`. Kept as an escape rather than a literal so the file stays valid
+ * UTF-8 on disk.
+ */
+const LONE_SURROGATE = "\ud800";
+
+test("lone surrogates in the payload do not silently bypass any guard", { skip: haveDesignGate && haveWorkflow ? false : skipMsg }, () => {
+  // The bug: `serde_json` rejects a lone surrogate, the binary treated that as
+  // "malformed, nothing to do" and exited 0, and because the hook is
+  // `ccguard || node` a zero exit means node never ran. A single unpaired
+  // surrogate anywhere in the command switched the design gate off.
+  const scaffold = `npm create vite ${LONE_SURROGATE}`;
+  assertAgrees("design-gate", bash(scaffold), "scaffold + lone surrogate");
+
+  // Same payload shape against the other two subcommands: node ignores a Bash
+  // payload, so the binary must either ignore it too or decline — never invent a
+  // decision.
+  assertAgrees("agent-model", bash(scaffold), "scaffold + lone surrogate");
+  assertAgrees("workflow-model", bash(scaffold), "scaffold + lone surrogate");
+
+  // The sharp end, asserted directly: node gates this scaffold, so anything that
+  // leaves stdout empty is a silent bypass of the design gate.
+  const [bin, mjs] = IMPLS["design-gate"];
+  const js = run("node", [mjs], bash(scaffold));
+  assert.notEqual(js.stdout, "", "precondition: node must gate this scaffold");
+  assert.equal(
+    run(bin, ["design-gate", mjs], bash(scaffold)).stdout,
+    js.stdout,
+    "the production-wired binary must reproduce node's decision on a payload it cannot parse itself",
+  );
+
+  // And the trap that shaped the fix, pinned so nobody "simplifies" the argv
+  // away: with only the `||` in hooks.json to fall back on, the binary has
+  // already drained stdin by the time it declines, the shell cannot rewind a
+  // pipe, and node reads zero bytes. The gate goes quiet.
+  const viaShellOnly = spawnSync(
+    "sh",
+    ["-c", `${JSON.stringify(bin)} design-gate || node ${JSON.stringify(mjs)}`],
+    { input: bash(scaffold), encoding: "utf8" },
+  );
+  assert.equal(
+    viaShellOnly.stdout,
+    "",
+    "expected the shell-only fallback to lose the payload — if this now produces a decision, " +
+      "the stdin-draining constraint has changed and hook::delegate can be simplified",
+  );
+
+  // Surrogates in fields the guards read but do not gate on, to check the
+  // decline path is not swallowing decidable payloads wholesale.
+  assertAgrees("design-gate", bash(`ls ${LONE_SURROGATE}`), "benign + lone surrogate");
+  assertAgrees(
+    "agent-model",
+    JSON.stringify({ tool_name: "Agent", tool_input: { prompt: LONE_SURROGATE, model: "sonnet" } }),
+    "tiered dispatch + lone surrogate",
+  );
+});
+
+test("workflow-model counts agent() calls separated by non-ASCII whitespace", { skip: haveWorkflow ? false : skipMsg }, () => {
+  // The bug: `regex-lite`'s `\s` is ASCII-only, JS's is not. `\bagent\s*\(` with
+  // a non-breaking space before the paren matched zero times in the binary and
+  // four times in node, so a four-agent fan-out was denied by node and allowed by
+  // the binary. Cargo.toml called this divergence unreachable on the grounds that
+  // the tokenizer consumes exotic whitespace first — true of design_gate, which
+  // tokenizes, and false of workflow_model, which regexes raw script text.
+  const SPACES = [
+    [" ", "no-break space"],
+    [" ", "thin space"],
+    ["　", "ideographic space"],
+    [" ", "narrow no-break space"],
+    ["﻿", "zero-width no-break space"],
+  ];
+  for (const [ws, name] of SPACES) {
+    const script = ["a", "b", "c", "d"].map((c) => `await agent${ws}("${c}");`).join("");
+    assertAgrees(
+      "workflow-model",
+      JSON.stringify({ tool_name: "Workflow", tool_input: { script } }),
+      `4 agent() calls separated by ${name}`,
+    );
+  }
+
+  // The loop/fan-out cues use `\s*` too, and are what promote a script to the
+  // stricter branch.
+  for (const [ws, name] of SPACES) {
+    assertAgrees(
+      "workflow-model",
+      JSON.stringify({ tool_name: "Workflow", tool_input: { script: `while${ws}(x) { await agent("a") }` } }),
+      `while-loop with ${name}`,
+    );
+    assertAgrees(
+      "workflow-model",
+      JSON.stringify({ tool_name: "Workflow", tool_input: { script: `for${ws}(const x of xs) { await agent(x) }` } }),
+      `for-loop with ${name}`,
+    );
+  }
+});
+
+test("agent-model resolves user agent definitions with HOME unset", { skip: haveWorkflow ? false : skipMsg }, () => {
+  // The bug: node's `os.homedir()` falls back to the account home from the passwd
+  // database when $HOME is absent; the port read `std::env::var_os("HOME")` and
+  // gave up, so it never saw `~/.claude/agents/*.md` and denied dispatches that
+  // node allows on the strength of a pinned frontmatter model. Fails closed, so
+  // it is friction rather than a hole — but it is still a divergence.
+  const noHome = { ...process.env };
+  delete noHome.HOME;
+
+  const cases = [
+    { tool_name: "Agent", tool_input: { prompt: "x", subagent_type: "Explore" } },
+    { tool_name: "Agent", tool_input: { prompt: "x", subagent_type: "does-not-exist" } },
+    { tool_name: "Agent", tool_input: { prompt: "x", subagent_type: "Explore" }, cwd: root },
+    { tool_name: "Agent", tool_input: { prompt: "x" } },
+  ];
+  for (const c of cases) {
+    assertAgrees("agent-model", JSON.stringify(c), `HOME unset — ${JSON.stringify(c.tool_input)}`, { env: noHome });
+  }
 });
