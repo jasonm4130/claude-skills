@@ -18,6 +18,9 @@ import process from "node:process";
  * @returns {Promise<string>}
  */
 export async function readStdin() {
+  // A TTY never reaches EOF, so waiting for "end" would hang a hand-run script
+  // forever. Hooks always pipe, so this only affects interactive invocation.
+  if (process.stdin.isTTY) return "";
   return new Promise((resolve, reject) => {
     /** @type {Buffer[]} */
     const chunks = [];

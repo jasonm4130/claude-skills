@@ -23,12 +23,15 @@ import {
  * @property {string} [session_id]
  */
 
-const raw = await readStdin();
-const payload = /** @type {MarkRetroDoneInput | null} */ (safeJsonParse(raw));
 const argSid =
   typeof process.argv[2] === "string" && process.argv[2].length > 0
     ? process.argv[2]
     : null;
+// Only read stdin when we actually need it for the session id. The skill runs
+// this from a session shell, where stdin is an inherited pipe or TTY that never
+// reaches EOF — reading it there blocks forever.
+const raw = argSid === null ? await readStdin() : "";
+const payload = /** @type {MarkRetroDoneInput | null} */ (safeJsonParse(raw));
 const sessionId = argSid ?? resolveSessionId(payload);
 const dataDir = resolveDataDir("session-retro-data");
 

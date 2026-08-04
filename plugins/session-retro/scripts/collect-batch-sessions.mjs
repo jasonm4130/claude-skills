@@ -38,12 +38,14 @@ import {
  * @property {string | null} lastTs
  */
 
-const raw = await readStdin();
-const payload = /** @type {CollectInput | null} */ (safeJsonParse(raw));
 const argSid =
   typeof process.argv[2] === "string" && process.argv[2].length > 0
     ? process.argv[2]
     : null;
+// Only read stdin when we actually need it for the session id — see the same
+// guard in mark-retro-done.mjs. A session shell's stdin never reaches EOF.
+const raw = argSid === null ? await readStdin() : "";
+const payload = /** @type {CollectInput | null} */ (safeJsonParse(raw));
 const sessionId = argSid ?? resolveSessionId(payload);
 const dataDir = resolveDataDir("session-retro-data");
 

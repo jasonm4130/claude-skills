@@ -177,6 +177,13 @@ CLAUDE_PLUGIN_DATA=/tmp/test-session-retro \
   payload shapes. Editors get IntelliSense without a build step.
 - **Graceful degradation.** Any JSON parse error, missing payload, or missing
   event file → `process.exit(0)` silently. Hooks never crash the session.
+- **Never read stdin you don't need.** `readStdin()` resolves on `"end"`, and a
+  session shell's inherited stdin — pipe or TTY — never reaches EOF. The two
+  scripts the `/retro` skill invokes from a shell (`collect-batch-sessions.mjs`,
+  `mark-retro-done.mjs`) take the session id as `argv[2]` and must read stdin
+  *only* when that argument is absent, or they hang until killed. `readStdin()`
+  also short-circuits on `process.stdin.isTTY` so a hand-run script can't hang.
+  Hook invocations always pipe and always reach EOF, so that path is unaffected.
 - **Cross-platform timestamps.** `Date.parse(isoString)` handles ISO-8601
   natively — no BSD/GNU `date` branching.
 - **Path joins** via `path.join` — never string concatenation. Use
