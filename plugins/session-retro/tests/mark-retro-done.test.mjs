@@ -147,6 +147,37 @@ test("no batch snapshot: fallback writes now() cadence, appends nothing", async 
   );
 });
 
+test("argv[2] session_id: exits without waiting for stdin to close", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-mrd-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  // The skill invokes this from a session shell, where stdin is an inherited
+  // pipe or TTY that never reaches EOF. Reading it there blocks forever, so a
+  // run carrying its session id in argv must not touch stdin at all.
+  const code = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [SCRIPT, "no-eof"], {
+      env: { ...process.env, CLAUDE_PLUGIN_DATA: tmp },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error("timed out waiting for stdin EOF"));
+    }, 5000);
+    child.on("error", reject);
+    child.on("close", (c) => {
+      clearTimeout(timer);
+      resolve(c ?? 0);
+    });
+    // Deliberately never call child.stdin.end() — the pipe stays open.
+  });
+
+  assert.equal(code, 0);
+  assert.ok(
+    existsSync(path.join(tmp, "retro-fired-no-eof.flag")),
+    "fired flag written without stdin ever closing",
+  );
+});
+
 test("SKILL.md Step 6 sets CLAUDE_PLUGIN_DATA on the invocation", () => {
   const skill = readFileSync(
     path.join(here, "..", "skills", "retro", "SKILL.md"),

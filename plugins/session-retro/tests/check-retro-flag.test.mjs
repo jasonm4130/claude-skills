@@ -23,13 +23,27 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.join(here, "..", "scripts", "check-retro-flag.mjs");
 
 /**
+ * Threshold env vars are read from the ambient environment, so a developer with
+ * RETRO_BATCH_* set in their Claude settings would otherwise flip tests that
+ * assert the documented defaults. Strip them; a test that cares sets its own.
+ * @returns {Record<string, string | undefined>}
+ */
+function baseEnv() {
+  const e = { ...process.env };
+  delete e.RETRO_BATCH_MIN_SESSIONS;
+  delete e.RETRO_BATCH_MIN_DAYS;
+  delete e.RETRO_BATCH_MAX_SESSIONS;
+  return e;
+}
+
+/**
  * @param {string} stdin
  * @param {Record<string, string>} env
  */
 function run(stdin, env) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [SCRIPT], {
-      env: { ...process.env, ...env },
+      env: { ...baseEnv(), ...env },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";

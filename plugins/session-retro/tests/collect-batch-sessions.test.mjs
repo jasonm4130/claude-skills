@@ -23,6 +23,20 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.join(here, "..", "scripts", "collect-batch-sessions.mjs");
 
 /**
+ * Threshold env vars are read from the ambient environment, so a developer with
+ * RETRO_BATCH_* set in their Claude settings would otherwise flip tests that
+ * assert the documented defaults. Strip them; a test that cares sets its own.
+ * @returns {Record<string, string | undefined>}
+ */
+function baseEnv() {
+  const e = { ...process.env };
+  delete e.RETRO_BATCH_MIN_SESSIONS;
+  delete e.RETRO_BATCH_MIN_DAYS;
+  delete e.RETRO_BATCH_MAX_SESSIONS;
+  return e;
+}
+
+/**
  * @param {string} stdin
  * @param {Record<string, string>} env
  * @param {string[]} args
@@ -30,7 +44,7 @@ const SCRIPT = path.join(here, "..", "scripts", "collect-batch-sessions.mjs");
 function run(stdin, env, args = []) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [SCRIPT, ...args], {
-      env: { ...process.env, ...env },
+      env: { ...baseEnv(), ...env },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -303,4 +317,34 @@ test("migration: absent retro-processed.jsonl seeds legacy-done (ts <= lastRetro
   await run("", { CLAUDE_PLUGIN_DATA: tmp }, ["cur2"]);
   const after = readFileSync(path.join(tmp, "retro-processed.jsonl"), "utf8");
   assert.equal(after, before, "migration does not re-seed on subsequent runs");
+});
+
+test("argv[2] session_id: exits without waiting for stdin to close", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-cbs-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  // Step 1 runs from a session shell, whose stdin is an inherited pipe or TTY
+  // that never reaches EOF. With the sid in argv, stdin must not be read.
+  const code = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [SCRIPT, "no-eof"], {
+      env: { ...process.env, CLAUDE_PLUGIN_DATA: tmp },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error("timed out waiting for stdin EOF"));
+    }, 5000);
+    child.on("error", reject);
+    child.on("close", (c) => {
+      clearTimeout(timer);
+      resolve(c ?? 0);
+    });
+    // Deliberately never call child.stdin.end() — the pipe stays open.
+  });
+
+  assert.equal(code, 0);
+  assert.ok(
+    existsSync(path.join(tmp, "retro-batch-no-eof.json")),
+    "snapshot written without stdin ever closing",
+  );
 });
