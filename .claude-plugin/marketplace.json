@@ -15,7 +15,7 @@
       "name": "adr",
       "source": "./plugins/adr",
       "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to the subagent-driven-development loop. Front-end for adr → sdd.",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "author": {
         "name": "Jason Matthew"
       },
