@@ -310,6 +310,20 @@ function isShaish(s) {
   return typeof s === "string" && /^[0-9a-f]{7,40}$/.test(s);
 }
 
+// Decide from a reported `git status --porcelain` whether dispatch may proceed. Empty output
+// (modulo whitespace) is the only clean state; a missing/unreported field is NOT clean, because
+// "I could not tell" must never read as "fine".
+function acceptPreflight(p) {
+  if (!p || typeof p.porcelain !== "string") {
+    return { ok: false, reason: "preflight did not report git status output" };
+  }
+  const dirty = p.porcelain.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (dirty.length) {
+    return { ok: false, reason: `workdir has ${dirty.length} uncommitted change(s) — wave worktrees are seeded from the committed tip and cannot see them: ${dirty.slice(0, 5).join("; ")}` };
+  }
+  return { ok: true, reason: "" };
+}
+
 /**
  * Decide whether a verifier's observation supports an agent's claim.
  *
@@ -338,6 +352,10 @@ function acceptVerification(v, testCmd) {
   if (v.commitCount === 0) {
     return no(`head ${v.headSha} contains no commits from this step — the claimed work was never committed`);
   }
+  // The tree the merge landed in must be clean: it can go dirty at any point after the wave-0
+  // preflight, and the next wave's merger merges into whatever it finds. Same helper, same rule.
+  const pre = acceptPreflight(v);
+  if (!pre.ok) return no(pre.reason);
   if (testCmd && v.suite !== "green") return no(`suite is ${v.suite} at ${v.headSha}`);
   return { ok: true, reason: "", headSha: v.headSha };
 }
@@ -402,9 +420,21 @@ const MERGE_SCHEMA = {
   },
 };
 
+const PREFLIGHT_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["porcelain", "clean"],
+  properties: {
+    // The raw output of `git status --porcelain`. The workflow decides from THIS, not from
+    // `clean` — same reasoning as VERIFY_SCHEMA's two SHAs: a boolean is a value the agent
+    // can simply set, and the whole point of the gate is not to take its word for it.
+    porcelain: { type: "string" },
+    clean: { type: "boolean" },
+  },
+};
+
 const VERIFY_SCHEMA = {
   type: "object", additionalProperties: false,
-  required: ["claimSha", "headSha", "baseContained", "missingCommits", "commitCount", "suite", "evidence"],
+  required: ["claimSha", "headSha", "baseContained", "missingCommits", "commitCount", "porcelain", "suite", "evidence"],
   properties: {
     // The two SHAs git actually printed. The workflow compares them itself — a boolean like
     // `headMatchesClaim` would just be another string the agent could set (Codex review, round 2).
@@ -417,6 +447,10 @@ const VERIFY_SCHEMA = {
     // its sha resolves, it is its own ancestor, and the suite is green because nothing
     // changed. This is the only field that can tell that apart from real work.
     commitCount: { type: "number" },
+    // `git status --porcelain` in the integration tree. A merge into a dirty tree either
+    // aborts or silently integrates uncommitted edits nobody reviewed, and the tree can
+    // become dirty at any point after the wave-0 preflight.
+    porcelain: { type: "string" },
     suite: { type: "string", enum: ["green", "red", "unknown"] },
     evidence: { type: "string" },
   },
@@ -550,29 +584,31 @@ Run exactly these and report what they actually print:
 1. \`git -C ${cfg.workdir} rev-parse --verify ${claimedSha}^{commit}\`
    Report the full 40-character SHA it prints as claimSha. If it fails, claimSha="", put the error
    text in evidence, and stop.
-2. \`git -C ${cfg.workdir} rev-parse HEAD\`
+2. \`git -C ${cfg.workdir} status --porcelain\`
+   Report its output verbatim as porcelain — "" if it printed nothing.
+3. \`git -C ${cfg.workdir} rev-parse HEAD\`
    Report the full 40-character SHA it prints as headSha. Report what git printed — do not echo
    back the claimed SHA.
-3. The branch must still BUILD ON where this run started — an agent that reset to some unrelated
+4. The branch must still BUILD ON where this run started — an agent that reset to some unrelated
    commit would otherwise pass every other check while discarding all earlier work:
    \`git -C ${cfg.workdir} merge-base --is-ancestor ${baseSha} HEAD\` (exit 0 = contained)
    Report baseContained=true only if that exits 0.
-4. \`git -C ${cfg.workdir} rev-list --count ${baseSha}..${claimedSha}\`
+5. \`git -C ${cfg.workdir} rev-list --count ${baseSha}..${claimedSha}\`
    Report the integer it prints as commitCount. Report the number you saw — if the command
    fails or prints nothing, say so in evidence and report commitCount=0.
 ${expectCommits.length
-  ? `5. Each of these task commits must be contained in HEAD. For each, run:
+  ? `6. Each of these task commits must be contained in HEAD. For each, run:
 ${expectCommits.map((c) => `   task ${c.n}: \`git -C ${cfg.workdir} merge-base --is-ancestor ${c.sha} HEAD\` (exit 0 = contained)`).join("\n")}
    Put the task id of every commit NOT contained in HEAD into missingCommits (as strings).
    (Check the commit SHAs, not sdd/t<N> branches — the merger deletes those branches.)`
-  : `5. No task commits to check for this claim: missingCommits=[].`}
+  : `6. No task commits to check for this claim: missingCommits=[].`}
 ${cfg.testCmd
-  ? `6. Run the suite VERBATIM from ${cfg.workdir}:
+  ? `7. Run the suite VERBATIM from ${cfg.workdir}:
    \`${cfg.testCmd}\`
    Read its real output. suite="green" ONLY if it ran to completion with zero failures. Failures, a
    crash, or a command that would not run are all "red". Quote the real pass/fail summary line in
    evidence.`
-  : `6. No test command was configured for this run: suite="unknown", and put the rev-parse output
+  : `7. No test command was configured for this run: suite="unknown", and put the rev-parse output
    in evidence.`}
 
 Never report a result you did not observe. A claim you could not confirm is not confirmed.`;
@@ -671,6 +707,23 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
 
   phase("Implement");
   let base = dispatchBase(cfg);
+
+  // Wave worktrees are seeded from the committed tip, so uncommitted changes in the integration
+  // workdir are invisible to every implementer — and then the wave merger merges into that dirty
+  // tree. sdd.mjs has no child_process, so this is a dispatched observation the workflow gates on,
+  // exactly as runVerify does for SHAs. A prose precondition in SKILL.md does not bind a direct
+  // Workflow(...) invocation, which bypasses the controller entirely.
+  const pre = await dispatchAgent(agent, `You are a PREFLIGHT checker. Do not fix anything, do not commit, do not write or edit any file.
+Run exactly this and report what it actually prints:
+  \`git -C ${cfg.workdir} status --porcelain\`
+Report the output verbatim as porcelain ("" if it printed nothing), and set clean accordingly.
+Never report a result you did not observe.`, {
+    label: "preflight:workdir", phase: "Implement", model: "sonnet", effort: "low", schema: PREFLIGHT_SCHEMA,
+  });
+  const preOk = acceptPreflight(pre);
+  if (!preOk.ok) {
+    halted = { wave: "preflight", reason: preOk.reason, failures: [] };
+  }
 
   for (let w = 0; w < waves.length && !halted; w++) {
     const wave = waves[w];

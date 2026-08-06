@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "sdd.mjs"), "utf8");
 const pure = src.split("// >>> PURE")[1].split("// <<< PURE")[0];
 const H = new Function(
-  `${pure}; return { TIERS, EFFORTS, nextEffort, reviewerEffort, taskId, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchAgent, detectOscillation, FINDING_CLASSES, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptVerification };`,
+  `${pure}; return { TIERS, EFFORTS, nextEffort, reviewerEffort, taskId, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchAgent, detectOscillation, FINDING_CLASSES, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptPreflight, acceptVerification };`,
 )();
 
 const okArgs = () => ({
@@ -348,7 +348,26 @@ const SHA_A = "a".repeat(40);
 const SHA_B = "b".repeat(40);
 const ok = (over = {}) => ({
   claimSha: SHA_A, headSha: SHA_A, baseContained: true, missingCommits: [], suite: "green",
-  commitCount: 1, evidence: "294 pass, 0 fail", ...over,
+  commitCount: 1, porcelain: "", evidence: "294 pass, 0 fail", ...over,
+});
+
+test("acceptPreflight: empty porcelain is the only clean state", () => {
+  assert.equal(H.acceptPreflight({ porcelain: "" }).ok, true);
+  assert.equal(H.acceptPreflight({ porcelain: "\n  \n" }).ok, true, "whitespace-only output is no output");
+});
+
+test("acceptPreflight: any reported change refuses, and names what it saw", () => {
+  const r = H.acceptPreflight({ porcelain: " M src/app.js\n?? scratch.txt", clean: true });
+  assert.equal(r.ok, false, "non-empty porcelain is dirty however `clean` is set");
+  assert.match(r.reason, /uncommitted/i);
+  assert.match(r.reason, /src\/app\.js/, "the human has to know which files to deal with");
+});
+
+test("acceptPreflight: an unreported status is not clean", () => {
+  // "I could not tell" must never read as "fine".
+  for (const bad of [null, undefined, {}, { clean: true }, { porcelain: 0 }]) {
+    assert.equal(H.acceptPreflight(bad).ok, false, `expected ${JSON.stringify(bad)} to be refused`);
+  }
 });
 
 test("isSha accepts only a full 40-char hex sha", () => {
@@ -419,6 +438,14 @@ test("acceptVerification accepts a verified claim that contains at least one com
   assert.deepEqual(H.acceptVerification(ok({ commitCount: 1 }), "npm test"), {
     ok: true, reason: "", headSha: SHA_A,
   });
+});
+
+test("acceptVerification rejects a green claim made in a dirty tree", () => {
+  // The tree can become dirty at any point after the wave-0 preflight — a task that commits its
+  // change but leaves a stray file behind dirties the tree the NEXT wave merges into.
+  const r = H.acceptVerification(ok({ porcelain: " M src/leftover.js" }), "npm test");
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /uncommitted/i);
 });
 
 test("isShaish gates shell interpolation: hex only, so no metacharacter can pass", () => {

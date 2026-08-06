@@ -40,10 +40,17 @@ for each wave (tasks with satisfied deps, run concurrently in sibling worktrees)
 final whole-branch reviewer (opus) → merge-readiness + ponytail-debt harvest
 ```
 
+Before wave 0 dispatches anything, a `sonnet` preflight reports `git status --porcelain` in the
+integration workdir, and a non-empty result halts the run (`halted.wave === "preflight"`).
+Uncommitted changes there are invisible to the wave worktrees, which are seeded from the committed
+tip — and the wave merger then merges into that dirty tree, which either aborts or integrates local
+edits nobody reviewed.
+
 Every state advance — each singleton task, each wave merge, and the final fix — is re-checked by
 an independent `sonnet` verifier before `base` moves: the claimed commit must resolve, it must
-actually be the branch head, it must contain every succeeded task's commit, and the suite must be
-green. The workflow advances only to the SHA the verifier resolved, never to the claim. That
+actually be the branch head, it must contain every succeeded task's commit, the tree must still be
+clean (the same porcelain check, since a task can dirty it after the preflight), and the suite must
+be green. The workflow advances only to the SHA the verifier resolved, never to the claim. That
 in-workflow check is a confidence check, not proof — the sandbox has no `child_process` — so the
 controller re-runs `git` and the suite itself against the returned `head` before presenting or
 finishing (see step 7 above).

@@ -88,9 +88,13 @@ function happyResponder(overrides = {}) {
     if (label.startsWith("merge:w")) {
       return { headSha: MERGED, merged: ["1", "2"], conflictsResolved: [], testSummary: "2 pass", suite: "green" };
     }
+    if (label === "preflight:workdir") {
+      // Default: the integration tree is clean, so the run proceeds.
+      return { porcelain: "", clean: true };
+    }
     if (label.startsWith("verify:")) {
       // Default: the verifier confirms whatever was claimed. Tests override to inject disagreement.
-      return { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], commitCount: 1, suite: "green", evidence: "2 pass, 0 fail" };
+      return { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "green", evidence: "2 pass, 0 fail" };
     }
     if (label === "final-review" || label === "final-review-2") return { verdict: "approve", findings: [], ponytailDebt: [] };
     throw new Error(`unscripted agent label: ${label}`);
@@ -119,7 +123,7 @@ test("merge gate: a claimed-green merge the verifier finds red halts the run", a
   const { result } = await runWorkflow({
     args: waveArgs(),
     respond: happyResponder({
-      "verify:w0": { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], commitCount: 1, suite: "red", evidence: "3 failing" },
+      "verify:w0": { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "red", evidence: "3 failing" },
     }),
   });
   assert.ok(result.halted, "an unverified merge must halt, not poison the next wave's base");
@@ -131,7 +135,7 @@ test("merge gate: a merger naming a commit that is not the branch head halts the
   const { result } = await runWorkflow({
     args: waveArgs(),
     respond: happyResponder({
-      "verify:w0": { claimSha: MERGED, headSha: SHA("f"), missingCommits: [], commitCount: 1, suite: "green", evidence: "ok" },
+      "verify:w0": { claimSha: MERGED, headSha: SHA("f"), missingCommits: [], commitCount: 1, porcelain: "", suite: "green", evidence: "ok" },
     }),
   });
   assert.ok(result.halted);
@@ -154,7 +158,7 @@ test("singleton wave: a linear task's claimed head is verified before base advan
   const { result, calls } = await runWorkflow({
     args: soloArgs(),
     respond: happyResponder({
-      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), baseContained: true, missingCommits: [], commitCount: 1, suite: "green", evidence: "1 pass" },
+      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "green", evidence: "1 pass" },
     }),
   });
   assert.equal(result.halted, null);
@@ -181,7 +185,7 @@ test("singleton wave: an unverifiable task halts instead of advancing base", asy
   const { result } = await runWorkflow({
     args: soloArgs(),
     respond: happyResponder({
-      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), baseContained: true, missingCommits: [], commitCount: 1, suite: "red", evidence: "1 failing" },
+      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "red", evidence: "1 failing" },
     }),
   });
   assert.ok(result.halted);
@@ -197,7 +201,7 @@ test("final fix: head advances past the fixer's commit and finalFix is reported"
     respond: happyResponder({
       "final-review": { verdict: "changes", findings: [{ severity: "Critical", file: "a.mjs", line: "1", what: "x", planMandated: false }], ponytailDebt: [] },
       "final-fix": { headSha: FIXED, testSummary: "294 pass", fixed: ["x"] },
-      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], commitCount: 1, suite: "green", evidence: "294 pass, 0 fail" },
+      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "green", evidence: "294 pass, 0 fail" },
     }),
   });
   assert.equal(result.halted, null);
@@ -214,7 +218,7 @@ test("final fix: a fix that leaves the suite red halts instead of reporting an a
     respond: happyResponder({
       "final-review": { verdict: "changes", findings: [{ severity: "Critical", file: "a.mjs", line: "1", what: "x", planMandated: false }], ponytailDebt: [] },
       "final-fix": { headSha: FIXED, testSummary: "claims green", fixed: ["x"] },
-      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], commitCount: 1, suite: "red", evidence: "2 failing" },
+      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "red", evidence: "2 failing" },
     }),
   });
   assert.ok(result.halted, "a final fix that breaks the branch must not be reported as approved");
@@ -299,7 +303,7 @@ test("a post-fix review that fails to dispatch halts — the returned head is no
     respond: happyResponder({
       "final-review": { verdict: "changes", findings: [{ severity: "Critical", file: "a.js", line: "1", what: "real bug", planMandated: false }], ponytailDebt: [] },
       "final-fix": { headSha: FIXED, testSummary: "3 pass", fixed: ["real bug"] },
-      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], commitCount: 1, suite: "green", evidence: "3 pass" },
+      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "green", evidence: "3 pass" },
       get "final-review-2"() { return throwing(); },
     }),
   });
@@ -334,7 +338,7 @@ test("phases: a per-task fix runs in its OWN phase, not inside Review", async ()
       }
       if (label === "fix:t1.1") return { headSha: SHA("f"), testSummary: "1 pass", fixed: ["off-by-one"] };
       if (label.startsWith("verify:")) {
-        return { claimSha: SHA("f"), headSha: SHA("f"), baseContained: true, missingCommits: [], commitCount: 1, suite: "green", evidence: "1 pass, 0 fail" };
+        return { claimSha: SHA("f"), headSha: SHA("f"), baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "green", evidence: "1 pass, 0 fail" };
       }
       return respond(label, prompt);
     },
@@ -365,7 +369,7 @@ test("oscillation: a class surviving ONE fix gets the second attempt fixRounds:2
       }
       if (label.startsWith("fix:t1.")) return { headSha: SHA("f"), testSummary: "1 pass", fixed: ["off-by-one"] };
       if (label.startsWith("verify:")) {
-        return { claimSha: SHA("f"), headSha: SHA("f"), baseContained: true, missingCommits: [], commitCount: 1, suite: "green", evidence: "1 pass, 0 fail" };
+        return { claimSha: SHA("f"), headSha: SHA("f"), baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "green", evidence: "1 pass, 0 fail" };
       }
       return respond(label, prompt);
     },
@@ -476,6 +480,57 @@ test("only the terminal review's deferred items are forwarded, not one per round
     }),
   });
   assert.equal(result.deferred.minors.length, 1, "one surviving Minor is one entry, not one per round");
+});
+
+// ---------------------------------------------------------------------------
+// Preflight. Wave worktrees are seeded from the committed branch tip, so uncommitted changes in the
+// integration workdir are invisible to them — and the wave merger then merges into that dirty tree,
+// which either aborts (orphaning worktrees) or integrates local edits nobody reviewed. sdd.mjs has
+// no child_process, so the check is a dispatched observation the workflow gates on itself.
+// ---------------------------------------------------------------------------
+
+test("a dirty integration tree halts before any implementer is dispatched", async () => {
+  const { result, calls } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "preflight:workdir": { porcelain: " M src/app.js\n?? scratch.txt", clean: false },
+    }),
+  });
+  assert.ok(result.halted);
+  assert.equal(result.halted.wave, "preflight");
+  assert.match(result.halted.reason, /uncommitted|dirty/i);
+  assert.equal(calls.filter((c) => c.label.startsWith("impl:")).length, 0,
+    "nothing may be dispatched into a tree whose state the wave worktrees cannot see");
+});
+
+test("the preflight trusts the porcelain output, not the agent's clean flag", async () => {
+  const { result } = await runWorkflow({
+    args: soloArgs(),
+    // The same shape acceptVerification defends against: never gate on a boolean the
+    // agent could simply set — gate on the output it reported seeing.
+    respond: happyResponder({ "preflight:workdir": { porcelain: " M src/app.js", clean: true } }),
+  });
+  assert.ok(result.halted, "non-empty porcelain is dirty however the flag is set");
+});
+
+test("a clean tree runs normally and dispatches the preflight exactly once", async () => {
+  const { result, calls } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({ "preflight:workdir": { porcelain: "", clean: true } }),
+  });
+  assert.ok(!result.halted);
+  assert.equal(calls.filter((c) => c.label === "preflight:workdir").length, 1);
+});
+
+test("a merge verified against a dirty integration tree is refused", async () => {
+  const { result } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({
+      "verify:w0": { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], commitCount: 2, porcelain: " M src/leftover.js", suite: "green", evidence: "2 pass" },
+    }),
+  });
+  assert.ok(result.halted, "a green suite in a dirty tree is not a verified merge");
+  assert.match(result.halted.reason, /uncommitted/i);
 });
 
 test("an escalated implementer is reviewed at the tier it escalated to", async () => {
