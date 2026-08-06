@@ -431,10 +431,11 @@ const FINAL_SCHEMA = {
       type: "array",
       items: {
         type: "object", additionalProperties: false,
-        required: ["severity", "file", "line", "what"],
+        required: ["severity", "file", "line", "what", "planMandated"],
         properties: {
           severity: { type: "string", enum: ["Critical", "Important", "Minor"] },
           file: { type: "string" }, line: { type: "string" }, what: { type: "string" },
+          planMandated: { type: "boolean" },
         },
       },
     },
@@ -586,7 +587,9 @@ Global constraints:\n${gc}${
         ? `\n\nADR SUCCESS CRITERIA — judge the branch against these (the done-oracle the human ratifies):\n${cfg.successCriteria}\nFor each: set kind ("oracle" if it names a test/CI/assertion, else "checker"); set verdict ("met"/"unmet"/"cannot-verify"). Judge "checker" criteria against the diff; for "oracle" criteria confirm the test/assertion is present and satisfied but do NOT re-run suites. Add any UNMET criterion to findings[] so it gets fixed. Then one holistic judgment in "holistic": do these changes add up to the stated intent? Return criteria[] and holistic.`
         : ""
     }
-Return per schema: verdict ("approve"/"changes"), findings[{severity,file,line,what}], ponytailDebt[]${cfg.successCriteria ? ", criteria[], holistic" : ""}.`;
+Set planMandated=true for any finding the plan or an ADR explicitly mandates — those go to a human to
+adjudicate and are NEVER auto-fixed.
+Return per schema: verdict ("approve"/"changes"), findings[{severity,file,line,what,planMandated}], ponytailDebt[]${cfg.successCriteria ? ", criteria[], holistic" : ""}.`;
 
   const finalFixPrompt = (findings) =>
     `Fix ALL of these whole-branch review findings in one commit, in ${cfg.workdir}. Read ${P}/prompts/fixer.md and follow it.
@@ -734,11 +737,15 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     finalReview = await dispatchAgent(agent, finalPrompt(cfg.mergeBase, base), {
       label: "final-review", phase: "Final", model: "opus", effort: "high", schema: FINAL_SCHEMA,
     });
-    const findings = finalReview ? (finalReview.findings || []) : [];
+    const allFindings = finalReview ? (finalReview.findings || []) : [];
+    allFindings.filter((f) => f.planMandated).forEach((c) => planConflicts.push({ taskN: "final", ...c }));
+    // Severity, not count: an "approve" carrying one Minor nit used to fire an Opus fixer plus an
+    // Opus re-review — the most expensive tail in the run, spent on a nit.
+    const findings = allFindings.filter((f) => !f.planMandated && (f.severity === "Critical" || f.severity === "Important"));
     if (!finalReview) {
       // "The final review did not run" is not "the branch is fine".
       halted = { wave: "final", reason: "final review returned no result", failures: [] };
-    } else if (finalReview.verdict === "changes" && !findings.length) {
+    } else if (finalReview.verdict === "changes" && !allFindings.length) {
       // The reviewer's contract (prompts/final-reviewer.md) is that "changes" means findings must be
       // addressed. "changes" with nothing to act on is a broken report, not an approval.
       halted = { wave: "final", reason: "final review returned verdict 'changes' with no findings to act on", failures: [] };

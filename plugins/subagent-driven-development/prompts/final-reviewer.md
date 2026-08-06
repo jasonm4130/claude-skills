@@ -61,5 +61,8 @@ changed is a normal edit, not a finding.
 
 ## Return
 
+Set `planMandated: true` for any finding the plan or an ADR explicitly mandates —
+those go to a human to adjudicate and are NEVER auto-fixed.
+
 Per schema: `verdict` (`approve`/`changes`),
-`findings[{severity,file,line,what}]`, `ponytailDebt[]`.
+`findings[{severity,file,line,what,planMandated}]`, `ponytailDebt[]`.

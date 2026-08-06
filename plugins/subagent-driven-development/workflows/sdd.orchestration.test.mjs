@@ -195,7 +195,7 @@ test("final fix: head advances past the fixer's commit and finalFix is reported"
   const { result, calls } = await runWorkflow({
     args: waveArgs(),
     respond: happyResponder({
-      "final-review": { verdict: "approve", findings: [{ severity: "Minor", file: "a.mjs", line: "1", what: "x" }], ponytailDebt: [] },
+      "final-review": { verdict: "changes", findings: [{ severity: "Critical", file: "a.mjs", line: "1", what: "x", planMandated: false }], ponytailDebt: [] },
       "final-fix": { headSha: FIXED, testSummary: "294 pass", fixed: ["x"] },
       "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], commitCount: 1, suite: "green", evidence: "294 pass, 0 fail" },
     }),
@@ -212,7 +212,7 @@ test("final fix: a fix that leaves the suite red halts instead of reporting an a
   const { result } = await runWorkflow({
     args: waveArgs(),
     respond: happyResponder({
-      "final-review": { verdict: "approve", findings: [{ severity: "Minor", file: "a.mjs", line: "1", what: "x" }], ponytailDebt: [] },
+      "final-review": { verdict: "changes", findings: [{ severity: "Critical", file: "a.mjs", line: "1", what: "x", planMandated: false }], ponytailDebt: [] },
       "final-fix": { headSha: FIXED, testSummary: "claims green", fixed: ["x"] },
       "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], commitCount: 1, suite: "red", evidence: "2 failing" },
     }),
@@ -228,6 +228,40 @@ test("final review: a missing final review halts rather than passing as a clean 
   });
   assert.ok(result.halted, "'the final review did not run' is not 'the branch is fine'");
   assert.match(result.halted.reason, /final review/i);
+});
+
+test("a lone Minor finding on an approve verdict does not trigger the final fixer", async () => {
+  const { calls, result } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "final-review": { verdict: "approve", findings: [{ severity: "Minor", file: "a.js", line: "1", what: "nit", planMandated: false }], ponytailDebt: [] },
+    }),
+  });
+  assert.equal(calls.filter((c) => c.label === "final-fix").length, 0,
+    "an approve verdict with only Minors is an approval");
+  assert.ok(!result.halted);
+});
+
+test("a plan-mandated final finding is hoisted to planConflicts, never auto-fixed", async () => {
+  const { calls, result } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "final-review": { verdict: "changes", findings: [{ severity: "Critical", file: "a.js", line: "1", what: "the plan mandates this duplication", planMandated: true }], ponytailDebt: [] },
+    }),
+  });
+  assert.equal(calls.filter((c) => c.label === "final-fix").length, 0);
+  assert.ok(result.planConflicts.some((c) => c.taskN === "final"),
+    "the human adjudicates a plan conflict; the fixer must not overwrite the plan");
+});
+
+test("a Critical final finding still triggers the fixer", async () => {
+  const { calls } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "final-review": { verdict: "changes", findings: [{ severity: "Critical", file: "a.js", line: "1", what: "real bug", planMandated: false }], ponytailDebt: [] },
+    }),
+  });
+  assert.equal(calls.filter((c) => c.label === "final-fix").length, 1);
 });
 
 // ---------------------------------------------------------------------------
