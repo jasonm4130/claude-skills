@@ -30,6 +30,13 @@ import {
 
 const raw = await readStdin();
 const payload = /** @type {PromptInput | null} */ (safeJsonParse(raw));
+// A payload that does not parse is "cannot tell", and every anomaly here is silent.
+// Falling through to process.cwd() made a malformed call speak for whatever repo the
+// hook happened to be spawned in, under session id "unknown" — invisible until that
+// repo crossed the drift threshold, at which point the pair of hooks armed and then
+// consumed a flag nobody's session owned. The sibling PreToolUse guard already exits
+// here; these two were the outliers.
+if (payload === null) process.exit(0);
 const cwd =
   payload && typeof payload.cwd === "string" && payload.cwd.length > 0
     ? payload.cwd

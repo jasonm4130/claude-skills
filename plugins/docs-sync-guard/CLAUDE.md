@@ -128,6 +128,14 @@ Codex-reviewed: 3 rounds + audit, chain `881f87716802`, 14 unique findings.
   `design-gate-guard` solves a harder version of this with a full tokenizer,
   because it needs segment *heads*; here only the bodies must go.
 
+- **An unparseable payload exits before anything else (0.3.7).** Both consolidation
+  hooks used to fall through to `process.cwd()` and `session_id: "unknown"` when stdin
+  did not parse, so a malformed call armed and then consumed a nudge flag for whatever
+  repo the hook was spawned in. It was invisible until that repo crossed the drift
+  threshold — this repo's own suite went red at 52 commits and had passed at 39. The
+  `PreToolUse` guard already exited on `!payload`; these two were the outliers.
+  Fail-open means silent, not "assume the ambient shell".
+
 ## Conventions
 
 Same as the other guard plugins: ESM `.mjs` only, stdlib only, `// @ts-check` with
