@@ -172,7 +172,7 @@ ADR's Success-criteria block, judged at the whole-branch step as the done-oracle
 Everything else — tiering, escalation, the per-task gate, finishing — is identical.
 
 ### 7. On return: present, adjudicate, finish
-The workflow returns `{ tasks, planConflicts, halted, finalReview, finalFix,
+The workflow returns `{ tasks, planConflicts, deferred, halted, finalReview, finalFix,
 mergeBase, head, merges, meta }`.
 
 **Verify the returned head yourself before presenting or finishing.** The workflow's
@@ -213,6 +213,10 @@ gate exists to catch.
   wave's merge gate did.
 - **`planConflicts`** → findings that conflict with what the plan mandates. You
   decide which governs; the workflow never auto-fixes these.
+- **`deferred`** → `{ minors, cannotVerify }`, each entry tagged with its `taskN` —
+  the Minor findings the per-task reviews chose not to act on, and the claims a
+  reviewer could not verify. Show them; they are signal the loop collected and
+  nobody else will surface.
 - **`finalReview`** → whole-branch verdict + any `ponytailDebt` markers.
 - **`finalFix`** → `{ headSha, fixed, testSummary, verified }` — what the final fixer changed,
   re-checked against git and the suite. `head` points past it. `null` when the final review found
