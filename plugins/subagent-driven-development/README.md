@@ -34,23 +34,25 @@ degenerate to one task per wave — sequential in effect):
 for each wave (tasks with satisfied deps, run concurrently in sibling worktrees):
   for each task in the wave:
     implementer (model = task.tier)  → task-brief, TDD red→green, ponytail ladder, commit
-    reviewer    (opus if task=opus, else sonnet) → spec + quality + over-engineering lens
-    fix loop    (sonnet, capped)     → fix all Critical/Important, re-review
-  merge gate (sonnet) → integrate wave's successful tasks in order, run full suite, one repair attempt
-final whole-branch reviewer (opus) → merge-readiness + ponytail-debt harvest
+    reviewer    (the tier the implementer finished at) → spec + quality + over-engineering lens
+    fix loop    (capped)             → fix all Critical/Important, re-review
+  merge gate → integrate wave's successful tasks in order, run full suite, one repair attempt
+final whole-branch reviewer → merge-readiness + ponytail-debt harvest
 ```
 
-Before wave 0 dispatches anything, a `sonnet` preflight reports `git status --porcelain` in the
+Before wave 0 dispatches anything, a preflight reports `git status --porcelain` in the
 integration workdir, and a non-empty result halts the run (`halted.wave === "preflight"`).
 Uncommitted changes there are invisible to the wave worktrees, which are seeded from the committed
 tip — and the wave merger then merges into that dirty tree, which either aborts or integrates local
 edits nobody reviewed.
 
 Every state advance — each singleton task, each wave merge, and the final fix — is re-checked by
-an independent `sonnet` verifier before `base` moves: the claimed commit must resolve, it must
-actually be the branch head, it must contain every succeeded task's commit, the tree must still be
-clean (the same porcelain check, since a task can dirty it after the preflight), and the suite must
-be green. The workflow advances only to the SHA the verifier resolved, never to the claim. That
+an independent verifier before `base` moves: the claimed commit must resolve, it must
+actually be the branch head, it must contain every succeeded task's commit, the range must contain
+at least one commit, the tree must have no dirty *tracked* files, and the suite must
+be green. Those later checks report `git status --porcelain --untracked-files=no`, unlike the
+wave-0 preflight: they run after an agent has already executed the suite, so a repo whose tests
+drop `coverage/` or `.pytest_cache/` would otherwise halt mid-run over output `git merge` ignores. The workflow advances only to the SHA the verifier resolved, never to the claim. That
 in-workflow check is a confidence check, not proof — the sandbox has no `child_process` — so the
 controller re-runs `git` and the suite itself against the returned `head` before presenting or
 finishing (see step 7 above).
@@ -105,16 +107,16 @@ transcript.
 
 ### Model tiering
 
-Implementer = controller-assigned `task.tier` (`sonnet` floor); reviewer = `opus`
-for opus tasks else `sonnet`; fixer = `sonnet`; final review = `opus`. `model:` is
-set on **every** `agent()` call, so none inherit the orchestrator and the
-`workflow-model-guard` hook passes.
+One table, one home: **`skills/subagent-driven-development/SKILL.md` § "Model tiering at a glance"**.
+This file used to carry a second copy, and the two disagreed in both directions. All that belongs
+here is the invariant: `model:` is set on **every** `agent()` call, so none inherit the
+orchestrator and the `workflow-model-guard` hook passes.
 
 ### Deterministic failure handling
 
-- **BLOCKED ladder:** escalate `haiku → sonnet → opus → fable`, one attempt per
-  tier below opus; at opus, up to `escalateAttempts` (default 2); then one shot on
-  `fable` — the premium top rung, opt out with `fableEscalation: false` to halt at
+- **BLOCKED ladder:** climb *effort* on `opus` first (`low → medium → high`), then
+  spend a pricier model: at `opus`/`high`, up to `escalateAttempts` (default 2); then one
+  shot on `fable` — the premium top rung, opt out with `fableEscalation: false` to halt at
   opus (on by default) — then halt the run and return state (resume via
   `resumeFromRunId` after a human fixes the cause — **same Claude Code session
   only**: resume state is not persisted to disk, so exiting the session starts
@@ -125,11 +127,27 @@ set on **every** `agent()` call, so none inherit the orchestrator and the
 - **Fix cap:** `fixRounds` (default 2).
 - **Wave scheduling:** tasks whose `deps` are all satisfied run concurrently
   (capped at `limits.maxParallel`, default 4), each in a sibling worktree
-  `<workdir>-t<N>` on branch `sdd/t<N>`. A sonnet merge gate integrates each
+  `<workdir>-t<N>` on branch `sdd/t<N>`. A merge gate integrates each
   wave in the dispatched (topological) order, runs the full suite, and gets one bounded repair
   attempt; red after repair halts the run. Task failures don't cancel
   siblings — successful siblings are merged before the halt. Linear plans
   degenerate to singleton waves: identical to sequential execution.
+
+### Scripts
+
+Bash helpers in `scripts/`, all invoked by the agents themselves except the last:
+
+| Script | What it does |
+|---|---|
+| `sdd-workspace [WORKDIR]` | create the self-ignoring `.sdd/` workspace |
+| `task-brief [-C WORKDIR] PLAN N` | materialize one `# Task N` block as a brief file |
+| `review-package [-C WORKDIR] BASE HEAD` | build the diff package a reviewer reads |
+| `sdd-worktree WORKDIR BASE N` | ensure `<workdir>-t<N>` on `sdd/t<N>`, reusing it iff its tip descends from `BASE` |
+| `sdd-gc [WORKDIR]` | **for you, after a halt:** list the worktrees and `sdd/t<N>` branches the run left behind |
+
+`sdd-gc` reports and never deletes — after a halt those worktrees hold the evidence, so it
+prints the removal commands and leaves the call to you. It classifies each artefact `merged`,
+`unmerged` or `prunable` (registered, directory already gone).
 
 ### Ponytail, codified and bounded
 
