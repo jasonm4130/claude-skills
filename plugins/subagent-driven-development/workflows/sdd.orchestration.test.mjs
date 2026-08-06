@@ -533,6 +533,40 @@ test("a merge verified against a dirty integration tree is refused", async () =>
   assert.match(result.halted.reason, /uncommitted/i);
 });
 
+test("the verify gate asks only about tracked modifications; the wave-0 preflight asks about everything", async () => {
+  // Every verify runs AFTER the implementer/merger has run the test suite, so a repo whose tests
+  // drop `coverage/` or `.pytest_cache/` would halt mid-run on output `git merge` ignores. The
+  // preflight runs before anything, where an untracked file is pre-existing work worth surfacing.
+  const { prompts } = await runWorkflow({ args: waveArgs(), respond: happyResponder() });
+  for (const label of Object.keys(prompts).filter((l) => l.startsWith("verify:"))) {
+    assert.match(prompts[label], /status --porcelain --untracked-files=no/,
+      `${label} must scope its dirty-tree check to tracked files`);
+  }
+  assert.match(prompts["preflight:workdir"], /status --porcelain\b/);
+  assert.doesNotMatch(prompts["preflight:workdir"], /--untracked-files=no/,
+    "the wave-0 preflight deliberately keeps the wider check");
+});
+
+test("a verifier reporting no tracked modifications passes, whatever untracked output the suite left", async () => {
+  // `--untracked-files=no` means the verifier reports "" for a tree full of build artefacts.
+  // Nothing downstream may re-derive dirtiness from anywhere else and halt on it.
+  const { result } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({
+      "verify:w0": { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], commitCount: 2, porcelain: "", suite: "green", evidence: "2 pass, 0 fail — coverage/ and .pytest_cache/ left in the tree" },
+    }),
+  });
+  assert.equal(result.halted, null, JSON.stringify(result.halted));
+  assert.equal(result.merges[0].verified, true);
+});
+
+test("the reviewer's quality narrative reaches the task result", async () => {
+  // It is the one per-task judgement that is neither a finding nor a verdict; dropped here, the
+  // controlling agent has nothing to report to the human.
+  const { result } = await runWorkflow({ args: waveArgs(), respond: happyResponder() });
+  assert.equal(result.tasks[0].quality, "fine");
+});
+
 test("an escalated implementer is reviewed at the tier it escalated to", async () => {
   // Start the task at sonnet and BLOCK once, so the ladder escalates it to opus before it
   // succeeds. Today the reviewer would be picked from the ORIGINAL sonnet assignment.

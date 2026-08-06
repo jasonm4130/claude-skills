@@ -328,6 +328,13 @@ const DIRTY_CONTEXT = {
 // Decide from a reported `git status --porcelain` whether dispatch may proceed. Empty output
 // (modulo whitespace) is the only clean state; a missing/unreported field is NOT clean, because
 // "I could not tell" must never read as "fine". `context` explains why to whoever reads the halt.
+//
+// The two callers deliberately feed this DIFFERENT commands. The wave-0 preflight reports full
+// `--porcelain`: nothing has run yet, so an untracked file is pre-existing work the human should
+// see before the run buries it. Every later gate reports `--untracked-files=no`, because by then
+// the implementer and merger have run the test suite — and a repo whose tests drop `coverage/` or
+// `.pytest_cache/` would halt mid-run over output that `git merge` is perfectly happy to ignore.
+// Dirty TRACKED files are the real hazard: those are what abort a merge or get swept into one.
 function acceptPreflight(p, context = "uncommitted work must be committed or stashed first") {
   if (!p || typeof p.porcelain !== "string") {
     return { ok: false, reason: "preflight did not report git status output" };
@@ -463,9 +470,12 @@ const VERIFY_SCHEMA = {
     // its sha resolves, it is its own ancestor, and the suite is green because nothing
     // changed. This is the only field that can tell that apart from real work.
     commitCount: { type: "number" },
-    // `git status --porcelain` in the integration tree. A merge into a dirty tree either
-    // aborts or silently integrates uncommitted edits nobody reviewed, and the tree can
-    // become dirty at any point after the wave-0 preflight.
+    // `git status --porcelain --untracked-files=no` in the integration tree. A merge into a
+    // dirty tree either aborts or silently integrates uncommitted edits nobody reviewed, and
+    // the tree can become dirty at any point after the wave-0 preflight. TRACKED modifications
+    // only: this check runs after the implementer/merger has already run the suite, so any repo
+    // whose tests write untracked output (`coverage/`, `.pytest_cache/`, build artefacts) would
+    // otherwise halt every verification for something `git merge` does not care about.
     porcelain: { type: "string" },
     suite: { type: "string", enum: ["green", "red", "unknown"] },
     evidence: { type: "string" },
@@ -600,8 +610,9 @@ Run exactly these and report what they actually print:
 1. \`git -C ${cfg.workdir} rev-parse --verify ${claimedSha}^{commit}\`
    Report the full 40-character SHA it prints as claimSha. If it fails, claimSha="", put the error
    text in evidence, and stop.
-2. \`git -C ${cfg.workdir} status --porcelain\`
-   Report its output verbatim as porcelain — "" if it printed nothing.
+2. \`git -C ${cfg.workdir} status --porcelain --untracked-files=no\`
+   Report its output verbatim as porcelain — "" if it printed nothing. Run it with that flag
+   exactly: untracked files a test run left behind are not what this gate is looking for.
 3. \`git -C ${cfg.workdir} rev-parse HEAD\`
    Report the full 40-character SHA it prints as headSha. Report what git printed — do not echo
    back the claimed SHA.
@@ -718,6 +729,10 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
       n: task.n, status: impl.status, headSha: head,
       reviewVerdict: review.spec, fixRounds: rounds,
       concerns: impl.concerns || "", reportPath: impl.reportPath || "",
+      // The reviewer's quality narrative. It is the only per-task judgement that is neither a
+      // finding nor a verdict, and dropping it here meant the controlling agent could never
+      // report it to the human.
+      quality: review.quality || "",
     } };
   }
 

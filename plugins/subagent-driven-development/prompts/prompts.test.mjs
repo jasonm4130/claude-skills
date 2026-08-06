@@ -28,7 +28,13 @@ test("reviewer prompt has three verdicts, the over-engineering tags, net score, 
   assert.match(s, /planMandated/);
   assert.match(s, COUNTER);
   assert.match(s, /finding class/i);
-  for (const c of ["correctness", "spec-gap", "test-gap"]) {
+  // All eight, not a sample: the oscillation breaker in sdd.mjs compares these labels across
+  // rounds, so a class the reviewer is never shown is a class it invents free text for — and a
+  // rename in FINDING_CLASSES that never reaches reviewer.md fails silently, at run time.
+  for (const c of [
+    "correctness", "spec-gap", "test-gap", "error-handling",
+    "security", "over-engineering", "duplication", "naming",
+  ]) {
     assert.ok(s.includes(c), `reviewer.md must list the '${c}' finding class`);
   }
 });
