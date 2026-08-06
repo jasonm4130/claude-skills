@@ -231,6 +231,49 @@ test("final review: a missing final review halts rather than passing as a clean 
 });
 
 // ---------------------------------------------------------------------------
+// Dispatch failures. A dispatch can REJECT rather than resolve null (a withdrawn tier, a transient
+// API failure). An uncaught rejection escapes the workflow body, so the run returns nothing at all —
+// no halted state, no tasks, no merges — and SDD's resume state is session-memory-only.
+// `happyResponder` returns its override by property access, so a getter is how a scripted label
+// throws instead of resolving.
+// ---------------------------------------------------------------------------
+
+const throwing = () => { throw new Error("transient dispatch failure"); };
+
+test("a rejecting dispatch in a singleton wave halts cleanly instead of crashing the run", async () => {
+  const { result } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({ get "review:t1"() { return throwing(); } }),
+  });
+  assert.ok(result.halted, "the run must return a halted state, not reject");
+  assert.match(result.halted.reason, /reviewer returned no result|task failure/i);
+  assert.ok(Array.isArray(result.tasks), "tasks must still be returned");
+});
+
+test("a rejecting merge dispatch halts cleanly", async () => {
+  const { result } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({ get "merge:w0"() { return throwing(); } }),
+  });
+  assert.ok(result.halted, "the run must return a halted state, not reject");
+  assert.match(result.halted.reason, /merge agent returned no result/i);
+});
+
+test("a post-fix review that fails to dispatch halts — the returned head is not reviewed", async () => {
+  const { result } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "final-review": { verdict: "changes", findings: [{ severity: "Critical", file: "a.js", line: "1", what: "real bug", planMandated: false }], ponytailDebt: [] },
+      "final-fix": { headSha: FIXED, testSummary: "3 pass", fixed: ["real bug"] },
+      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], commitCount: 1, suite: "green", evidence: "3 pass" },
+      get "final-review-2"() { return throwing(); },
+    }),
+  });
+  assert.ok(result.halted, "a green fix whose re-review never ran is not a reviewed head");
+  assert.match(result.halted.reason, /post-fix review/i);
+});
+
+// ---------------------------------------------------------------------------
 // Phases. The progress tree groups agents by `phase`, and that grouping is the only view a human has
 // of a long run. Fix agents used to be tagged "Review" — so repairs rendered inside the box that
 // FOUND the problems, and the signal that matters most was invisible: fix rounds are a plan-quality

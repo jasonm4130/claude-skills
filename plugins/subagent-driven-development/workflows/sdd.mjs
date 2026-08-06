@@ -199,12 +199,13 @@ function escalationStep(tier, effort, attemptsAtTier, limits) {
   return up === null ? { action: "halt" } : { action: "escalate", tier: up, effort };
 }
 
-// Dispatch the implementer, normalizing BOTH failure shapes to null so runTask's clean-halt guard
-// fires either way: a resolved null (the runtime's terminal-error return) AND a thrown rejection. A
-// tier that cannot be dispatched at all — e.g. a withdrawn or repriced Fable — can reject rather than
-// resolve; without this catch that rejection escapes the `if (!impl)` guard and crashes the wave
-// instead of returning the workflow's halted state. `agentFn` is injected so this is unit-testable.
-async function dispatchImpl(agentFn, prompt, opts) {
+// Dispatch an agent, normalizing BOTH failure shapes to null so every caller's clean-halt guard
+// fires either way: a resolved null (the runtime's terminal-error return) AND a thrown rejection.
+// A tier that cannot be dispatched at all — a withdrawn or repriced model, a transient API failure
+// — can reject rather than resolve; an uncaught rejection escapes the `if (!x)` guard and takes the
+// whole run with it, returning no halted state, no results and no merges for a run that cannot be
+// resumed. `agentFn` is injected so this is unit-testable.
+async function dispatchAgent(agentFn, prompt, opts) {
   try {
     return await agentFn(prompt, opts);
   } catch {
@@ -518,7 +519,7 @@ Return per schema: headSha, merged, conflictsResolved, testSummary, suite ("gree
     if (bad) {
       return { ok: false, reason: `task ${bad.n} reported a head that is not a sha: ${JSON.stringify(bad.sha)}`, headSha: "" };
     }
-    const v = await agent(verifyPrompt(claimedSha, claim, expectCommits, baseSha), {
+    const v = await dispatchAgent(agent, verifyPrompt(claimedSha, claim, expectCommits, baseSha), {
       label, phase: phaseName, model: "sonnet", schema: VERIFY_SCHEMA,
     });
     return acceptVerification(v, cfg.testCmd);
@@ -591,7 +592,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     let tier = task.tier, effort = task.effort, attemptsAtTier = 0, blocker = null, impl = null;
     while (true) {
       attemptsAtTier++;
-      impl = await dispatchImpl(agent, implPrompt(task, tier, blocker, base, wd), {
+      impl = await dispatchAgent(agent, implPrompt(task, tier, blocker, base, wd), {
         label: `impl:t${task.n}`, phase: "Implement", model: tier, effort, schema: IMPL_SCHEMA,
       });
       if (!impl) return { halt: { taskN: task.n, reason: "implementer returned no result", reportPath: "" } };
@@ -608,7 +609,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     let head = impl.headSha, rounds = 0, review = null;
     const roundClasses = [];
     while (true) {
-      review = await agent(reviewPrompt(task, base, head, wd), {
+      review = await dispatchAgent(agent, reviewPrompt(task, base, head, wd), {
         label: `review:t${task.n}`, phase: "Review", model: reviewerModel(task.tier), effort: reviewerEffort(task.effort), schema: REVIEW_SCHEMA,
       });
       if (!review) return { halt: { taskN: task.n, reason: "reviewer returned no result", reportPath: impl.reportPath } };
@@ -620,7 +621,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
         return { halt: { taskN: task.n, reason: "review did not converge (cap or oscillation)", reportPath: impl.reportPath } };
       }
       rounds++;
-      const fix = await agent(fixPrompt(task, actionable, wd), {
+      const fix = await dispatchAgent(agent, fixPrompt(task, actionable, wd), {
         label: `fix:t${task.n}.${rounds}`, phase: "Fix", model: "opus", effort: "medium", schema: FIX_SCHEMA,
       });
       if (!fix) return { halt: { taskN: task.n, reason: "fixer returned no result", reportPath: impl.reportPath } };
@@ -638,7 +639,11 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     if (wave.length === 1) {
       // Degenerate case: shared workdir, no merge — but the implementer's claimed head still has to
       // be checked, or a linear plan (all singleton waves) advances entirely on unverified claims.
-      const r = await runTask(wave[0], base, cfg.workdir);
+      // runTask returns { task } or { halt } and can still reject from code outside a dispatch; a
+      // singleton wave has no runPool to catch that, and an escaped rejection returns nothing at all.
+      const r = await runTask(wave[0], base, cfg.workdir).catch((e) => ({
+        halt: { taskN: wave[0].n, reason: `task dispatch failed: ${e && e.message ? e.message : e}`, reportPath: "" },
+      }));
       if (r.halt) { halted = { wave: w, reason: "task failure(s) in wave", failures: [r.halt] }; break; }
       const acc = await runVerify(
         r.task.headSha,
@@ -663,7 +668,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     const { succeeded, failures } = partitionWaveResults(wave, poolOut, waveBase);
 
     if (succeeded.length) {
-      const merge = await agent(mergePrompt(w, waveBase, succeeded), {
+      const merge = await dispatchAgent(agent, mergePrompt(w, waveBase, succeeded), {
         label: `merge:w${w}`, phase: "Merge", model: "sonnet", schema: MERGE_SCHEMA,
       });
       if (!merge) {
@@ -709,7 +714,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
   let finalFix = null;
   if (!halted && results.length) {
     phase("Final");
-    finalReview = await agent(finalPrompt(cfg.mergeBase, base), {
+    finalReview = await dispatchAgent(agent, finalPrompt(cfg.mergeBase, base), {
       label: "final-review", phase: "Final", model: "opus", effort: "high", schema: FINAL_SCHEMA,
     });
     const findings = finalReview ? (finalReview.findings || []) : [];
@@ -721,7 +726,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
       // addressed. "changes" with nothing to act on is a broken report, not an approval.
       halted = { wave: "final", reason: "final review returned verdict 'changes' with no findings to act on", failures: [] };
     } else if (findings.length) {
-      const fix = await agent(finalFixPrompt(findings), {
+      const fix = await dispatchAgent(agent, finalFixPrompt(findings), {
         label: "final-fix", phase: "Final", model: "opus", effort: "medium", schema: FIX_SCHEMA,
       });
       if (!fix) {
@@ -745,9 +750,14 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
           // finalReview described the PRE-fix head. Review the post-fix head once, report-only: the
           // returned head must not be unreviewed. Report-only keeps it bounded — findings here go to
           // the controller to adjudicate, they do NOT trigger another fix (that is the unbounded loop).
-          const postFix = await agent(finalPrompt(cfg.mergeBase, base), {
+          const postFix = await dispatchAgent(agent, finalPrompt(cfg.mergeBase, base), {
             label: "final-review-2", phase: "Final", model: "opus", effort: "high", schema: FINAL_SCHEMA,
           });
+          if (!postFix) {
+            // The fix is committed and verified green, but nothing has reviewed the head we are
+            // about to return. "The re-review did not run" is not "the branch is fine".
+            halted = { wave: "final", reason: "post-fix review returned no result — the returned head is unreviewed", failures: [] };
+          }
           finalFix = {
             headSha: acc.headSha, fixed: fix.fixed, testSummary: fix.testSummary, verified: true,
             postFixReview: postFix || null,

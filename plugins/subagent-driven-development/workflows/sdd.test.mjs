@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "sdd.mjs"), "utf8");
 const pure = src.split("// >>> PURE")[1].split("// <<< PURE")[0];
 const H = new Function(
-  `${pure}; return { TIERS, EFFORTS, nextEffort, reviewerEffort, taskId, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchImpl, detectOscillation, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptVerification };`,
+  `${pure}; return { TIERS, EFFORTS, nextEffort, reviewerEffort, taskId, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchAgent, detectOscillation, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptVerification };`,
 )();
 
 const okArgs = () => ({
@@ -169,14 +169,14 @@ test("escalationStep: fableEscalation:false keeps the old opus->halt ceiling (ne
   assert.notDeepEqual(H.escalationStep("opus", "high", 2, limits), { action: "escalate", tier: "fable", effort: "high" });
 });
 
-test("dispatchImpl normalizes a rejecting dispatch (e.g. a withdrawn Fable tier) to null, not a throw", async () => {
+test("dispatchAgent normalizes a rejecting dispatch (e.g. a withdrawn Fable tier) to null, not a throw", async () => {
   const reject = async () => { throw new Error("model fable is unavailable"); };
-  assert.equal(await H.dispatchImpl(reject, "prompt", {}), null);
+  assert.equal(await H.dispatchAgent(reject, "prompt", {}), null);
 });
 
-test("dispatchImpl passes a resolved result — and a resolved null — straight through", async () => {
-  assert.deepEqual(await H.dispatchImpl(async () => ({ status: "DONE" }), "p", {}), { status: "DONE" });
-  assert.equal(await H.dispatchImpl(async () => null, "p", {}), null);
+test("dispatchAgent passes a resolved result — and a resolved null — straight through", async () => {
+  assert.deepEqual(await H.dispatchAgent(async () => ({ status: "DONE" }), "p", {}), { status: "DONE" });
+  assert.equal(await H.dispatchAgent(async () => null, "p", {}), null);
 });
 
 test("detectOscillation flags a class surviving two consecutive rounds", () => {
