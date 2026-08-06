@@ -27,14 +27,16 @@ const EFFORTS = ["low", "medium", "high"];
 // ...992, so an unsafe integer id would validate and then point task-brief at a
 // heading the plan does not contain. Strings may be any alphanumeric run, which
 // is exactly the character set that is safe in a git ref, a directory name and a
-// file name; ids beyond 2^53 can be passed as strings.
+// file name, and short enough that "<workdir>-t<n>" stays under NAME_MAX (255 on
+// this filesystem); ids beyond 2^53 can be passed as strings.
+const MAX_TASK_ID_LEN = 64;
 function taskId(n) {
   const s = typeof n === "number"
     ? (Number.isSafeInteger(n) && n > 0 ? String(n) : null)
     : (typeof n === "string" ? n : null);
   // The alphanumeric gate applies to numbers too: 1e21 is a positive integer that
   // stringifies to "1e+21", which is neither alphanumeric nor a heading any plan writes.
-  return s !== null && /^[A-Za-z0-9]+$/.test(s) ? s : null;
+  return s !== null && s.length <= MAX_TASK_ID_LEN && /^[A-Za-z0-9]+$/.test(s) ? s : null;
 }
 
 function validateArgs(input) {
@@ -64,7 +66,8 @@ function validateArgs(input) {
     const id = taskId(t.n);
     if (id === null) {
       throw new Error(
-        `tasks[${i}].n must be a positive integer or an alphanumeric id such as "N2" (got ${JSON.stringify(t.n)})`,
+        `tasks[${i}].n must be a positive integer or an alphanumeric id of at most ` +
+          `${MAX_TASK_ID_LEN} characters, such as "N2" (got ${JSON.stringify(t.n)})`,
       );
     }
     if (typeof t.title !== "string" || !t.title) throw new Error(`tasks[${i}].title is required`);

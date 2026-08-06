@@ -116,9 +116,12 @@ test("taskId accepts positive ints and alphanumeric ids, rejects the rest", () =
   assert.equal(H.taskId(3), "3");
   assert.equal(H.taskId("N2"), "N2");
   assert.equal(H.taskId("9A"), "9A");
+  // Bounded so "<workdir>-t<n>" stays inside NAME_MAX; a 256-char id validated but
+  // then could not be created as a worktree directory.
+  assert.equal(H.taskId("A".repeat(64)), "A".repeat(64));
   // 1e21 is a positive integer that stringifies to "1e+21" — not a heading any plan writes.
   // 9007199254740993 is unsafe: JSON.parse rounds it, so it would name a different task.
-  for (const bad of [0, -1, 1.5, NaN, 1e21, 9007199254740993, "", "N 2", "t/1", "1.5", "a-b", null, undefined, true, {}]) {
+  for (const bad of [0, -1, 1.5, NaN, 1e21, 9007199254740993, "", "N 2", "t/1", "1.5", "a-b", "A".repeat(65), null, undefined, true, {}]) {
     assert.equal(H.taskId(bad), null, `expected ${JSON.stringify(bad)} to be rejected`);
   }
 });
