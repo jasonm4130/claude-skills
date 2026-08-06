@@ -80,6 +80,10 @@ Each entry in `tasks` carries the implementer's `concerns` and `reportPath`, so 
 `{ minors, cannotVerify }` — what the per-task reviews chose not to act on, tagged with
 `taskN` and also handed to the final reviewer to triage against the whole branch.
 
+`meta` carries the final review's own verdict alongside the counts: `finalVerdict`, plus
+`finalChangesUnaddressed` — `true` when the final review said `changes` but raised only Minor
+findings, so no fixer ran. The run completed; the reviewer still said do not merge yet.
+
 ### Progress phases
 
 Every agent the workflow dispatches declares a phase, and the live progress tree (`/workflows`) groups

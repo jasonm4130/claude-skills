@@ -554,3 +554,49 @@ test("an escalated implementer is reviewed at the tier it escalated to", async (
   assert.equal(review.model, "opus",
     "reviewerModel('opus') is 'opus'; a reviewer picked from the original sonnet would be 'sonnet'");
 });
+
+test("an implementer that escalated to fable is reviewed at fable, not dropped to sonnet", async () => {
+  // "fable" is not in TIERS, so a reviewer lookup that only special-cases opus falls through to
+  // sonnet — the run's hardest task, four escalations deep, checked by its weakest reviewer.
+  let implCalls = 0;
+  const { calls } = await runWorkflow({
+    args: {
+      ...soloArgs(),
+      limits: { escalateAttempts: 1 },
+      tasks: [{ n: 1, title: "a", tier: "opus", effort: "high", deps: [] }],
+    },
+    respond: happyResponder({
+      get "impl:t1"() {
+        implCalls++;
+        return implCalls === 1
+          ? { status: "BLOCKED", headSha: "", testSummary: "", concerns: "stuck", reportPath: "r.md" }
+          : { status: "DONE", headSha: SHA("a"), testSummary: "1 pass", concerns: "", reportPath: "r.md" };
+      },
+    }),
+  });
+  const lastImpl = calls.filter((c) => c.label === "impl:t1").pop();
+  const review = calls.find((c) => c.label === "review:t1");
+  assert.equal(lastImpl.model, "fable", "an exhausted opus/high escalates to fable");
+  assert.equal(review.model, "fable", "the reviewer must not sit below the implementer it checks");
+});
+
+test("a final 'changes' verdict with only Minor findings runs no fixer but is flagged in meta", async () => {
+  const { result, calls } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "final-review": { verdict: "changes", findings: [{ severity: "Minor", what: "nit", where: "a.js", class: "style" }], ponytailDebt: [] },
+    }),
+  });
+  assert.equal(result.halted, null, "a Minor nit is not a halt");
+  assert.equal(calls.filter((c) => c.label === "final-fix").length, 0, "severity gating: no Opus fixer for a nit");
+  assert.equal(result.meta.finalFixApplied, false);
+  assert.equal(result.meta.finalVerdict, "changes");
+  assert.equal(result.meta.finalChangesUnaddressed, true,
+    "a 'do not merge yet' verdict must not report as a clean completed run");
+});
+
+test("an approved final review is not flagged as unaddressed changes", async () => {
+  const { result } = await runWorkflow({ args: soloArgs(), respond: happyResponder() });
+  assert.equal(result.meta.finalVerdict, "approve");
+  assert.equal(result.meta.finalChangesUnaddressed, false);
+});

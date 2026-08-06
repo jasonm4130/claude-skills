@@ -208,7 +208,9 @@ gate exists to catch.
   A halt can now also come from the **Final** phase (`wave: "final"`) — a missing final
   review, a missing fixer result, or a final fix that could not be confirmed — from a **merge
   gate** whose claimed green the verifier could not confirm, and from a **singleton task** whose
-  claimed head could not be confirmed.
+  claimed head could not be confirmed. A halt with `wave: "preflight"` comes from before any
+  dispatch at all: the integration workdir had uncommitted changes, which the wave worktrees
+  cannot see. Commit or stash them, then re-run.
 - **`merges`** → `[{ wave, merged, headSha, testSummary }]` — what each
   wave's merge gate did.
 - **`planConflicts`** → findings that conflict with what the plan mandates. You
@@ -221,6 +223,9 @@ gate exists to catch.
 - **`finalFix`** → `{ headSha, fixed, testSummary, verified }` — what the final fixer changed,
   re-checked against git and the suite. `head` points past it. `null` when the final review found
   nothing to fix.
+- **`meta.finalChangesUnaddressed`** → `true` when the final review returned `changes` but only
+  Minor findings, so no fixer ran. The run completed; the reviewer still said do not merge yet.
+  Show `finalReview.findings` and let the user decide before any merge or PR.
 - Then drive **finishing** — present merge / PR / cleanup options and let the
   user choose. Merging is irreversible and stays human-gated **in this session**;
   the workflow never merges. Default to `gh pr merge --merge` only when the user

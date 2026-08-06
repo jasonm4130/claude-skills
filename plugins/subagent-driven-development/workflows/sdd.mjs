@@ -171,7 +171,12 @@ function nextEffort(effort) {
   return i >= EFFORTS.length - 1 ? null : EFFORTS[i + 1];
 }
 
+// The reviewer is never weaker than the implementer it checks. `taskTier` is the tier the
+// implementer FINISHED at, so it can be "fable" — the escalation ladder's top rung, which is not in
+// TIERS. Falling through to "sonnet" there would hand the run's hardest task to its weakest
+// reviewer, so opus and fable each review at their own tier.
 function reviewerModel(taskTier) {
+  if (taskTier === "fable") return "fable";
   return taskTier === "opus" ? "opus" : "sonnet";
 }
 
@@ -310,16 +315,26 @@ function isShaish(s) {
   return typeof s === "string" && /^[0-9a-f]{7,40}$/.test(s);
 }
 
+// Why a dirty tree blocks each caller. The halt reason is the only diagnostic a human gets, so it
+// has to name the actual problem: the wave-0 seeding explanation is simply wrong for a singleton
+// task (no worktrees exist), a merge gate (merging into a dirty tree) or the final gate.
+const DIRTY_CONTEXT = {
+  preflight: "wave worktrees are seeded from the committed tip and cannot see them",
+  Implement: "the next wave is seeded from this commit and would not see them",
+  Merge: "the next wave's merger merges into this tree and would sweep them in",
+  Final: "the head this run returns must be exactly the code that was reviewed and verified",
+};
+
 // Decide from a reported `git status --porcelain` whether dispatch may proceed. Empty output
 // (modulo whitespace) is the only clean state; a missing/unreported field is NOT clean, because
-// "I could not tell" must never read as "fine".
-function acceptPreflight(p) {
+// "I could not tell" must never read as "fine". `context` explains why to whoever reads the halt.
+function acceptPreflight(p, context = "uncommitted work must be committed or stashed first") {
   if (!p || typeof p.porcelain !== "string") {
     return { ok: false, reason: "preflight did not report git status output" };
   }
   const dirty = p.porcelain.split("\n").map((l) => l.trim()).filter(Boolean);
   if (dirty.length) {
-    return { ok: false, reason: `workdir has ${dirty.length} uncommitted change(s) — wave worktrees are seeded from the committed tip and cannot see them: ${dirty.slice(0, 5).join("; ")}` };
+    return { ok: false, reason: `workdir has ${dirty.length} uncommitted change(s) — ${context}: ${dirty.slice(0, 5).join("; ")}` };
   }
   return { ok: true, reason: "" };
 }
@@ -334,7 +349,7 @@ function acceptPreflight(p) {
  *
  * We compare the two SHAs the verifier says git printed — never a boolean it could simply set.
  */
-function acceptVerification(v, testCmd) {
+function acceptVerification(v, testCmd, dirtyContext) {
   const no = (reason) => ({ ok: false, reason, headSha: "" });
   if (!v) return no("verifier returned no result");
   if (!isSha(v.claimSha)) return no("the claimed head did not resolve to a commit");
@@ -353,8 +368,9 @@ function acceptVerification(v, testCmd) {
     return no(`head ${v.headSha} contains no commits from this step — the claimed work was never committed`);
   }
   // The tree the merge landed in must be clean: it can go dirty at any point after the wave-0
-  // preflight, and the next wave's merger merges into whatever it finds. Same helper, same rule.
-  const pre = acceptPreflight(v);
+  // preflight, and the next wave's merger merges into whatever it finds. Same helper, same rule —
+  // but the caller names why, since this runs for singleton tasks and the final gate too.
+  const pre = acceptPreflight(v, dirtyContext);
   if (!pre.ok) return no(pre.reason);
   if (testCmd && v.suite !== "green") return no(`suite is ${v.suite} at ${v.headSha}`);
   return { ok: true, reason: "", headSha: v.headSha };
@@ -568,7 +584,7 @@ Return per schema: headSha, merged, conflictsResolved, testSummary, suite ("gree
     const v = await dispatchAgent(agent, verifyPrompt(claimedSha, claim, expectCommits, baseSha), {
       label, phase: phaseName, model: "sonnet", schema: VERIFY_SCHEMA,
     });
-    return acceptVerification(v, cfg.testCmd);
+    return acceptVerification(v, cfg.testCmd, DIRTY_CONTEXT[phaseName]);
   };
 
   const verifyPrompt = (claimedSha, claim, expectCommits = [], baseSha = "") => `You are a VERIFIER. Do not fix
@@ -720,7 +736,7 @@ Report the output verbatim as porcelain ("" if it printed nothing), and set clea
 Never report a result you did not observe.`, {
     label: "preflight:workdir", phase: "Implement", model: "sonnet", effort: "low", schema: PREFLIGHT_SCHEMA,
   });
-  const preOk = acceptPreflight(pre);
+  const preOk = acceptPreflight(pre, DIRTY_CONTEXT.preflight);
   if (!preOk.ok) {
     halted = { wave: "preflight", reason: preOk.reason, failures: [] };
   }
@@ -875,6 +891,11 @@ Never report a result you did not observe.`, {
       tasksCompleted: results.length, tasksTotal: order.length, waves: waves.length,
       planConflicts: planConflicts.length,
       finalFixApplied: Boolean(finalFix),
+      finalVerdict: finalReview ? finalReview.verdict : null,
+      // A "changes" verdict carrying only Minor findings runs no fixer (severity gating, on purpose)
+      // and no halt — without this flag the run would report as complete while the reviewer's
+      // explicit "do not merge yet" survived only inside finalReview.verdict, which nothing reads.
+      finalChangesUnaddressed: Boolean(finalReview && finalReview.verdict === "changes" && !finalFix),
     },
   };
 }

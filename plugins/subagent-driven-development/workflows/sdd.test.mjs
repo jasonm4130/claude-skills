@@ -138,6 +138,12 @@ test("reviewerModel bumps to opus only for opus tasks", () => {
   assert.equal(H.reviewerModel("opus"), "opus");
 });
 
+test("reviewerModel never reviews a fable implementer below its tier", () => {
+  // "fable" is the escalation ladder's top rung and is NOT in TIERS, so a lookup that only knows
+  // about opus falls through to sonnet — the run's hardest task getting its weakest reviewer.
+  assert.equal(H.reviewerModel("fable"), "fable");
+});
+
 test("maxAttemptsAtTier: the budget is spent at the top of the effort ladder, not below it", () => {
   const limits = { escalateAttempts: 2 };
   assert.equal(H.maxAttemptsAtTier("opus", "high", limits), 2);
@@ -363,6 +369,16 @@ test("acceptPreflight: any reported change refuses, and names what it saw", () =
   assert.match(r.reason, /src\/app\.js/, "the human has to know which files to deal with");
 });
 
+test("acceptPreflight: the caller names why a dirty tree blocks THIS step", () => {
+  // The halt reason is the only diagnostic a human gets, and the wave-seeding explanation is wrong
+  // for a merge gate or the final gate.
+  const r = H.acceptPreflight({ porcelain: " M src/app.js" }, "the merger would sweep them in");
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /the merger would sweep them in/);
+  assert.doesNotMatch(H.acceptPreflight({ porcelain: " M a.js" }).reason, /worktrees are seeded/,
+    "the seeding explanation must not be the default every caller inherits");
+});
+
 test("acceptPreflight: an unreported status is not clean", () => {
   // "I could not tell" must never read as "fine".
   for (const bad of [null, undefined, {}, { clean: true }, { porcelain: 0 }]) {
@@ -446,6 +462,12 @@ test("acceptVerification rejects a green claim made in a dirty tree", () => {
   const r = H.acceptVerification(ok({ porcelain: " M src/leftover.js" }), "npm test");
   assert.equal(r.ok, false);
   assert.match(r.reason, /uncommitted/i);
+});
+
+test("acceptVerification passes its caller's dirty-tree context through to the halt reason", () => {
+  const r = H.acceptVerification(ok({ porcelain: " M src/leftover.js" }), "npm test", "the returned head must be what was reviewed");
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /the returned head must be what was reviewed/);
 });
 
 test("isShaish gates shell interpolation: hex only, so no metacharacter can pass", () => {
