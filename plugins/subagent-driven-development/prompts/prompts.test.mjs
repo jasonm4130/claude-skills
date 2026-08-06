@@ -16,6 +16,10 @@ test("implementer prompt has ladder, counter-boundary, ponytail marker, TDD, rep
   assert.match(s, /RED[\s\S]*GREEN/);
   assert.match(s, COUNTER);
   assert.match(s, /DONE_WITH_CONCERNS|BLOCKED|NEEDS_CONTEXT/);
+  assert.match(s, /sdd-worktree/);
+  assert.match(s, /BLOCKED/);
+  assert.match(s, /never.*(work|commit).*(shared|integration) (tree|workdir)/i,
+    "a failed worktree command must be a hard stop, never a fallback to the shared tree");
 });
 
 test("reviewer prompt has three verdicts, the over-engineering tags, net score, and the boundary", () => {

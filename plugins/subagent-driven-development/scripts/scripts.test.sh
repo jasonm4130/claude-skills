@@ -95,6 +95,13 @@ git worktree remove --force "$wt3"
 wt4=$("$dir/sdd-worktree" "$repo" "$nb" 7)
 [ "$(git -C "$wt4" rev-parse HEAD)" = "$nb" ] || { echo "FAIL: branch-only re-add failed"; exit 1; }
 
+# sdd-worktree: a registered-but-deleted (prunable) worktree is reclaimed, not fatal
+wt5=$("$dir/sdd-worktree" "$repo" "$nb" 8)
+rm -rf "$wt5"                     # directory gone, .git/worktrees metadata survives
+wt6=$("$dir/sdd-worktree" "$repo" "$nb" 8) || { echo "FAIL: prunable worktree was fatal"; exit 1; }
+[ -d "$wt6" ] || { echo "FAIL: prunable worktree not recreated"; exit 1; }
+[ "$(git -C "$wt6" rev-parse HEAD)" = "$nb" ] || { echo "FAIL: recreated worktree not at base"; exit 1; }
+
 # -C WORKDIR: artifacts land in the target repo even when invoked from another
 # repo's cwd (regression: briefs used to land in whatever repo the agent's shell
 # happened to be in — the wave-parallel cross-repo leak).
