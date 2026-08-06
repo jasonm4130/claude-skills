@@ -21,6 +21,15 @@ const TIERS = ["haiku", "sonnet", "opus"];
 // existed. Anthropic names `low` as the fit for subagents specifically.
 const EFFORTS = ["low", "medium", "high"];
 
+// A closed vocabulary for finding classes. The oscillation breaker compares these labels across
+// review rounds run by SEPARATE agents with no shared history — free text made that comparison
+// unreliable in both directions: "missing-validation" vs "input-validation" hid a real loop, and two
+// unrelated defects both called "test-quality" halted sound work.
+const FINDING_CLASSES = [
+  "correctness", "spec-gap", "test-gap", "error-handling",
+  "security", "over-engineering", "duplication", "naming",
+];
+
 // Normalize a task id to its canonical string form, or null if it is not a
 // usable id. Numbers must still be positive integers (so NaN, 0, -1 and 1.5 stay
 // rejected) and SAFE ones: JSON.parse silently rounds 9007199254740993 to
@@ -162,7 +171,12 @@ function nextEffort(effort) {
   return i >= EFFORTS.length - 1 ? null : EFFORTS[i + 1];
 }
 
+// The reviewer is never weaker than the implementer it checks. `taskTier` is the tier the
+// implementer FINISHED at, so it can be "fable" — the escalation ladder's top rung, which is not in
+// TIERS. Falling through to "sonnet" there would hand the run's hardest task to its weakest
+// reviewer, so opus and fable each review at their own tier.
 function reviewerModel(taskTier) {
+  if (taskTier === "fable") return "fable";
   return taskTier === "opus" ? "opus" : "sonnet";
 }
 
@@ -199,12 +213,13 @@ function escalationStep(tier, effort, attemptsAtTier, limits) {
   return up === null ? { action: "halt" } : { action: "escalate", tier: up, effort };
 }
 
-// Dispatch the implementer, normalizing BOTH failure shapes to null so runTask's clean-halt guard
-// fires either way: a resolved null (the runtime's terminal-error return) AND a thrown rejection. A
-// tier that cannot be dispatched at all — e.g. a withdrawn or repriced Fable — can reject rather than
-// resolve; without this catch that rejection escapes the `if (!impl)` guard and crashes the wave
-// instead of returning the workflow's halted state. `agentFn` is injected so this is unit-testable.
-async function dispatchImpl(agentFn, prompt, opts) {
+// Dispatch an agent, normalizing BOTH failure shapes to null so every caller's clean-halt guard
+// fires either way: a resolved null (the runtime's terminal-error return) AND a thrown rejection.
+// A tier that cannot be dispatched at all — a withdrawn or repriced model, a transient API failure
+// — can reject rather than resolve; an uncaught rejection escapes the `if (!x)` guard and takes the
+// whole run with it, returning no halted state, no results and no merges for a run that cannot be
+// resumed. `agentFn` is injected so this is unit-testable.
+async function dispatchAgent(agentFn, prompt, opts) {
   try {
     return await agentFn(prompt, opts);
   } catch {
@@ -264,12 +279,21 @@ async function runPool(items, limit, fn) {
 }
 
 // Split a wave's runTask results into merge candidates and failure entries.
-function partitionWaveResults(wave, results) {
+function partitionWaveResults(wave, results, waveBase = "") {
   const succeeded = [];
   const failures = [];
   wave.forEach((task, i) => {
     const r = results[i];
-    if (r && r.task) succeeded.push(r.task);
+    if (r && r.task && waveBase && r.task.headSha === waveBase) {
+      // A parallel task is only ever verified via the merge gate, where its sha being an
+      // ancestor of the merge head is trivially true when it IS the base. This is the one
+      // place the no-op is visible without another dispatch.
+      failures.push({
+        taskN: task.n,
+        reason: "task head is still the wave base — the claimed work was never committed",
+        reportPath: r.task.reportPath || "",
+      });
+    } else if (r && r.task) succeeded.push(r.task);
     else if (r && r.halt) failures.push(r.halt);
     else failures.push({
       taskN: task.n,
@@ -291,6 +315,43 @@ function isShaish(s) {
   return typeof s === "string" && /^[0-9a-f]{7,40}$/.test(s);
 }
 
+// Why a dirty tree blocks each caller. The halt reason is the only diagnostic a human gets, so it
+// has to name the actual problem: the wave-0 seeding explanation is simply wrong for a singleton
+// task (no worktrees exist), a merge gate (merging into a dirty tree) or the final gate.
+const DIRTY_CONTEXT = {
+  preflight: "wave worktrees are seeded from the committed tip and cannot see them",
+  Implement: "the next wave is seeded from this commit and would not see them",
+  Merge: "the next wave's merger merges into this tree and would sweep them in",
+  Final: "the head this run returns must be exactly the code that was reviewed and verified",
+};
+
+// Decide from a reported `git status --porcelain` whether dispatch may proceed. Empty output
+// (modulo whitespace) is the only clean state; a missing/unreported field is NOT clean, because
+// "I could not tell" must never read as "fine". `context` explains why to whoever reads the halt.
+//
+// The two callers deliberately feed this DIFFERENT commands. The wave-0 preflight reports full
+// `--porcelain`: nothing has run yet, so an untracked file is pre-existing work the human should
+// see before the run buries it. Every later gate reports `--untracked-files=no`, because by then
+// the implementer and merger have run the test suite — and a repo whose tests drop `coverage/` or
+// `.pytest_cache/` would halt mid-run over output that `git merge` is perfectly happy to ignore.
+// Dirty TRACKED files are the real hazard: those are what abort a merge or get swept into one.
+//
+// Residual risk, accepted knowingly: untracked output surviving a wave DOES abort a later merge
+// if a task starts tracking that same path ("untracked working tree files would be overwritten").
+// That is rarer than the false halt this replaced — it needs a path collision, not merely output —
+// and prompts/merger.md handles it explicitly by moving the file aside. Do not "fix" this back to
+// a full --porcelain check without reading that instruction first.
+function acceptPreflight(p, context = "uncommitted work must be committed or stashed first") {
+  if (!p || typeof p.porcelain !== "string") {
+    return { ok: false, reason: "preflight did not report git status output" };
+  }
+  const dirty = p.porcelain.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (dirty.length) {
+    return { ok: false, reason: `workdir has ${dirty.length} uncommitted change(s) — ${context}: ${dirty.slice(0, 5).join("; ")}` };
+  }
+  return { ok: true, reason: "" };
+}
+
 /**
  * Decide whether a verifier's observation supports an agent's claim.
  *
@@ -301,7 +362,7 @@ function isShaish(s) {
  *
  * We compare the two SHAs the verifier says git printed — never a boolean it could simply set.
  */
-function acceptVerification(v, testCmd) {
+function acceptVerification(v, testCmd, dirtyContext) {
   const no = (reason) => ({ ok: false, reason, headSha: "" });
   if (!v) return no("verifier returned no result");
   if (!isSha(v.claimSha)) return no("the claimed head did not resolve to a commit");
@@ -313,6 +374,17 @@ function acceptVerification(v, testCmd) {
   if (v.baseContained !== true) return no(`head ${v.headSha} does not build on the base this run started from`);
   const missing = Array.isArray(v.missingCommits) ? v.missingCommits : [];
   if (missing.length) return no(`head ${v.headSha} does not contain task(s) ${missing.join(", ")}`);
+  if (!Number.isInteger(v.commitCount) || v.commitCount < 0) {
+    return no(`verifier reported no usable commit count (got ${JSON.stringify(v.commitCount)})`);
+  }
+  if (v.commitCount === 0) {
+    return no(`head ${v.headSha} contains no commits from this step — the claimed work was never committed`);
+  }
+  // The tree the merge landed in must be clean: it can go dirty at any point after the wave-0
+  // preflight, and the next wave's merger merges into whatever it finds. Same helper, same rule —
+  // but the caller names why, since this runs for singleton tasks and the final gate too.
+  const pre = acceptPreflight(v, dirtyContext);
+  if (!pre.ok) return no(pre.reason);
   if (testCmd && v.suite !== "green") return no(`suite is ${v.suite} at ${v.headSha}`);
   return { ok: true, reason: "", headSha: v.headSha };
 }
@@ -340,7 +412,7 @@ const REVIEW_SCHEMA = {
         required: ["severity", "class", "file", "line", "what", "planMandated"],
         properties: {
           severity: { type: "string", enum: ["Critical", "Important", "Minor"] },
-          class: { type: "string" }, file: { type: "string" }, line: { type: "string" },
+          class: { type: "string", enum: FINDING_CLASSES }, file: { type: "string" }, line: { type: "string" },
           what: { type: "string" }, planMandated: { type: "boolean" },
         },
       },
@@ -377,9 +449,21 @@ const MERGE_SCHEMA = {
   },
 };
 
+const PREFLIGHT_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["porcelain", "clean"],
+  properties: {
+    // The raw output of `git status --porcelain`. The workflow decides from THIS, not from
+    // `clean` — same reasoning as VERIFY_SCHEMA's two SHAs: a boolean is a value the agent
+    // can simply set, and the whole point of the gate is not to take its word for it.
+    porcelain: { type: "string" },
+    clean: { type: "boolean" },
+  },
+};
+
 const VERIFY_SCHEMA = {
   type: "object", additionalProperties: false,
-  required: ["claimSha", "headSha", "baseContained", "missingCommits", "suite", "evidence"],
+  required: ["claimSha", "headSha", "baseContained", "missingCommits", "commitCount", "porcelain", "suite", "evidence"],
   properties: {
     // The two SHAs git actually printed. The workflow compares them itself — a boolean like
     // `headMatchesClaim` would just be another string the agent could set (Codex review, round 2).
@@ -387,6 +471,18 @@ const VERIFY_SCHEMA = {
     headSha: { type: "string" },   // what `rev-parse HEAD` printed
     baseContained: { type: "boolean" }, // is the pre-transition base an ancestor of HEAD?
     missingCommits: { type: "array", items: { type: "string" } }, // task ids, not positions
+    // How many commits the claimed range actually contains. A task that reported HEAD
+    // without committing produces 0 here and passes every other check in this schema:
+    // its sha resolves, it is its own ancestor, and the suite is green because nothing
+    // changed. This is the only field that can tell that apart from real work.
+    commitCount: { type: "number" },
+    // `git status --porcelain --untracked-files=no` in the integration tree. A merge into a
+    // dirty tree either aborts or silently integrates uncommitted edits nobody reviewed, and
+    // the tree can become dirty at any point after the wave-0 preflight. TRACKED modifications
+    // only: this check runs after the implementer/merger has already run the suite, so any repo
+    // whose tests write untracked output (`coverage/`, `.pytest_cache/`, build artefacts) would
+    // otherwise halt every verification for something `git merge` does not care about.
+    porcelain: { type: "string" },
     suite: { type: "string", enum: ["green", "red", "unknown"] },
     evidence: { type: "string" },
   },
@@ -401,10 +497,11 @@ const FINAL_SCHEMA = {
       type: "array",
       items: {
         type: "object", additionalProperties: false,
-        required: ["severity", "file", "line", "what"],
+        required: ["severity", "file", "line", "what", "planMandated"],
         properties: {
           severity: { type: "string", enum: ["Critical", "Important", "Minor"] },
           file: { type: "string" }, line: { type: "string" }, what: { type: "string" },
+          planMandated: { type: "boolean" },
         },
       },
     },
@@ -456,10 +553,12 @@ Return per schema: status, headSha (run \`git rev-parse HEAD\` after committing)
     `You are reviewing Task ${task.n} ("${task.title}"). Work in ${wd}; READ-ONLY on the tree.
 Read your full operating instructions first: ${P}/prompts/reviewer.md — follow them exactly.
 Build the diff: ${P}/scripts/review-package -C ${wd} ${base} ${head}
-Read the package file it prints. The implementer's report is at ${wd}/.sdd/task-${task.n}-report.md (treat as unverified claims).
+Read the package file it prints. You are NOT given the implementer's report: the diff and the brief
+are the evidence, and a stated rationale is not one. Judge what the code does.
 Global constraints that bind this task:\n${gc}
 Return per schema: spec ("pass"/"fail"), findings[{severity,class,file,line,what,planMandated}], cannotVerify[], quality, ponytail{net,items}.
-Set planMandated=true for any finding the plan/brief explicitly mandates. "class" is a short stable label for the finding kind (used to detect oscillation).`;
+Set planMandated=true for any finding the plan/brief explicitly mandates.
+"class" must be exactly one of: ${FINDING_CLASSES.join(", ")}. Pick the closest; it is compared across review rounds to detect a defect the fixer cannot land.`;
 
   const fixPrompt = (task, findings, wd) =>
     `You are fixing review findings on Task ${task.n} ("${task.title}"). Work in ${wd}.
@@ -498,10 +597,10 @@ Return per schema: headSha, merged, conflictsResolved, testSummary, suite ("gree
     if (bad) {
       return { ok: false, reason: `task ${bad.n} reported a head that is not a sha: ${JSON.stringify(bad.sha)}`, headSha: "" };
     }
-    const v = await agent(verifyPrompt(claimedSha, claim, expectCommits, baseSha), {
+    const v = await dispatchAgent(agent, verifyPrompt(claimedSha, claim, expectCommits, baseSha), {
       label, phase: phaseName, model: "sonnet", schema: VERIFY_SCHEMA,
     });
-    return acceptVerification(v, cfg.testCmd);
+    return acceptVerification(v, cfg.testCmd, DIRTY_CONTEXT[phaseName]);
   };
 
   const verifyPrompt = (claimedSha, claim, expectCommits = [], baseSha = "") => `You are a VERIFIER. Do not fix
@@ -517,31 +616,37 @@ Run exactly these and report what they actually print:
 1. \`git -C ${cfg.workdir} rev-parse --verify ${claimedSha}^{commit}\`
    Report the full 40-character SHA it prints as claimSha. If it fails, claimSha="", put the error
    text in evidence, and stop.
-2. \`git -C ${cfg.workdir} rev-parse HEAD\`
+2. \`git -C ${cfg.workdir} status --porcelain --untracked-files=no\`
+   Report its output verbatim as porcelain — "" if it printed nothing. Run it with that flag
+   exactly: untracked files a test run left behind are not what this gate is looking for.
+3. \`git -C ${cfg.workdir} rev-parse HEAD\`
    Report the full 40-character SHA it prints as headSha. Report what git printed — do not echo
    back the claimed SHA.
-3. The branch must still BUILD ON where this run started — an agent that reset to some unrelated
+4. The branch must still BUILD ON where this run started — an agent that reset to some unrelated
    commit would otherwise pass every other check while discarding all earlier work:
    \`git -C ${cfg.workdir} merge-base --is-ancestor ${baseSha} HEAD\` (exit 0 = contained)
    Report baseContained=true only if that exits 0.
+5. \`git -C ${cfg.workdir} rev-list --count ${baseSha}..${claimedSha}\`
+   Report the integer it prints as commitCount. Report the number you saw — if the command
+   fails or prints nothing, say so in evidence and report commitCount=0.
 ${expectCommits.length
-  ? `4. Each of these task commits must be contained in HEAD. For each, run:
+  ? `6. Each of these task commits must be contained in HEAD. For each, run:
 ${expectCommits.map((c) => `   task ${c.n}: \`git -C ${cfg.workdir} merge-base --is-ancestor ${c.sha} HEAD\` (exit 0 = contained)`).join("\n")}
    Put the task id of every commit NOT contained in HEAD into missingCommits (as strings).
    (Check the commit SHAs, not sdd/t<N> branches — the merger deletes those branches.)`
-  : `4. No task commits to check for this claim: missingCommits=[].`}
+  : `6. No task commits to check for this claim: missingCommits=[].`}
 ${cfg.testCmd
-  ? `5. Run the suite VERBATIM from ${cfg.workdir}:
+  ? `7. Run the suite VERBATIM from ${cfg.workdir}:
    \`${cfg.testCmd}\`
    Read its real output. suite="green" ONLY if it ran to completion with zero failures. Failures, a
    crash, or a command that would not run are all "red". Quote the real pass/fail summary line in
    evidence.`
-  : `5. No test command was configured for this run: suite="unknown", and put the rev-parse output
+  : `7. No test command was configured for this run: suite="unknown", and put the rev-parse output
    in evidence.`}
 
 Never report a result you did not observe. A claim you could not confirm is not confirmed.`;
 
-  const finalPrompt = (mergeBase, head) =>
+  const finalPrompt = (mergeBase, head, deferred) =>
     `You are the whole-branch FINAL reviewer (most capable model). Work in ${cfg.workdir}; READ-ONLY.
 Read your full operating instructions first: ${P}/prompts/final-reviewer.md — follow them exactly.
 Build the branch diff: ${P}/scripts/review-package -C ${cfg.workdir} ${mergeBase} ${head}
@@ -551,7 +656,11 @@ Global constraints:\n${gc}${
         ? `\n\nADR SUCCESS CRITERIA — judge the branch against these (the done-oracle the human ratifies):\n${cfg.successCriteria}\nFor each: set kind ("oracle" if it names a test/CI/assertion, else "checker"); set verdict ("met"/"unmet"/"cannot-verify"). Judge "checker" criteria against the diff; for "oracle" criteria confirm the test/assertion is present and satisfied but do NOT re-run suites. Add any UNMET criterion to findings[] so it gets fixed. Then one holistic judgment in "holistic": do these changes add up to the stated intent? Return criteria[] and holistic.`
         : ""
     }
-Return per schema: verdict ("approve"/"changes"), findings[{severity,file,line,what}], ponytailDebt[]${cfg.successCriteria ? ", criteria[], holistic" : ""}.`;
+Set planMandated=true for any finding the plan or an ADR explicitly mandates — those go to a human to
+adjudicate and are NEVER auto-fixed.${deferred.minors.length || deferred.cannotVerify.length
+  ? `\nDEFERRED FROM PER-TASK REVIEW — triage these against the whole branch. A Minor that recurs across tasks is not minor; a "could not verify" that is still unverified at branch level is a finding.\nMinors:\n${JSON.stringify(deferred.minors, null, 2)}\nCould not verify:\n${JSON.stringify(deferred.cannotVerify, null, 2)}`
+  : "\nNo per-task reviews deferred anything: there are no rolled-up Minors and nothing was reported unverifiable."}
+Return per schema: verdict ("approve"/"changes"), findings[{severity,file,line,what,planMandated}], ponytailDebt[]${cfg.successCriteria ? ", criteria[], holistic" : ""}.`;
 
   const finalFixPrompt = (findings) =>
     `Fix ALL of these whole-branch review findings in one commit, in ${cfg.workdir}. Read ${P}/prompts/fixer.md and follow it.
@@ -560,6 +669,13 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
 
   const results = [];
   const planConflicts = [];
+  /** @type {any[]} */
+  const deferredMinors = [];
+  /** @type {any[]} */
+  const deferredCannotVerify = [];
+  // One object over the two arrays: it holds references, so it reflects every push. Both
+  // finalPrompt call sites and the return value hand out the same thing.
+  const deferred = { minors: deferredMinors, cannotVerify: deferredCannotVerify };
   const merges = [];
   let halted = null;
 
@@ -568,7 +684,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     let tier = task.tier, effort = task.effort, attemptsAtTier = 0, blocker = null, impl = null;
     while (true) {
       attemptsAtTier++;
-      impl = await dispatchImpl(agent, implPrompt(task, tier, blocker, base, wd), {
+      impl = await dispatchAgent(agent, implPrompt(task, tier, blocker, base, wd), {
         label: `impl:t${task.n}`, phase: "Implement", model: tier, effort, schema: IMPL_SCHEMA,
       });
       if (!impl) return { halt: { taskN: task.n, reason: "implementer returned no result", reportPath: "" } };
@@ -583,31 +699,68 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
 
     // Review + bounded fix loop.
     let head = impl.headSha, rounds = 0, review = null;
-    const roundClasses = [];
+    /** @type {string[][]} */
+    const postFixClasses = [];
     while (true) {
-      review = await agent(reviewPrompt(task, base, head, wd), {
-        label: `review:t${task.n}`, phase: "Review", model: reviewerModel(task.tier), effort: reviewerEffort(task.effort), schema: REVIEW_SCHEMA,
+      review = await dispatchAgent(agent, reviewPrompt(task, base, head, wd), {
+        label: `review:t${task.n}`, phase: "Review",
+        // The tier the implementer FINISHED at, not the one the controller guessed: a task that
+        // escalated to opus/high must not be checked by a reviewer picked for its original sonnet.
+        model: reviewerModel(tier), effort: reviewerEffort(effort), schema: REVIEW_SCHEMA,
       });
       if (!review) return { halt: { taskN: task.n, reason: "reviewer returned no result", reportPath: impl.reportPath } };
       (review.findings || []).filter((f) => f.planMandated).forEach((c) => planConflicts.push({ taskN: task.n, ...c }));
       const actionable = (review.findings || []).filter((f) => !f.planMandated && (f.severity === "Critical" || f.severity === "Important"));
-      roundClasses.push(actionable.map((f) => f.class));
+      // Only rounds that follow a fix attempt count: the first review is the baseline, and a class
+      // present in it has not yet survived anything.
+      if (rounds > 0) postFixClasses.push(actionable.map((f) => f.class));
       if (review.spec === "pass" && actionable.length === 0) break;
-      if (rounds >= cfg.limits.fixRounds || detectOscillation(roundClasses)) {
+      if (rounds >= cfg.limits.fixRounds || detectOscillation(postFixClasses)) {
         return { halt: { taskN: task.n, reason: "review did not converge (cap or oscillation)", reportPath: impl.reportPath } };
       }
       rounds++;
-      const fix = await agent(fixPrompt(task, actionable, wd), {
+      const fix = await dispatchAgent(agent, fixPrompt(task, actionable, wd), {
         label: `fix:t${task.n}.${rounds}`, phase: "Fix", model: "opus", effort: "medium", schema: FIX_SCHEMA,
       });
       if (!fix) return { halt: { taskN: task.n, reason: "fixer returned no result", reportPath: impl.reportPath } };
       head = fix.headSha || head;
     }
-    return { task: { n: task.n, status: impl.status, headSha: head, reviewVerdict: review.spec, fixRounds: rounds } };
+    // The loop's LAST review is the one that describes the code being returned; earlier rounds
+    // describe code that has since been fixed. Recording every round would double-count a Minor
+    // that survived a fix and make one task look like a cross-task pattern.
+    (review.findings || []).filter((f) => !f.planMandated && f.severity === "Minor")
+      .forEach((f) => deferredMinors.push({ taskN: task.n, ...f }));
+    (review.cannotVerify || []).forEach((w) => deferredCannotVerify.push({ taskN: task.n, what: w }));
+    return { task: {
+      n: task.n, status: impl.status, headSha: head,
+      reviewVerdict: review.spec, fixRounds: rounds,
+      concerns: impl.concerns || "", reportPath: impl.reportPath || "",
+      // The reviewer's quality narrative. It is the only per-task judgement that is neither a
+      // finding nor a verdict, and dropping it here meant the controlling agent could never
+      // report it to the human.
+      quality: review.quality || "",
+    } };
   }
 
   phase("Implement");
   let base = dispatchBase(cfg);
+
+  // Wave worktrees are seeded from the committed tip, so uncommitted changes in the integration
+  // workdir are invisible to every implementer — and then the wave merger merges into that dirty
+  // tree. sdd.mjs has no child_process, so this is a dispatched observation the workflow gates on,
+  // exactly as runVerify does for SHAs. A prose precondition in SKILL.md does not bind a direct
+  // Workflow(...) invocation, which bypasses the controller entirely.
+  const pre = await dispatchAgent(agent, `You are a PREFLIGHT checker. Do not fix anything, do not commit, do not write or edit any file.
+Run exactly this and report what it actually prints:
+  \`git -C ${cfg.workdir} status --porcelain\`
+Report the output verbatim as porcelain ("" if it printed nothing), and set clean accordingly.
+Never report a result you did not observe.`, {
+    label: "preflight:workdir", phase: "Implement", model: "sonnet", effort: "low", schema: PREFLIGHT_SCHEMA,
+  });
+  const preOk = acceptPreflight(pre, DIRTY_CONTEXT.preflight);
+  if (!preOk.ok) {
+    halted = { wave: "preflight", reason: preOk.reason, failures: [] };
+  }
 
   for (let w = 0; w < waves.length && !halted; w++) {
     const wave = waves[w];
@@ -615,7 +768,11 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     if (wave.length === 1) {
       // Degenerate case: shared workdir, no merge — but the implementer's claimed head still has to
       // be checked, or a linear plan (all singleton waves) advances entirely on unverified claims.
-      const r = await runTask(wave[0], base, cfg.workdir);
+      // runTask returns { task } or { halt } and can still reject from code outside a dispatch; a
+      // singleton wave has no runPool to catch that, and an escaped rejection returns nothing at all.
+      const r = await runTask(wave[0], base, cfg.workdir).catch((e) => ({
+        halt: { taskN: wave[0].n, reason: `task dispatch failed: ${e && e.message ? e.message : e}`, reportPath: "" },
+      }));
       if (r.halt) { halted = { wave: w, reason: "task failure(s) in wave", failures: [r.halt] }; break; }
       const acc = await runVerify(
         r.task.headSha,
@@ -637,10 +794,10 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     const waveBase = base;
     const poolOut = await runPool(wave, cfg.limits.maxParallel, (task) =>
       runTask(task, waveBase, taskWorkdir(cfg.workdir, task.n)));
-    const { succeeded, failures } = partitionWaveResults(wave, poolOut);
+    const { succeeded, failures } = partitionWaveResults(wave, poolOut, waveBase);
 
     if (succeeded.length) {
-      const merge = await agent(mergePrompt(w, waveBase, succeeded), {
+      const merge = await dispatchAgent(agent, mergePrompt(w, waveBase, succeeded), {
         label: `merge:w${w}`, phase: "Merge", model: "sonnet", schema: MERGE_SCHEMA,
       });
       if (!merge) {
@@ -686,19 +843,23 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
   let finalFix = null;
   if (!halted && results.length) {
     phase("Final");
-    finalReview = await agent(finalPrompt(cfg.mergeBase, base), {
+    finalReview = await dispatchAgent(agent, finalPrompt(cfg.mergeBase, base, deferred), {
       label: "final-review", phase: "Final", model: "opus", effort: "high", schema: FINAL_SCHEMA,
     });
-    const findings = finalReview ? (finalReview.findings || []) : [];
+    const allFindings = finalReview ? (finalReview.findings || []) : [];
+    allFindings.filter((f) => f.planMandated).forEach((c) => planConflicts.push({ taskN: "final", ...c }));
+    // Severity, not count: an "approve" carrying one Minor nit used to fire an Opus fixer plus an
+    // Opus re-review — the most expensive tail in the run, spent on a nit.
+    const findings = allFindings.filter((f) => !f.planMandated && (f.severity === "Critical" || f.severity === "Important"));
     if (!finalReview) {
       // "The final review did not run" is not "the branch is fine".
       halted = { wave: "final", reason: "final review returned no result", failures: [] };
-    } else if (finalReview.verdict === "changes" && !findings.length) {
+    } else if (finalReview.verdict === "changes" && !allFindings.length) {
       // The reviewer's contract (prompts/final-reviewer.md) is that "changes" means findings must be
       // addressed. "changes" with nothing to act on is a broken report, not an approval.
       halted = { wave: "final", reason: "final review returned verdict 'changes' with no findings to act on", failures: [] };
     } else if (findings.length) {
-      const fix = await agent(finalFixPrompt(findings), {
+      const fix = await dispatchAgent(agent, finalFixPrompt(findings), {
         label: "final-fix", phase: "Final", model: "opus", effort: "medium", schema: FIX_SCHEMA,
       });
       if (!fix) {
@@ -722,9 +883,14 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
           // finalReview described the PRE-fix head. Review the post-fix head once, report-only: the
           // returned head must not be unreviewed. Report-only keeps it bounded — findings here go to
           // the controller to adjudicate, they do NOT trigger another fix (that is the unbounded loop).
-          const postFix = await agent(finalPrompt(cfg.mergeBase, base), {
+          const postFix = await dispatchAgent(agent, finalPrompt(cfg.mergeBase, base, deferred), {
             label: "final-review-2", phase: "Final", model: "opus", effort: "high", schema: FINAL_SCHEMA,
           });
+          if (!postFix) {
+            // The fix is committed and verified green, but nothing has reviewed the head we are
+            // about to return. "The re-review did not run" is not "the branch is fine".
+            halted = { wave: "final", reason: "post-fix review returned no result — the returned head is unreviewed", failures: [] };
+          }
           finalFix = {
             headSha: acc.headSha, fixed: fix.fixed, testSummary: fix.testSummary, verified: true,
             postFixReview: postFix || null,
@@ -740,11 +906,17 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     : `Completed ${results.length}/${order.length} tasks across ${waves.length} wave(s)`);
   return {
     tasks: results, planConflicts, halted, finalReview, finalFix,
+    deferred,
     mergeBase: cfg.mergeBase, head: base, merges,
     meta: {
       tasksCompleted: results.length, tasksTotal: order.length, waves: waves.length,
       planConflicts: planConflicts.length,
       finalFixApplied: Boolean(finalFix),
+      finalVerdict: finalReview ? finalReview.verdict : null,
+      // A "changes" verdict carrying only Minor findings runs no fixer (severity gating, on purpose)
+      // and no halt — without this flag the run would report as complete while the reviewer's
+      // explicit "do not merge yet" survived only inside finalReview.verdict, which nothing reads.
+      finalChangesUnaddressed: Boolean(finalReview && finalReview.verdict === "changes" && !finalFix),
     },
   };
 }

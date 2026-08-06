@@ -12,7 +12,9 @@ test("body is guarded so import does not execute it", () => {
 });
 
 test("every agent() call sets an explicit model", () => {
-  const calls = src.match(/agent\([\s\S]*?\{[\s\S]*?\}\s*\)/g) || [];
+  // Dispatches go through `dispatchAgent(agent, prompt, opts)` (it normalizes a rejection to null);
+  // a bare `agent(...)` is still matched so a call added without the wrapper is not missed.
+  const calls = src.match(/(?:dispatchAgent\(agent,|agent\()[\s\S]*?\{[\s\S]*?\}\s*\)/g) || [];
   assert.ok(calls.length >= 5, "expected at least 5 agent() calls");
   for (const c of calls) assert.match(c, /model:/, `agent() without model: ${c.slice(0, 60)}`);
 });
@@ -47,7 +49,7 @@ test("halted carries wave and failures; return includes merges", () => {
 });
 
 test("the final fixer's result is captured, not discarded", () => {
-  assert.doesNotMatch(src, /\n\s*await agent\(finalFixPrompt\(/, "the fixer's result must be captured");
+  assert.doesNotMatch(src, /\n\s*await (?:agent\(|dispatchAgent\(agent, )finalFixPrompt\(/, "the fixer's result must be captured");
   // The fix's head is checked through the shared runVerify helper (labels are passed positionally,
   // not as an inline `label: "..."` literal, precisely because every verify call site is meant to
   // funnel through one place — see the injection-guard rationale in Task 3).

@@ -12,8 +12,12 @@ Look for what only emerges across tasks:
   sites. Cross-cutting changes are legitimate, named risks worth a focused check.
 - **Integration coherence:** do the tasks compose? Do interfaces line up with how
   later tasks consumed them?
-- **Rolled-up Minors:** triage the Minor findings the per-task reviews deferred —
-  which must be fixed before merge, which can ship.
+- **Rolled-up Minors and unverified claims:** your dispatch prompt supplies what
+  the per-task reviews deferred — the Minor findings they did not act on, and the
+  things they could not verify. Triage them against the whole branch: which
+  Minors must be fixed before merge, which can ship, and whether anything still
+  unverified at branch level is now a finding. A prompt saying nothing was
+  deferred is a valid and common state — do not go hunting for a list to fill.
 
 ## Harvest ponytail debt
 
@@ -61,5 +65,8 @@ changed is a normal edit, not a finding.
 
 ## Return
 
+Set `planMandated: true` for any finding the plan or an ADR explicitly mandates —
+those go to a human to adjudicate and are NEVER auto-fixed.
+
 Per schema: `verdict` (`approve`/`changes`),
-`findings[{severity,file,line,what}]`, `ponytailDebt[]`.
+`findings[{severity,file,line,what,planMandated}]`, `ponytailDebt[]`.

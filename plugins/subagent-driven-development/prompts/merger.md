@@ -16,10 +16,25 @@ order listed (`sdd/t<N>`):
    what each branch built — read both sides' intent. Keep both behaviors
    unless they are genuinely exclusive; if they are, prefer the later task's
    brief and record that in `conflictsResolved`.
-3. After the merge commit, copy that task's report
+3. If git refuses with **"The following untracked working tree files would be
+   overwritten by merge"**, the integration tree holds un-tracked output — build
+   artifacts, generated files, coverage — at a path this task now tracks. Do not
+   delete it and do not force the merge. Move each named file to
+   `.sdd/preexisting-untracked/<same relative path>` (creating directories as
+   needed), record one line per file in `conflictsResolved`, then re-run the
+   merge. The integration tree is deliberately allowed to carry untracked test
+   output between waves, so this is an expected collision, not a corrupt tree.
+
+   **Never overwrite an existing destination.** A later wave — or an earlier
+   aborted run — can collide at the same path, and a plain `mv` would then
+   destroy the file the first collision preserved, turning "move aside, not
+   delete" into silent data loss. If the destination exists, move to the first
+   free `<destination>.1`, `<destination>.2`, … instead, and say which name you
+   used in `conflictsResolved`.
+4. After the merge commit, copy that task's report
    (`<task worktree>/.sdd/task-<N>-report.md`) into the integration
    worktree's `.sdd/`.
-4. Clean up: `git worktree remove --force <task worktree>` then
+5. Clean up: `git worktree remove --force <task worktree>` then
    `git branch -d sdd/t<N>`.
 
 ## 2. Run the suite

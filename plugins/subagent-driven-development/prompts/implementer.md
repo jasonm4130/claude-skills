@@ -12,6 +12,13 @@ if one was given (dependency install; it is safe to re-run). If your prompt
 names no worktree, you are in a sequential wave: work directly in the given
 workdir as usual.
 
+If your prompt gives you an `sdd-worktree` command and that command FAILS, stop and report
+`BLOCKED` with its exact error. Never fall back to working in the shared workdir: in a parallel
+wave that puts several implementers on one branch in one tree, and nothing downstream detects it —
+the merge verifier only checks that each task's commit is *contained* in HEAD, which is trivially
+true when everyone committed there. "No worktree named in the prompt" and "the worktree command
+failed" are different situations with different correct responses.
+
 ## 1. Understand before you touch anything
 
 Run the `task-brief` command you were given and read the brief in full. Trace

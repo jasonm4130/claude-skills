@@ -16,6 +16,10 @@ test("implementer prompt has ladder, counter-boundary, ponytail marker, TDD, rep
   assert.match(s, /RED[\s\S]*GREEN/);
   assert.match(s, COUNTER);
   assert.match(s, /DONE_WITH_CONCERNS|BLOCKED|NEEDS_CONTEXT/);
+  assert.match(s, /sdd-worktree/);
+  assert.match(s, /BLOCKED/);
+  assert.match(s, /never.*(work|commit).*(shared|integration) (tree|workdir)/i,
+    "a failed worktree command must be a hard stop, never a fallback to the shared tree");
 });
 
 test("reviewer prompt has three verdicts, the over-engineering tags, net score, and the boundary", () => {
@@ -27,6 +31,16 @@ test("reviewer prompt has three verdicts, the over-engineering tags, net score, 
   assert.match(s, /do not flag[\s\S]*ponytail:/i);
   assert.match(s, /planMandated/);
   assert.match(s, COUNTER);
+  assert.match(s, /finding class/i);
+  // All eight, not a sample: the oscillation breaker in sdd.mjs compares these labels across
+  // rounds, so a class the reviewer is never shown is a class it invents free text for — and a
+  // rename in FINDING_CLASSES that never reaches reviewer.md fails silently, at run time.
+  for (const c of [
+    "correctness", "spec-gap", "test-gap", "error-handling",
+    "security", "over-engineering", "duplication", "naming",
+  ]) {
+    assert.ok(s.includes(c), `reviewer.md must list the '${c}' finding class`);
+  }
 });
 
 test("reviewer prompts grant a respected clean pass and scrutinize weakened test assertions (over-rejection calibration)", () => {
@@ -91,6 +105,19 @@ test("merger prompt merges in task order, bounds repair, cleans up, reports suit
   assert.match(s, /conflictsResolved/);
   assert.match(s, /"green" \| "red"/);
   assert.match(s, /full suite/i);
+  // The verify gate deliberately ignores untracked files, so the integration tree can carry
+  // suite output into the next wave — and `git merge` aborts outright when a task now tracks
+  // a path that output occupies. Without an instruction the merger improvises there, and the
+  // two obvious improvisations are deleting the file and forcing the merge.
+  assert.match(s, /untracked working tree files would be\s+overwritten by merge/i,
+    "merger.md must name the exact git refusal it has to handle");
+  assert.match(s, /preexisting-untracked/,
+    "the colliding output must be moved aside, not deleted");
+  assert.match(s, /do not force the merge/i);
+  // A fixed destination clobbers on the second collision at the same path — a later wave, or an
+  // aborted earlier run — which would make "move aside, not delete" into silent data loss.
+  assert.match(s, /never overwrite an existing destination/i);
+  assert.match(s, /first\s+free/i);
 });
 
 test("implementer prompt covers task-worktree entry and the setup command", () => {

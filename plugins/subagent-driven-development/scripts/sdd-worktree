@@ -10,6 +10,11 @@ workdir=$(pwd -P)  # Resolve to physical canonical path (handles symlinks)
 path="${workdir%/}-t${n}"
 branch="sdd/t${n}"
 
+# A worktree whose directory was deleted stays registered as "prunable". It still matches the
+# list below, and the rev-parse that follows then runs against a path that does not exist —
+# which under `set -e` kills the script on the implementer's very first action.
+git worktree prune >/dev/null 2>&1 || true
+
 if git worktree list --porcelain | grep -qxF "worktree $path"; then
   tip=$(git -C "$path" rev-parse HEAD)
   if git merge-base --is-ancestor "$base" "$tip"; then

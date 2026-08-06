@@ -49,8 +49,15 @@ Create or confirm a feature branch / worktree to work in (this is self-contained
 
 ```bash
 git rev-parse --abbrev-ref HEAD            # confirm not on main/master
+git status --porcelain                     # must be empty — see below
 # if needed: git worktree add ../wt-<feature> -b <feature>   (or branch in place)
 ```
+
+The tree must be clean before you dispatch. Wave worktrees are seeded from the
+committed tip, so uncommitted work is invisible to every implementer and then
+gets swept in — or aborts the merge — when the wave merger merges into it. The
+workflow enforces this itself (a non-empty preflight halts before anything runs),
+but failing fast here beats spending a dispatch to learn it.
 
 The worktree root is `workdir`; all agents run there. `mergeBase` is where the
 branch started (`git merge-base main HEAD`); `branchTip` is the branch's
@@ -110,8 +117,8 @@ literal path, pinned to **this** skill's version — the `args` contract moves
 between versions (in local dev, use the repo path directly):
 
 ```bash
-P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.9.0/workflows/sdd.mjs"
-[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.9.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
+P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.10.2/workflows/sdd.mjs"
+[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.10.2 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
 ```
 
 If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not
@@ -172,7 +179,7 @@ ADR's Success-criteria block, judged at the whole-branch step as the done-oracle
 Everything else — tiering, escalation, the per-task gate, finishing — is identical.
 
 ### 7. On return: present, adjudicate, finish
-The workflow returns `{ tasks, planConflicts, halted, finalReview, finalFix,
+The workflow returns `{ tasks, planConflicts, deferred, halted, finalReview, finalFix,
 mergeBase, head, merges, meta }`.
 
 **Verify the returned head yourself before presenting or finishing.** The workflow's
@@ -197,8 +204,14 @@ gate exists to catch.
   A wave can produce multiple failures (siblings run to completion and
   successful ones are merged before the halt). Wave-level `reason` covers
   merge-gate failures ("merge gate red after repair"); `failures[]` covers
-  task-level ones. Failed tasks keep their worktree and branch for
-  inspection. After you fix the plan/blocker, resume with
+  task-level ones. A failed task in a **parallel** wave keeps its worktree and
+  branch for inspection. A **singleton** wave has neither: it runs in the shared
+  workdir on the integration branch, so a halt there can leave unapproved commits
+  on the branch itself. Check `git log` against `result.head` and `git reset` back
+  to it if the halt landed mid-task. Run `scripts/sdd-gc <workdir>` to list every
+  worktree and `sdd/t<N>` branch the run left behind — it reports and never
+  deletes, and prints the removal commands for you to run once you are done with
+  the evidence. After you fix the plan/blocker, resume with
   `Workflow({ scriptPath, resumeFromRunId })` (completed tasks return cached) —
   **but only within the same Claude Code session**: resume state lives in that
   session's memory, not on disk, so exiting the session (or a crash) loses it
@@ -206,17 +219,33 @@ gate exists to catch.
   need to resume across sessions, keep the failed task's worktree/branch and
   re-run the plan from that task manually.
   A halt can now also come from the **Final** phase (`wave: "final"`) — a missing final
-  review, a missing fixer result, or a final fix that could not be confirmed — from a **merge
-  gate** whose claimed green the verifier could not confirm, and from a **singleton task** whose
-  claimed head could not be confirmed.
+  review, a missing fixer result, a final fix that could not be confirmed, or a **post-fix
+  review that returned no result**, which means the head about to be returned was never
+  reviewed — from a **merge gate** whose claimed green the verifier could not confirm, and
+  from a **singleton task** whose claimed head could not be confirmed. A halt with `wave: "preflight"` comes from before any
+  dispatch at all: the integration workdir had uncommitted changes, which the wave worktrees
+  cannot see. Commit or stash them, then re-run.
 - **`merges`** → `[{ wave, merged, headSha, testSummary }]` — what each
   wave's merge gate did.
 - **`planConflicts`** → findings that conflict with what the plan mandates. You
   decide which governs; the workflow never auto-fixes these.
+- **`deferred`** → `{ minors, cannotVerify }`, each entry tagged with its `taskN` —
+  the Minor findings the per-task reviews chose not to act on, and the claims a
+  reviewer could not verify. Show them; they are signal the loop collected and
+  nobody else will surface.
 - **`finalReview`** → whole-branch verdict + any `ponytailDebt` markers.
-- **`finalFix`** → `{ headSha, fixed, testSummary, verified }` — what the final fixer changed,
-  re-checked against git and the suite. `head` points past it. `null` when the final review found
-  nothing to fix.
+- **`finalFix`** → `{ headSha, fixed, testSummary, verified, postFixReview, postFixFindings }` —
+  what the final fixer changed, re-checked against git and the suite. `head` points past it.
+  `null` when the final review found nothing to fix. `finalReview` describes the *pre*-fix head;
+  `postFixReview` is the one report-only re-review of the head you are actually being handed.
+  **Surface every Critical or Important in `postFixFindings` before you offer to merge** — they
+  deliberately trigger no fixer (that would be an unbounded review→fix loop), so this is the one
+  place the design defers to a human, and nothing else will raise them.
+  `halted` and `finalFix` are not mutually exclusive: a fix can be committed and verified
+  (`verified: true`) and the run still halt because the post-fix review never came back. Read both.
+- **`meta.finalChangesUnaddressed`** → `true` when the final review returned `changes` but only
+  Minor findings, so no fixer ran. The run completed; the reviewer still said do not merge yet.
+  Show `finalReview.findings` and let the user decide before any merge or PR.
 - Then drive **finishing** — present merge / PR / cleanup options and let the
   user choose. Merging is irreversible and stays human-gated **in this session**;
   the workflow never merges. Default to `gh pr merge --merge` only when the user
@@ -252,13 +281,16 @@ build, and the deciding already happened.
 | Role | Model | Effort |
 |------|-------|--------|
 | implementer | `task.tier` (controller-assigned) | `task.effort` (`medium` floor) |
-| reviewer | `opus` | `high` if the task was `high`, else `medium` |
+| reviewer | the tier the implementer **finished** at — `fable` for a fable task, `opus` for an opus task, `sonnet` otherwise | `high` if the task was `high`, else `medium` |
 | fixer | `opus` | `medium` |
 | final whole-branch review | `opus` | `high` |
 | BLOCKED escalation ceiling | `fable` — opt-in top rung tried once above a stuck `opus` (`fableEscalation`, default on) | `high` |
 
-Reviewers sit a notch above the implementer they check: finding a defect is
-judgment, and it is the stage where low effort costs you the run. The `fable`
+Reviewers sit a notch above the implementer they check on *effort*, and never
+below it on *model*: finding a defect is judgment, and it is the stage where low
+effort costs you the run. Because the reviewer's tier follows the tier the
+implementer finished at, a task the BLOCKED ladder escalated is reviewed at the
+tier that finally solved it, not at the one it was dispatched with. The `fable`
 rung stays gated on BLOCKED rather than assigned up front — published benchmarks
 put Opus 5 within a point of Fable 5 on SWE-bench Pro and ahead on Verified, so
 Fable earns its place on stuck and long-horizon work, not on routine tasks.

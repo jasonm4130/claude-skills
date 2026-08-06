@@ -104,11 +104,21 @@ the Workflow with the ADR.
 **stop and fix the ADR — do not hand off** (mirrors `task-brief`'s "task N not
 found" guard). Nothing builds from an ADR the loop can't read.
 
+**Commit the ADR before you hand off.** The loop's wave-0 preflight halts on any
+uncommitted change in the workdir — the ADR you just wrote is one — because wave
+worktrees are seeded from the committed tip and cannot see it. Commit (or stash)
+first, then resolve `branchTip` from the resulting HEAD:
+
+```bash
+git status --porcelain     # must be empty
+git rev-parse HEAD         # this is branchTip
+```
+
 Resolve the loop and invoke it:
 
 ```bash
-P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.9.0/workflows/sdd.mjs"
-[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.9.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills, or /plugin install subagent-driven-development@jasonm4130-claude-skills if it was never installed"
+P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.10.2/workflows/sdd.mjs"
+[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.10.2 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills, or /plugin install subagent-driven-development@jasonm4130-claude-skills if it was never installed"
 ```
 
 If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not
@@ -124,10 +134,17 @@ Workflow({ scriptPath: "<resolved sdd.mjs>", args: {
   globalConstraints: "<the ADR Decisions, verbatim>",
   successCriteria: "<the ADR Success criteria block, verbatim>",
   mergeBase: "<git merge-base main HEAD>",
-  tasks: [ { n: 1, title: "...", tier: "sonnet", deps: [] }, ... ],   // from the Decomposition
+  branchTip: "<git rev-parse HEAD in the workdir>",
+  tasks: [ { n: 1, title: "...", tier: "opus", effort: "medium", deps: [] }, ... ],  // from the Decomposition
   limits: { fixRounds: 2, escalateAttempts: 2 }
 }})
 ```
+
+`branchTip` is not optional in practice: omitting it seeds wave 0 from `mergeBase`,
+which is a stale tree the moment the branch has any commits — and the ADR you just
+committed is one. Tiering follows `subagent-driven-development`'s own table (its
+SKILL.md, § "Model tiering at a glance"); the floor is `opus`/`medium`, with `effort`
+as the cost lever rather than a cheaper model.
 
 `pluginDir` is the directory **containing** `workflows/`, `prompts/`, and
 `scripts/`. The loop runs per-task implement → review → fix (model-tiered,

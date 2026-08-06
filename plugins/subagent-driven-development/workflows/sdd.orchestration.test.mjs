@@ -86,11 +86,15 @@ function happyResponder(overrides = {}) {
       return { spec: "pass", findings: [], cannotVerify: [], quality: "fine", ponytail: { net: 0, items: [] } };
     }
     if (label.startsWith("merge:w")) {
-      return { headSha: MERGED, merged: [1, 2], conflictsResolved: [], testSummary: "2 pass", suite: "green" };
+      return { headSha: MERGED, merged: ["1", "2"], conflictsResolved: [], testSummary: "2 pass", suite: "green" };
+    }
+    if (label === "preflight:workdir") {
+      // Default: the integration tree is clean, so the run proceeds.
+      return { porcelain: "", clean: true };
     }
     if (label.startsWith("verify:")) {
       // Default: the verifier confirms whatever was claimed. Tests override to inject disagreement.
-      return { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], suite: "green", evidence: "2 pass, 0 fail" };
+      return { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "green", evidence: "2 pass, 0 fail" };
     }
     if (label === "final-review" || label === "final-review-2") return { verdict: "approve", findings: [], ponytailDebt: [] };
     throw new Error(`unscripted agent label: ${label}`);
@@ -119,7 +123,7 @@ test("merge gate: a claimed-green merge the verifier finds red halts the run", a
   const { result } = await runWorkflow({
     args: waveArgs(),
     respond: happyResponder({
-      "verify:w0": { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], suite: "red", evidence: "3 failing" },
+      "verify:w0": { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "red", evidence: "3 failing" },
     }),
   });
   assert.ok(result.halted, "an unverified merge must halt, not poison the next wave's base");
@@ -131,7 +135,7 @@ test("merge gate: a merger naming a commit that is not the branch head halts the
   const { result } = await runWorkflow({
     args: waveArgs(),
     respond: happyResponder({
-      "verify:w0": { claimSha: MERGED, headSha: SHA("f"), missingCommits: [], suite: "green", evidence: "ok" },
+      "verify:w0": { claimSha: MERGED, headSha: SHA("f"), missingCommits: [], commitCount: 1, porcelain: "", suite: "green", evidence: "ok" },
     }),
   });
   assert.ok(result.halted);
@@ -154,7 +158,7 @@ test("singleton wave: a linear task's claimed head is verified before base advan
   const { result, calls } = await runWorkflow({
     args: soloArgs(),
     respond: happyResponder({
-      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), baseContained: true, missingCommits: [], suite: "green", evidence: "1 pass" },
+      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "green", evidence: "1 pass" },
     }),
   });
   assert.equal(result.halted, null);
@@ -181,7 +185,7 @@ test("singleton wave: an unverifiable task halts instead of advancing base", asy
   const { result } = await runWorkflow({
     args: soloArgs(),
     respond: happyResponder({
-      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), baseContained: true, missingCommits: [], suite: "red", evidence: "1 failing" },
+      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "red", evidence: "1 failing" },
     }),
   });
   assert.ok(result.halted);
@@ -195,9 +199,9 @@ test("final fix: head advances past the fixer's commit and finalFix is reported"
   const { result, calls } = await runWorkflow({
     args: waveArgs(),
     respond: happyResponder({
-      "final-review": { verdict: "approve", findings: [{ severity: "Minor", file: "a.mjs", line: "1", what: "x" }], ponytailDebt: [] },
+      "final-review": { verdict: "changes", findings: [{ severity: "Critical", file: "a.mjs", line: "1", what: "x", planMandated: false }], ponytailDebt: [] },
       "final-fix": { headSha: FIXED, testSummary: "294 pass", fixed: ["x"] },
-      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], suite: "green", evidence: "294 pass, 0 fail" },
+      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "green", evidence: "294 pass, 0 fail" },
     }),
   });
   assert.equal(result.halted, null);
@@ -212,9 +216,9 @@ test("final fix: a fix that leaves the suite red halts instead of reporting an a
   const { result } = await runWorkflow({
     args: waveArgs(),
     respond: happyResponder({
-      "final-review": { verdict: "approve", findings: [{ severity: "Minor", file: "a.mjs", line: "1", what: "x" }], ponytailDebt: [] },
+      "final-review": { verdict: "changes", findings: [{ severity: "Critical", file: "a.mjs", line: "1", what: "x", planMandated: false }], ponytailDebt: [] },
       "final-fix": { headSha: FIXED, testSummary: "claims green", fixed: ["x"] },
-      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], suite: "red", evidence: "2 failing" },
+      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "red", evidence: "2 failing" },
     }),
   });
   assert.ok(result.halted, "a final fix that breaks the branch must not be reported as approved");
@@ -228,6 +232,83 @@ test("final review: a missing final review halts rather than passing as a clean 
   });
   assert.ok(result.halted, "'the final review did not run' is not 'the branch is fine'");
   assert.match(result.halted.reason, /final review/i);
+});
+
+test("a lone Minor finding on an approve verdict does not trigger the final fixer", async () => {
+  const { calls, result } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "final-review": { verdict: "approve", findings: [{ severity: "Minor", file: "a.js", line: "1", what: "nit", planMandated: false }], ponytailDebt: [] },
+    }),
+  });
+  assert.equal(calls.filter((c) => c.label === "final-fix").length, 0,
+    "an approve verdict with only Minors is an approval");
+  assert.ok(!result.halted);
+});
+
+test("a plan-mandated final finding is hoisted to planConflicts, never auto-fixed", async () => {
+  const { calls, result } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "final-review": { verdict: "changes", findings: [{ severity: "Critical", file: "a.js", line: "1", what: "the plan mandates this duplication", planMandated: true }], ponytailDebt: [] },
+    }),
+  });
+  assert.equal(calls.filter((c) => c.label === "final-fix").length, 0);
+  assert.ok(result.planConflicts.some((c) => c.taskN === "final"),
+    "the human adjudicates a plan conflict; the fixer must not overwrite the plan");
+});
+
+test("a Critical final finding still triggers the fixer", async () => {
+  const { calls } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "final-review": { verdict: "changes", findings: [{ severity: "Critical", file: "a.js", line: "1", what: "real bug", planMandated: false }], ponytailDebt: [] },
+    }),
+  });
+  assert.equal(calls.filter((c) => c.label === "final-fix").length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Dispatch failures. A dispatch can REJECT rather than resolve null (a withdrawn tier, a transient
+// API failure). An uncaught rejection escapes the workflow body, so the run returns nothing at all —
+// no halted state, no tasks, no merges — and SDD's resume state is session-memory-only.
+// `happyResponder` returns its override by property access, so a getter is how a scripted label
+// throws instead of resolving.
+// ---------------------------------------------------------------------------
+
+const throwing = () => { throw new Error("transient dispatch failure"); };
+
+test("a rejecting dispatch in a singleton wave halts cleanly instead of crashing the run", async () => {
+  const { result } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({ get "review:t1"() { return throwing(); } }),
+  });
+  assert.ok(result.halted, "the run must return a halted state, not reject");
+  assert.match(result.halted.reason, /reviewer returned no result|task failure/i);
+  assert.ok(Array.isArray(result.tasks), "tasks must still be returned");
+});
+
+test("a rejecting merge dispatch halts cleanly", async () => {
+  const { result } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({ get "merge:w0"() { return throwing(); } }),
+  });
+  assert.ok(result.halted, "the run must return a halted state, not reject");
+  assert.match(result.halted.reason, /merge agent returned no result/i);
+});
+
+test("a post-fix review that fails to dispatch halts — the returned head is not reviewed", async () => {
+  const { result } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "final-review": { verdict: "changes", findings: [{ severity: "Critical", file: "a.js", line: "1", what: "real bug", planMandated: false }], ponytailDebt: [] },
+      "final-fix": { headSha: FIXED, testSummary: "3 pass", fixed: ["real bug"] },
+      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "green", evidence: "3 pass" },
+      get "final-review-2"() { return throwing(); },
+    }),
+  });
+  assert.ok(result.halted, "a green fix whose re-review never ran is not a reviewed head");
+  assert.match(result.halted.reason, /post-fix review/i);
 });
 
 // ---------------------------------------------------------------------------
@@ -257,7 +338,7 @@ test("phases: a per-task fix runs in its OWN phase, not inside Review", async ()
       }
       if (label === "fix:t1.1") return { headSha: SHA("f"), testSummary: "1 pass", fixed: ["off-by-one"] };
       if (label.startsWith("verify:")) {
-        return { claimSha: SHA("f"), headSha: SHA("f"), baseContained: true, missingCommits: [], suite: "green", evidence: "1 pass, 0 fail" };
+        return { claimSha: SHA("f"), headSha: SHA("f"), baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "green", evidence: "1 pass, 0 fail" };
       }
       return respond(label, prompt);
     },
@@ -268,6 +349,35 @@ test("phases: a per-task fix runs in its OWN phase, not inside Review", async ()
   assert.equal(phaseOf(calls, "fix:t1.1"), "Fix",
     "a fixer is not a reviewer — burying repairs in the Review box hides the fix-round count");
   assert.equal(result.tasks[0].fixRounds, 1);
+});
+
+test("oscillation: a class surviving ONE fix gets the second attempt fixRounds:2 promises", async () => {
+  // The pre-fix review is the baseline: a class in it has not survived anything yet. Counting it
+  // made "the first repair didn't fully land" — the normal shape of a two-round fix — look like
+  // oscillation and halt the task at rounds === 1.
+  let reviewed = 0;
+  const respond = happyResponder({});
+  const finding = { severity: "Important", class: "correctness", file: "a.ts", line: "1", what: "off-by-one", planMandated: false };
+  const { result, calls } = await runWorkflow({
+    args: soloArgs(),
+    respond: (label, prompt) => {
+      if (label === "review:t1") {
+        reviewed++;
+        return reviewed <= 2
+          ? { spec: "fail", quality: "meh", cannotVerify: [], ponytail: { net: 0, items: [] }, findings: [finding] }
+          : { spec: "pass", findings: [], cannotVerify: [], quality: "fine", ponytail: { net: 0, items: [] } };
+      }
+      if (label.startsWith("fix:t1.")) return { headSha: SHA("f"), testSummary: "1 pass", fixed: ["off-by-one"] };
+      if (label.startsWith("verify:")) {
+        return { claimSha: SHA("f"), headSha: SHA("f"), baseContained: true, missingCommits: [], commitCount: 1, porcelain: "", suite: "green", evidence: "1 pass, 0 fail" };
+      }
+      return respond(label, prompt);
+    },
+  });
+
+  assert.equal(result.halted, null, JSON.stringify(result.halted));
+  assert.ok(calls.some((c) => c.label === "fix:t1.2"), "the second fix round must be dispatched");
+  assert.equal(result.tasks[0].fixRounds, 2);
 });
 
 test("phases: every agent declares a phase, and the verifier's is passed in — not string-matched from its own label", async () => {
@@ -299,4 +409,228 @@ test("return value: no path-shaped key points at a file the run never creates", 
   const { result } = await runWorkflow({ args: soloArgs(), respond: happyResponder() });
   assert.equal(result.halted, null);
   assert.ok(!("ledgerPath" in result), "result must not advertise an unwritten ledger file");
+});
+
+test("the reviewer is never given the implementer's report path", async () => {
+  const { prompts } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "impl:t1": { status: "DONE", headSha: SHA("a"), testSummary: "1 pass", concerns: "worried about X", reportPath: "/w/.sdd/task-1-report.md" },
+    }),
+  });
+  assert.doesNotMatch(prompts["review:t1"], /task-1-report\.md/,
+    "the reviewer must judge the diff and the brief, never the implementer's self-assessment");
+});
+
+test("the merger still gets the reports — it needs them to read conflict intent", async () => {
+  const { prompts } = await runWorkflow({ args: waveArgs(), respond: happyResponder() });
+  assert.match(prompts["merge:w0"], /report/i);
+});
+
+// ---------------------------------------------------------------------------
+// Signal the loop collects and used to drop: the implementer's concerns, the reviewer's
+// cannotVerify[], and the Minors filtered out of `actionable`. The final reviewer is TOLD to triage
+// the deferred Minors, so it has to actually be given them.
+// ---------------------------------------------------------------------------
+
+test("a successful task carries its concerns and report path to the human", async () => {
+  const { result } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "impl:t1": { status: "DONE_WITH_CONCERNS", headSha: SHA("a"), testSummary: "1 pass", concerns: "the retry budget is a guess", reportPath: "/w/.sdd/task-1-report.md" },
+    }),
+  });
+  assert.equal(result.tasks[0].concerns, "the retry budget is a guess",
+    "DONE_WITH_CONCERNS with the concerns stripped is just DONE");
+  assert.equal(result.tasks[0].reportPath, "/w/.sdd/task-1-report.md");
+});
+
+test("deferred Minors and cannotVerify reach the return value and the final reviewer", async () => {
+  const { result, prompts } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "review:t1": {
+        spec: "pass",
+        findings: [{ severity: "Minor", class: "naming", file: "a.js", line: "2", what: "shadowed name", planMandated: false }],
+        cannotVerify: ["could not exercise the timeout path"],
+        quality: "ok", ponytail: { net: 0, items: [] },
+      },
+    }),
+  });
+  assert.equal(result.deferred.minors.length, 1);
+  assert.equal(result.deferred.minors[0].taskN, "1");
+  assert.equal(result.deferred.cannotVerify.length, 1);
+  assert.match(prompts["final-review"], /shadowed name/);
+  assert.match(prompts["final-review"], /could not exercise the timeout path/);
+});
+
+test("only the terminal review's deferred items are forwarded, not one per round", async () => {
+  let reviews = 0;
+  const minor = { severity: "Minor", class: "naming", file: "a.js", line: "2", what: "shadowed name", planMandated: false };
+  const { result } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      get "review:t1"() {
+        reviews++;
+        return reviews === 1
+          ? { spec: "fail", findings: [minor, { severity: "Critical", class: "correctness", file: "a.js", line: "3", what: "bug", planMandated: false }], cannotVerify: [], quality: "ok", ponytail: { net: 0, items: [] } }
+          : { spec: "pass", findings: [minor], cannotVerify: [], quality: "ok", ponytail: { net: 0, items: [] } };
+      },
+      "fix:t1.1": { headSha: SHA("a"), testSummary: "1 pass", fixed: ["bug"] },
+    }),
+  });
+  assert.equal(result.deferred.minors.length, 1, "one surviving Minor is one entry, not one per round");
+});
+
+// ---------------------------------------------------------------------------
+// Preflight. Wave worktrees are seeded from the committed branch tip, so uncommitted changes in the
+// integration workdir are invisible to them — and the wave merger then merges into that dirty tree,
+// which either aborts (orphaning worktrees) or integrates local edits nobody reviewed. sdd.mjs has
+// no child_process, so the check is a dispatched observation the workflow gates on itself.
+// ---------------------------------------------------------------------------
+
+test("a dirty integration tree halts before any implementer is dispatched", async () => {
+  const { result, calls } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "preflight:workdir": { porcelain: " M src/app.js\n?? scratch.txt", clean: false },
+    }),
+  });
+  assert.ok(result.halted);
+  assert.equal(result.halted.wave, "preflight");
+  assert.match(result.halted.reason, /uncommitted|dirty/i);
+  assert.equal(calls.filter((c) => c.label.startsWith("impl:")).length, 0,
+    "nothing may be dispatched into a tree whose state the wave worktrees cannot see");
+});
+
+test("the preflight trusts the porcelain output, not the agent's clean flag", async () => {
+  const { result } = await runWorkflow({
+    args: soloArgs(),
+    // The same shape acceptVerification defends against: never gate on a boolean the
+    // agent could simply set — gate on the output it reported seeing.
+    respond: happyResponder({ "preflight:workdir": { porcelain: " M src/app.js", clean: true } }),
+  });
+  assert.ok(result.halted, "non-empty porcelain is dirty however the flag is set");
+});
+
+test("a clean tree runs normally and dispatches the preflight exactly once", async () => {
+  const { result, calls } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({ "preflight:workdir": { porcelain: "", clean: true } }),
+  });
+  assert.ok(!result.halted);
+  assert.equal(calls.filter((c) => c.label === "preflight:workdir").length, 1);
+});
+
+test("a merge verified against a dirty integration tree is refused", async () => {
+  const { result } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({
+      "verify:w0": { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], commitCount: 2, porcelain: " M src/leftover.js", suite: "green", evidence: "2 pass" },
+    }),
+  });
+  assert.ok(result.halted, "a green suite in a dirty tree is not a verified merge");
+  assert.match(result.halted.reason, /uncommitted/i);
+});
+
+test("the verify gate asks only about tracked modifications; the wave-0 preflight asks about everything", async () => {
+  // Every verify runs AFTER the implementer/merger has run the test suite, so a repo whose tests
+  // drop `coverage/` or `.pytest_cache/` would halt mid-run on output `git merge` ignores. The
+  // preflight runs before anything, where an untracked file is pre-existing work worth surfacing.
+  const { prompts } = await runWorkflow({ args: waveArgs(), respond: happyResponder() });
+  for (const label of Object.keys(prompts).filter((l) => l.startsWith("verify:"))) {
+    assert.match(prompts[label], /status --porcelain --untracked-files=no/,
+      `${label} must scope its dirty-tree check to tracked files`);
+  }
+  assert.match(prompts["preflight:workdir"], /status --porcelain\b/);
+  assert.doesNotMatch(prompts["preflight:workdir"], /--untracked-files=no/,
+    "the wave-0 preflight deliberately keeps the wider check");
+});
+
+test("a verifier reporting no tracked modifications passes, whatever untracked output the suite left", async () => {
+  // `--untracked-files=no` means the verifier reports "" for a tree full of build artefacts.
+  // Nothing downstream may re-derive dirtiness from anywhere else and halt on it.
+  const { result } = await runWorkflow({
+    args: waveArgs(),
+    respond: happyResponder({
+      "verify:w0": { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], commitCount: 2, porcelain: "", suite: "green", evidence: "2 pass, 0 fail — coverage/ and .pytest_cache/ left in the tree" },
+    }),
+  });
+  assert.equal(result.halted, null, JSON.stringify(result.halted));
+  assert.equal(result.merges[0].verified, true);
+});
+
+test("the reviewer's quality narrative reaches the task result", async () => {
+  // It is the one per-task judgement that is neither a finding nor a verdict; dropped here, the
+  // controlling agent has nothing to report to the human.
+  const { result } = await runWorkflow({ args: waveArgs(), respond: happyResponder() });
+  assert.equal(result.tasks[0].quality, "fine");
+});
+
+test("an escalated implementer is reviewed at the tier it escalated to", async () => {
+  // Start the task at sonnet and BLOCK once, so the ladder escalates it to opus before it
+  // succeeds. Today the reviewer would be picked from the ORIGINAL sonnet assignment.
+  let implCalls = 0;
+  const { calls } = await runWorkflow({
+    args: { ...soloArgs(), tasks: [{ n: 1, title: "a", tier: "sonnet", effort: "medium", deps: [] }] },
+    respond: happyResponder({
+      get "impl:t1"() {
+        implCalls++;
+        return implCalls === 1
+          ? { status: "BLOCKED", headSha: "", testSummary: "", concerns: "need more context", reportPath: "r.md" }
+          : { status: "DONE", headSha: SHA("a"), testSummary: "1 pass", concerns: "", reportPath: "r.md" };
+      },
+    }),
+  });
+  const lastImpl = calls.filter((c) => c.label === "impl:t1").pop();
+  const review = calls.find((c) => c.label === "review:t1");
+  assert.equal(lastImpl.model, "opus", "the ladder must have escalated sonnet -> opus");
+  assert.equal(review.model, "opus",
+    "reviewerModel('opus') is 'opus'; a reviewer picked from the original sonnet would be 'sonnet'");
+});
+
+test("an implementer that escalated to fable is reviewed at fable, not dropped to sonnet", async () => {
+  // "fable" is not in TIERS, so a reviewer lookup that only special-cases opus falls through to
+  // sonnet — the run's hardest task, four escalations deep, checked by its weakest reviewer.
+  let implCalls = 0;
+  const { calls } = await runWorkflow({
+    args: {
+      ...soloArgs(),
+      limits: { escalateAttempts: 1 },
+      tasks: [{ n: 1, title: "a", tier: "opus", effort: "high", deps: [] }],
+    },
+    respond: happyResponder({
+      get "impl:t1"() {
+        implCalls++;
+        return implCalls === 1
+          ? { status: "BLOCKED", headSha: "", testSummary: "", concerns: "stuck", reportPath: "r.md" }
+          : { status: "DONE", headSha: SHA("a"), testSummary: "1 pass", concerns: "", reportPath: "r.md" };
+      },
+    }),
+  });
+  const lastImpl = calls.filter((c) => c.label === "impl:t1").pop();
+  const review = calls.find((c) => c.label === "review:t1");
+  assert.equal(lastImpl.model, "fable", "an exhausted opus/high escalates to fable");
+  assert.equal(review.model, "fable", "the reviewer must not sit below the implementer it checks");
+});
+
+test("a final 'changes' verdict with only Minor findings runs no fixer but is flagged in meta", async () => {
+  const { result, calls } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "final-review": { verdict: "changes", findings: [{ severity: "Minor", what: "nit", where: "a.js", class: "style" }], ponytailDebt: [] },
+    }),
+  });
+  assert.equal(result.halted, null, "a Minor nit is not a halt");
+  assert.equal(calls.filter((c) => c.label === "final-fix").length, 0, "severity gating: no Opus fixer for a nit");
+  assert.equal(result.meta.finalFixApplied, false);
+  assert.equal(result.meta.finalVerdict, "changes");
+  assert.equal(result.meta.finalChangesUnaddressed, true,
+    "a 'do not merge yet' verdict must not report as a clean completed run");
+});
+
+test("an approved final review is not flagged as unaddressed changes", async () => {
+  const { result } = await runWorkflow({ args: soloArgs(), respond: happyResponder() });
+  assert.equal(result.meta.finalVerdict, "approve");
+  assert.equal(result.meta.finalChangesUnaddressed, false);
 });

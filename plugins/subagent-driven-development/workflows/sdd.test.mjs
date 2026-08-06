@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "sdd.mjs"), "utf8");
 const pure = src.split("// >>> PURE")[1].split("// <<< PURE")[0];
 const H = new Function(
-  `${pure}; return { TIERS, EFFORTS, nextEffort, reviewerEffort, taskId, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchImpl, detectOscillation, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptVerification };`,
+  `${pure}; return { TIERS, EFFORTS, nextEffort, reviewerEffort, taskId, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchAgent, detectOscillation, FINDING_CLASSES, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptPreflight, acceptVerification };`,
 )();
 
 const okArgs = () => ({
@@ -138,6 +138,12 @@ test("reviewerModel bumps to opus only for opus tasks", () => {
   assert.equal(H.reviewerModel("opus"), "opus");
 });
 
+test("reviewerModel never reviews a fable implementer below its tier", () => {
+  // "fable" is the escalation ladder's top rung and is NOT in TIERS, so a lookup that only knows
+  // about opus falls through to sonnet — the run's hardest task getting its weakest reviewer.
+  assert.equal(H.reviewerModel("fable"), "fable");
+});
+
 test("maxAttemptsAtTier: the budget is spent at the top of the effort ladder, not below it", () => {
   const limits = { escalateAttempts: 2 };
   assert.equal(H.maxAttemptsAtTier("opus", "high", limits), 2);
@@ -169,14 +175,14 @@ test("escalationStep: fableEscalation:false keeps the old opus->halt ceiling (ne
   assert.notDeepEqual(H.escalationStep("opus", "high", 2, limits), { action: "escalate", tier: "fable", effort: "high" });
 });
 
-test("dispatchImpl normalizes a rejecting dispatch (e.g. a withdrawn Fable tier) to null, not a throw", async () => {
+test("dispatchAgent normalizes a rejecting dispatch (e.g. a withdrawn Fable tier) to null, not a throw", async () => {
   const reject = async () => { throw new Error("model fable is unavailable"); };
-  assert.equal(await H.dispatchImpl(reject, "prompt", {}), null);
+  assert.equal(await H.dispatchAgent(reject, "prompt", {}), null);
 });
 
-test("dispatchImpl passes a resolved result — and a resolved null — straight through", async () => {
-  assert.deepEqual(await H.dispatchImpl(async () => ({ status: "DONE" }), "p", {}), { status: "DONE" });
-  assert.equal(await H.dispatchImpl(async () => null, "p", {}), null);
+test("dispatchAgent passes a resolved result — and a resolved null — straight through", async () => {
+  assert.deepEqual(await H.dispatchAgent(async () => ({ status: "DONE" }), "p", {}), { status: "DONE" });
+  assert.equal(await H.dispatchAgent(async () => null, "p", {}), null);
 });
 
 test("detectOscillation flags a class surviving two consecutive rounds", () => {
@@ -184,6 +190,23 @@ test("detectOscillation flags a class surviving two consecutive rounds", () => {
   assert.equal(H.detectOscillation([["x"], ["y"]]), false);
   assert.equal(H.detectOscillation([["x"], ["x"]]), true);
   assert.equal(H.detectOscillation([["x"], ["y"], ["y"]]), true);
+});
+
+test("FINDING_CLASSES is a closed vocabulary the reviewer schema can enumerate", () => {
+  assert.ok(Array.isArray(H.FINDING_CLASSES));
+  assert.ok(H.FINDING_CLASSES.length >= 5 && H.FINDING_CLASSES.length <= 12,
+    "few enough that two reviewers pick the same label, many enough to be meaningful");
+  assert.equal(new Set(H.FINDING_CLASSES).size, H.FINDING_CLASSES.length, "no duplicates");
+  for (const c of H.FINDING_CLASSES) assert.match(c, /^[a-z][a-z-]*[a-z]$/, "kebab-case");
+});
+
+test("detectOscillation needs a class to survive two FIX attempts, not one", () => {
+  // One post-fix round is never oscillation, however bad it looks.
+  assert.equal(H.detectOscillation([["correctness"]]), false);
+  // Two post-fix rounds naming the same class is the real signal.
+  assert.equal(H.detectOscillation([["correctness"], ["correctness"]]), true);
+  // Different classes each round is progress, not oscillation.
+  assert.equal(H.detectOscillation([["correctness"], ["test-gap"]]), false);
 });
 
 test("validateArgs defaults maxParallel/setupCmd/testCmd and accepts overrides", () => {
@@ -267,6 +290,23 @@ test("partitionWaveResults splits successes, halts, and pool errors", () => {
   ]);
 });
 
+test("partitionWaveResults fails a task whose head is still the wave base", () => {
+  const wave = [{ n: "1" }, { n: "2" }];
+  const { succeeded, failures } = H.partitionWaveResults(wave, [
+    { task: { n: "1", status: "DONE", headSha: SHA_A } },
+    { task: { n: "2", status: "DONE", headSha: SHA_B } }, // never committed
+  ], SHA_B);
+  assert.deepEqual(succeeded.map((t) => t.n), ["1"]);
+  assert.equal(failures.length, 1);
+  assert.match(failures[0].reason, /never committed|no commits/i);
+});
+
+test("partitionWaveResults without a base keeps its old behaviour", () => {
+  const wave = [{ n: "1" }];
+  const { succeeded } = H.partitionWaveResults(wave, [{ task: { n: "1", headSha: SHA_A } }]);
+  assert.equal(succeeded.length, 1);
+});
+
 const withTasks = (tasks) => ({ planPath: "p.md", workdir: "/w", pluginDir: "/p", mergeBase: "abc", tasks });
 
 test("validateArgs rejects unusable and duplicate task ids", () => {
@@ -314,7 +354,36 @@ const SHA_A = "a".repeat(40);
 const SHA_B = "b".repeat(40);
 const ok = (over = {}) => ({
   claimSha: SHA_A, headSha: SHA_A, baseContained: true, missingCommits: [], suite: "green",
-  evidence: "294 pass, 0 fail", ...over,
+  commitCount: 1, porcelain: "", evidence: "294 pass, 0 fail", ...over,
+});
+
+test("acceptPreflight: empty porcelain is the only clean state", () => {
+  assert.equal(H.acceptPreflight({ porcelain: "" }).ok, true);
+  assert.equal(H.acceptPreflight({ porcelain: "\n  \n" }).ok, true, "whitespace-only output is no output");
+});
+
+test("acceptPreflight: any reported change refuses, and names what it saw", () => {
+  const r = H.acceptPreflight({ porcelain: " M src/app.js\n?? scratch.txt", clean: true });
+  assert.equal(r.ok, false, "non-empty porcelain is dirty however `clean` is set");
+  assert.match(r.reason, /uncommitted/i);
+  assert.match(r.reason, /src\/app\.js/, "the human has to know which files to deal with");
+});
+
+test("acceptPreflight: the caller names why a dirty tree blocks THIS step", () => {
+  // The halt reason is the only diagnostic a human gets, and the wave-seeding explanation is wrong
+  // for a merge gate or the final gate.
+  const r = H.acceptPreflight({ porcelain: " M src/app.js" }, "the merger would sweep them in");
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /the merger would sweep them in/);
+  assert.doesNotMatch(H.acceptPreflight({ porcelain: " M a.js" }).reason, /worktrees are seeded/,
+    "the seeding explanation must not be the default every caller inherits");
+});
+
+test("acceptPreflight: an unreported status is not clean", () => {
+  // "I could not tell" must never read as "fine".
+  for (const bad of [null, undefined, {}, { clean: true }, { porcelain: 0 }]) {
+    assert.equal(H.acceptPreflight(bad).ok, false, `expected ${JSON.stringify(bad)} to be refused`);
+  }
 });
 
 test("isSha accepts only a full 40-char hex sha", () => {
@@ -362,6 +431,43 @@ test("acceptVerification: rejects a head that does not contain a succeeded task'
 
 test("acceptVerification: a missing verifier result is rejected", () => {
   assert.equal(H.acceptVerification(null, "npm test").ok, false);
+});
+
+test("acceptVerification rejects a claim whose range contains no commits", () => {
+  // The whole no-op-task class: rev-parse HEAD without committing reports the base
+  // sha, which is its own ancestor, contains every expected commit, and leaves a
+  // green suite because nothing changed.
+  const r = H.acceptVerification(ok({ commitCount: 0 }), "npm test");
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /no commits/i);
+});
+
+test("acceptVerification rejects a commitCount that is not a non-negative integer", () => {
+  for (const bad of [undefined, null, "2", -1, 1.5, NaN]) {
+    const r = H.acceptVerification(ok({ commitCount: bad }), "npm test");
+    assert.equal(r.ok, false, `expected ${JSON.stringify(bad)} to be rejected`);
+    assert.match(r.reason, /commit count/i);
+  }
+});
+
+test("acceptVerification accepts a verified claim that contains at least one commit", () => {
+  assert.deepEqual(H.acceptVerification(ok({ commitCount: 1 }), "npm test"), {
+    ok: true, reason: "", headSha: SHA_A,
+  });
+});
+
+test("acceptVerification rejects a green claim made in a dirty tree", () => {
+  // The tree can become dirty at any point after the wave-0 preflight — a task that commits its
+  // change but leaves a stray file behind dirties the tree the NEXT wave merges into.
+  const r = H.acceptVerification(ok({ porcelain: " M src/leftover.js" }), "npm test");
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /uncommitted/i);
+});
+
+test("acceptVerification passes its caller's dirty-tree context through to the halt reason", () => {
+  const r = H.acceptVerification(ok({ porcelain: " M src/leftover.js" }), "npm test", "the returned head must be what was reviewed");
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /the returned head must be what was reviewed/);
 });
 
 test("isShaish gates shell interpolation: hex only, so no metacharacter can pass", () => {

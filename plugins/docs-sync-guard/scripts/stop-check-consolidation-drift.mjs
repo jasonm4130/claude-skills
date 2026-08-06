@@ -37,6 +37,11 @@ import {
 
 const raw = await readStdin();
 const payload = /** @type {StopInput | null} */ (safeJsonParse(raw));
+// A payload that does not parse is "cannot tell", and every anomaly here is silent.
+// Arming a flag from process.cwd() under session id "unknown" is a nudge attributed to
+// a session that never ran — see the matching guard in check-consolidation-flag.mjs. An array
+// passes `safeJsonParse` (it is an object), so check the shape, not just null.
+if (payload === null || typeof payload !== "object" || Array.isArray(payload)) process.exit(0);
 const cwd =
   payload && typeof payload.cwd === "string" && payload.cwd.length > 0
     ? payload.cwd
