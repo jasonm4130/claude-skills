@@ -114,6 +114,10 @@ test("merger prompt merges in task order, bounds repair, cleans up, reports suit
   assert.match(s, /preexisting-untracked/,
     "the colliding output must be moved aside, not deleted");
   assert.match(s, /do not force the merge/i);
+  // A fixed destination clobbers on the second collision at the same path — a later wave, or an
+  // aborted earlier run — which would make "move aside, not delete" into silent data loss.
+  assert.match(s, /never overwrite an existing destination/i);
+  assert.match(s, /first\s+free/i);
 });
 
 test("implementer prompt covers task-worktree entry and the setup command", () => {

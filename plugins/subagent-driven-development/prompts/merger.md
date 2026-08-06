@@ -24,6 +24,13 @@ order listed (`sdd/t<N>`):
    needed), record one line per file in `conflictsResolved`, then re-run the
    merge. The integration tree is deliberately allowed to carry untracked test
    output between waves, so this is an expected collision, not a corrupt tree.
+
+   **Never overwrite an existing destination.** A later wave — or an earlier
+   aborted run — can collide at the same path, and a plain `mv` would then
+   destroy the file the first collision preserved, turning "move aside, not
+   delete" into silent data loss. If the destination exists, move to the first
+   free `<destination>.1`, `<destination>.2`, … instead, and say which name you
+   used in `conflictsResolved`.
 4. After the merge commit, copy that task's report
    (`<task worktree>/.sdd/task-<N>-report.md`) into the integration
    worktree's `.sdd/`.
