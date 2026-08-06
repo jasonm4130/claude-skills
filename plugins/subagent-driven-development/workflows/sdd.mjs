@@ -264,12 +264,21 @@ async function runPool(items, limit, fn) {
 }
 
 // Split a wave's runTask results into merge candidates and failure entries.
-function partitionWaveResults(wave, results) {
+function partitionWaveResults(wave, results, waveBase = "") {
   const succeeded = [];
   const failures = [];
   wave.forEach((task, i) => {
     const r = results[i];
-    if (r && r.task) succeeded.push(r.task);
+    if (r && r.task && waveBase && r.task.headSha === waveBase) {
+      // A parallel task is only ever verified via the merge gate, where its sha being an
+      // ancestor of the merge head is trivially true when it IS the base. This is the one
+      // place the no-op is visible without another dispatch.
+      failures.push({
+        taskN: task.n,
+        reason: "task head is still the wave base — the claimed work was never committed",
+        reportPath: r.task.reportPath || "",
+      });
+    } else if (r && r.task) succeeded.push(r.task);
     else if (r && r.halt) failures.push(r.halt);
     else failures.push({
       taskN: task.n,
@@ -313,6 +322,12 @@ function acceptVerification(v, testCmd) {
   if (v.baseContained !== true) return no(`head ${v.headSha} does not build on the base this run started from`);
   const missing = Array.isArray(v.missingCommits) ? v.missingCommits : [];
   if (missing.length) return no(`head ${v.headSha} does not contain task(s) ${missing.join(", ")}`);
+  if (!Number.isInteger(v.commitCount) || v.commitCount < 0) {
+    return no(`verifier reported no usable commit count (got ${JSON.stringify(v.commitCount)})`);
+  }
+  if (v.commitCount === 0) {
+    return no(`head ${v.headSha} contains no commits from this step — the claimed work was never committed`);
+  }
   if (testCmd && v.suite !== "green") return no(`suite is ${v.suite} at ${v.headSha}`);
   return { ok: true, reason: "", headSha: v.headSha };
 }
@@ -379,7 +394,7 @@ const MERGE_SCHEMA = {
 
 const VERIFY_SCHEMA = {
   type: "object", additionalProperties: false,
-  required: ["claimSha", "headSha", "baseContained", "missingCommits", "suite", "evidence"],
+  required: ["claimSha", "headSha", "baseContained", "missingCommits", "commitCount", "suite", "evidence"],
   properties: {
     // The two SHAs git actually printed. The workflow compares them itself — a boolean like
     // `headMatchesClaim` would just be another string the agent could set (Codex review, round 2).
@@ -387,6 +402,11 @@ const VERIFY_SCHEMA = {
     headSha: { type: "string" },   // what `rev-parse HEAD` printed
     baseContained: { type: "boolean" }, // is the pre-transition base an ancestor of HEAD?
     missingCommits: { type: "array", items: { type: "string" } }, // task ids, not positions
+    // How many commits the claimed range actually contains. A task that reported HEAD
+    // without committing produces 0 here and passes every other check in this schema:
+    // its sha resolves, it is its own ancestor, and the suite is green because nothing
+    // changed. This is the only field that can tell that apart from real work.
+    commitCount: { type: "number" },
     suite: { type: "string", enum: ["green", "red", "unknown"] },
     evidence: { type: "string" },
   },
@@ -524,19 +544,22 @@ Run exactly these and report what they actually print:
    commit would otherwise pass every other check while discarding all earlier work:
    \`git -C ${cfg.workdir} merge-base --is-ancestor ${baseSha} HEAD\` (exit 0 = contained)
    Report baseContained=true only if that exits 0.
+4. \`git -C ${cfg.workdir} rev-list --count ${baseSha}..${claimedSha}\`
+   Report the integer it prints as commitCount. Report the number you saw — if the command
+   fails or prints nothing, say so in evidence and report commitCount=0.
 ${expectCommits.length
-  ? `4. Each of these task commits must be contained in HEAD. For each, run:
+  ? `5. Each of these task commits must be contained in HEAD. For each, run:
 ${expectCommits.map((c) => `   task ${c.n}: \`git -C ${cfg.workdir} merge-base --is-ancestor ${c.sha} HEAD\` (exit 0 = contained)`).join("\n")}
    Put the task id of every commit NOT contained in HEAD into missingCommits (as strings).
    (Check the commit SHAs, not sdd/t<N> branches — the merger deletes those branches.)`
-  : `4. No task commits to check for this claim: missingCommits=[].`}
+  : `5. No task commits to check for this claim: missingCommits=[].`}
 ${cfg.testCmd
-  ? `5. Run the suite VERBATIM from ${cfg.workdir}:
+  ? `6. Run the suite VERBATIM from ${cfg.workdir}:
    \`${cfg.testCmd}\`
    Read its real output. suite="green" ONLY if it ran to completion with zero failures. Failures, a
    crash, or a command that would not run are all "red". Quote the real pass/fail summary line in
    evidence.`
-  : `5. No test command was configured for this run: suite="unknown", and put the rev-parse output
+  : `6. No test command was configured for this run: suite="unknown", and put the rev-parse output
    in evidence.`}
 
 Never report a result you did not observe. A claim you could not confirm is not confirmed.`;
@@ -637,7 +660,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     const waveBase = base;
     const poolOut = await runPool(wave, cfg.limits.maxParallel, (task) =>
       runTask(task, waveBase, taskWorkdir(cfg.workdir, task.n)));
-    const { succeeded, failures } = partitionWaveResults(wave, poolOut);
+    const { succeeded, failures } = partitionWaveResults(wave, poolOut, waveBase);
 
     if (succeeded.length) {
       const merge = await agent(mergePrompt(w, waveBase, succeeded), {

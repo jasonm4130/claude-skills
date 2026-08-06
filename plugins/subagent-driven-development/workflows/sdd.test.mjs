@@ -267,6 +267,23 @@ test("partitionWaveResults splits successes, halts, and pool errors", () => {
   ]);
 });
 
+test("partitionWaveResults fails a task whose head is still the wave base", () => {
+  const wave = [{ n: "1" }, { n: "2" }];
+  const { succeeded, failures } = H.partitionWaveResults(wave, [
+    { task: { n: "1", status: "DONE", headSha: SHA_A } },
+    { task: { n: "2", status: "DONE", headSha: SHA_B } }, // never committed
+  ], SHA_B);
+  assert.deepEqual(succeeded.map((t) => t.n), ["1"]);
+  assert.equal(failures.length, 1);
+  assert.match(failures[0].reason, /never committed|no commits/i);
+});
+
+test("partitionWaveResults without a base keeps its old behaviour", () => {
+  const wave = [{ n: "1" }];
+  const { succeeded } = H.partitionWaveResults(wave, [{ task: { n: "1", headSha: SHA_A } }]);
+  assert.equal(succeeded.length, 1);
+});
+
 const withTasks = (tasks) => ({ planPath: "p.md", workdir: "/w", pluginDir: "/p", mergeBase: "abc", tasks });
 
 test("validateArgs rejects unusable and duplicate task ids", () => {
@@ -314,7 +331,7 @@ const SHA_A = "a".repeat(40);
 const SHA_B = "b".repeat(40);
 const ok = (over = {}) => ({
   claimSha: SHA_A, headSha: SHA_A, baseContained: true, missingCommits: [], suite: "green",
-  evidence: "294 pass, 0 fail", ...over,
+  commitCount: 1, evidence: "294 pass, 0 fail", ...over,
 });
 
 test("isSha accepts only a full 40-char hex sha", () => {
@@ -362,6 +379,29 @@ test("acceptVerification: rejects a head that does not contain a succeeded task'
 
 test("acceptVerification: a missing verifier result is rejected", () => {
   assert.equal(H.acceptVerification(null, "npm test").ok, false);
+});
+
+test("acceptVerification rejects a claim whose range contains no commits", () => {
+  // The whole no-op-task class: rev-parse HEAD without committing reports the base
+  // sha, which is its own ancestor, contains every expected commit, and leaves a
+  // green suite because nothing changed.
+  const r = H.acceptVerification(ok({ commitCount: 0 }), "npm test");
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /no commits/i);
+});
+
+test("acceptVerification rejects a commitCount that is not a non-negative integer", () => {
+  for (const bad of [undefined, null, "2", -1, 1.5, NaN]) {
+    const r = H.acceptVerification(ok({ commitCount: bad }), "npm test");
+    assert.equal(r.ok, false, `expected ${JSON.stringify(bad)} to be rejected`);
+    assert.match(r.reason, /commit count/i);
+  }
+});
+
+test("acceptVerification accepts a verified claim that contains at least one commit", () => {
+  assert.deepEqual(H.acceptVerification(ok({ commitCount: 1 }), "npm test"), {
+    ok: true, reason: "", headSha: SHA_A,
+  });
 });
 
 test("isShaish gates shell interpolation: hex only, so no metacharacter can pass", () => {

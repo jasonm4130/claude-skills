@@ -86,11 +86,11 @@ function happyResponder(overrides = {}) {
       return { spec: "pass", findings: [], cannotVerify: [], quality: "fine", ponytail: { net: 0, items: [] } };
     }
     if (label.startsWith("merge:w")) {
-      return { headSha: MERGED, merged: [1, 2], conflictsResolved: [], testSummary: "2 pass", suite: "green" };
+      return { headSha: MERGED, merged: ["1", "2"], conflictsResolved: [], testSummary: "2 pass", suite: "green" };
     }
     if (label.startsWith("verify:")) {
       // Default: the verifier confirms whatever was claimed. Tests override to inject disagreement.
-      return { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], suite: "green", evidence: "2 pass, 0 fail" };
+      return { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], commitCount: 1, suite: "green", evidence: "2 pass, 0 fail" };
     }
     if (label === "final-review" || label === "final-review-2") return { verdict: "approve", findings: [], ponytailDebt: [] };
     throw new Error(`unscripted agent label: ${label}`);
@@ -119,7 +119,7 @@ test("merge gate: a claimed-green merge the verifier finds red halts the run", a
   const { result } = await runWorkflow({
     args: waveArgs(),
     respond: happyResponder({
-      "verify:w0": { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], suite: "red", evidence: "3 failing" },
+      "verify:w0": { claimSha: MERGED, headSha: MERGED, baseContained: true, missingCommits: [], commitCount: 1, suite: "red", evidence: "3 failing" },
     }),
   });
   assert.ok(result.halted, "an unverified merge must halt, not poison the next wave's base");
@@ -131,7 +131,7 @@ test("merge gate: a merger naming a commit that is not the branch head halts the
   const { result } = await runWorkflow({
     args: waveArgs(),
     respond: happyResponder({
-      "verify:w0": { claimSha: MERGED, headSha: SHA("f"), missingCommits: [], suite: "green", evidence: "ok" },
+      "verify:w0": { claimSha: MERGED, headSha: SHA("f"), missingCommits: [], commitCount: 1, suite: "green", evidence: "ok" },
     }),
   });
   assert.ok(result.halted);
@@ -154,7 +154,7 @@ test("singleton wave: a linear task's claimed head is verified before base advan
   const { result, calls } = await runWorkflow({
     args: soloArgs(),
     respond: happyResponder({
-      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), baseContained: true, missingCommits: [], suite: "green", evidence: "1 pass" },
+      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), baseContained: true, missingCommits: [], commitCount: 1, suite: "green", evidence: "1 pass" },
     }),
   });
   assert.equal(result.halted, null);
@@ -181,7 +181,7 @@ test("singleton wave: an unverifiable task halts instead of advancing base", asy
   const { result } = await runWorkflow({
     args: soloArgs(),
     respond: happyResponder({
-      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), baseContained: true, missingCommits: [], suite: "red", evidence: "1 failing" },
+      "verify:t1": { claimSha: SHA("a"), headSha: SHA("a"), baseContained: true, missingCommits: [], commitCount: 1, suite: "red", evidence: "1 failing" },
     }),
   });
   assert.ok(result.halted);
@@ -197,7 +197,7 @@ test("final fix: head advances past the fixer's commit and finalFix is reported"
     respond: happyResponder({
       "final-review": { verdict: "approve", findings: [{ severity: "Minor", file: "a.mjs", line: "1", what: "x" }], ponytailDebt: [] },
       "final-fix": { headSha: FIXED, testSummary: "294 pass", fixed: ["x"] },
-      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], suite: "green", evidence: "294 pass, 0 fail" },
+      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], commitCount: 1, suite: "green", evidence: "294 pass, 0 fail" },
     }),
   });
   assert.equal(result.halted, null);
@@ -214,7 +214,7 @@ test("final fix: a fix that leaves the suite red halts instead of reporting an a
     respond: happyResponder({
       "final-review": { verdict: "approve", findings: [{ severity: "Minor", file: "a.mjs", line: "1", what: "x" }], ponytailDebt: [] },
       "final-fix": { headSha: FIXED, testSummary: "claims green", fixed: ["x"] },
-      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], suite: "red", evidence: "2 failing" },
+      "verify:final-fix": { claimSha: FIXED, headSha: FIXED, baseContained: true, missingCommits: [], commitCount: 1, suite: "red", evidence: "2 failing" },
     }),
   });
   assert.ok(result.halted, "a final fix that breaks the branch must not be reported as approved");
@@ -257,7 +257,7 @@ test("phases: a per-task fix runs in its OWN phase, not inside Review", async ()
       }
       if (label === "fix:t1.1") return { headSha: SHA("f"), testSummary: "1 pass", fixed: ["off-by-one"] };
       if (label.startsWith("verify:")) {
-        return { claimSha: SHA("f"), headSha: SHA("f"), baseContained: true, missingCommits: [], suite: "green", evidence: "1 pass, 0 fail" };
+        return { claimSha: SHA("f"), headSha: SHA("f"), baseContained: true, missingCommits: [], commitCount: 1, suite: "green", evidence: "1 pass, 0 fail" };
       }
       return respond(label, prompt);
     },
