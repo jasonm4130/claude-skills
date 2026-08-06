@@ -23,11 +23,14 @@ const EFFORTS = ["low", "medium", "high"];
 
 // Normalize a task id to its canonical string form, or null if it is not a
 // usable id. Numbers must still be positive integers (so NaN, 0, -1 and 1.5 stay
-// rejected); strings may be any alphanumeric run, which is exactly the character
-// set that is safe in a git ref, a directory name and a file name.
+// rejected) and SAFE ones: JSON.parse silently rounds 9007199254740993 to
+// ...992, so an unsafe integer id would validate and then point task-brief at a
+// heading the plan does not contain. Strings may be any alphanumeric run, which
+// is exactly the character set that is safe in a git ref, a directory name and a
+// file name; ids beyond 2^53 can be passed as strings.
 function taskId(n) {
   const s = typeof n === "number"
-    ? (Number.isInteger(n) && n > 0 ? String(n) : null)
+    ? (Number.isSafeInteger(n) && n > 0 ? String(n) : null)
     : (typeof n === "string" ? n : null);
   // The alphanumeric gate applies to numbers too: 1e21 is a positive integer that
   // stringifies to "1e+21", which is neither alphanumeric nor a heading any plan writes.
