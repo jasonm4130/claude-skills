@@ -313,6 +313,35 @@ test("phases: a per-task fix runs in its OWN phase, not inside Review", async ()
   assert.equal(result.tasks[0].fixRounds, 1);
 });
 
+test("oscillation: a class surviving ONE fix gets the second attempt fixRounds:2 promises", async () => {
+  // The pre-fix review is the baseline: a class in it has not survived anything yet. Counting it
+  // made "the first repair didn't fully land" — the normal shape of a two-round fix — look like
+  // oscillation and halt the task at rounds === 1.
+  let reviewed = 0;
+  const respond = happyResponder({});
+  const finding = { severity: "Important", class: "correctness", file: "a.ts", line: "1", what: "off-by-one", planMandated: false };
+  const { result, calls } = await runWorkflow({
+    args: soloArgs(),
+    respond: (label, prompt) => {
+      if (label === "review:t1") {
+        reviewed++;
+        return reviewed <= 2
+          ? { spec: "fail", quality: "meh", cannotVerify: [], ponytail: { net: 0, items: [] }, findings: [finding] }
+          : { spec: "pass", findings: [], cannotVerify: [], quality: "fine", ponytail: { net: 0, items: [] } };
+      }
+      if (label.startsWith("fix:t1.")) return { headSha: SHA("f"), testSummary: "1 pass", fixed: ["off-by-one"] };
+      if (label.startsWith("verify:")) {
+        return { claimSha: SHA("f"), headSha: SHA("f"), baseContained: true, missingCommits: [], commitCount: 1, suite: "green", evidence: "1 pass, 0 fail" };
+      }
+      return respond(label, prompt);
+    },
+  });
+
+  assert.equal(result.halted, null, JSON.stringify(result.halted));
+  assert.ok(calls.some((c) => c.label === "fix:t1.2"), "the second fix round must be dispatched");
+  assert.equal(result.tasks[0].fixRounds, 2);
+});
+
 test("phases: every agent declares a phase, and the verifier's is passed in — not string-matched from its own label", async () => {
   // sdd.mjs used to derive the verifier's phase with `label === "verify:final-fix" ? "Final" : "Merge"`.
   // That is a string match on the agent's own label standing in for a fact the CALLER already knows,

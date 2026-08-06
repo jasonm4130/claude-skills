@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "sdd.mjs"), "utf8");
 const pure = src.split("// >>> PURE")[1].split("// <<< PURE")[0];
 const H = new Function(
-  `${pure}; return { TIERS, EFFORTS, nextEffort, reviewerEffort, taskId, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchAgent, detectOscillation, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptVerification };`,
+  `${pure}; return { TIERS, EFFORTS, nextEffort, reviewerEffort, taskId, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchAgent, detectOscillation, FINDING_CLASSES, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptVerification };`,
 )();
 
 const okArgs = () => ({
@@ -184,6 +184,23 @@ test("detectOscillation flags a class surviving two consecutive rounds", () => {
   assert.equal(H.detectOscillation([["x"], ["y"]]), false);
   assert.equal(H.detectOscillation([["x"], ["x"]]), true);
   assert.equal(H.detectOscillation([["x"], ["y"], ["y"]]), true);
+});
+
+test("FINDING_CLASSES is a closed vocabulary the reviewer schema can enumerate", () => {
+  assert.ok(Array.isArray(H.FINDING_CLASSES));
+  assert.ok(H.FINDING_CLASSES.length >= 5 && H.FINDING_CLASSES.length <= 12,
+    "few enough that two reviewers pick the same label, many enough to be meaningful");
+  assert.equal(new Set(H.FINDING_CLASSES).size, H.FINDING_CLASSES.length, "no duplicates");
+  for (const c of H.FINDING_CLASSES) assert.match(c, /^[a-z][a-z-]*[a-z]$/, "kebab-case");
+});
+
+test("detectOscillation needs a class to survive two FIX attempts, not one", () => {
+  // One post-fix round is never oscillation, however bad it looks.
+  assert.equal(H.detectOscillation([["correctness"]]), false);
+  // Two post-fix rounds naming the same class is the real signal.
+  assert.equal(H.detectOscillation([["correctness"], ["correctness"]]), true);
+  // Different classes each round is progress, not oscillation.
+  assert.equal(H.detectOscillation([["correctness"], ["test-gap"]]), false);
 });
 
 test("validateArgs defaults maxParallel/setupCmd/testCmd and accepts overrides", () => {

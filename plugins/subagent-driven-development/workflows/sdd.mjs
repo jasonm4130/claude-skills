@@ -21,6 +21,15 @@ const TIERS = ["haiku", "sonnet", "opus"];
 // existed. Anthropic names `low` as the fit for subagents specifically.
 const EFFORTS = ["low", "medium", "high"];
 
+// A closed vocabulary for finding classes. The oscillation breaker compares these labels across
+// review rounds run by SEPARATE agents with no shared history — free text made that comparison
+// unreliable in both directions: "missing-validation" vs "input-validation" hid a real loop, and two
+// unrelated defects both called "test-quality" halted sound work.
+const FINDING_CLASSES = [
+  "correctness", "spec-gap", "test-gap", "error-handling",
+  "security", "over-engineering", "duplication", "naming",
+];
+
 // Normalize a task id to its canonical string form, or null if it is not a
 // usable id. Numbers must still be positive integers (so NaN, 0, -1 and 1.5 stay
 // rejected) and SAFE ones: JSON.parse silently rounds 9007199254740993 to
@@ -356,7 +365,7 @@ const REVIEW_SCHEMA = {
         required: ["severity", "class", "file", "line", "what", "planMandated"],
         properties: {
           severity: { type: "string", enum: ["Critical", "Important", "Minor"] },
-          class: { type: "string" }, file: { type: "string" }, line: { type: "string" },
+          class: { type: "string", enum: FINDING_CLASSES }, file: { type: "string" }, line: { type: "string" },
           what: { type: "string" }, planMandated: { type: "boolean" },
         },
       },
@@ -480,7 +489,8 @@ Build the diff: ${P}/scripts/review-package -C ${wd} ${base} ${head}
 Read the package file it prints. The implementer's report is at ${wd}/.sdd/task-${task.n}-report.md (treat as unverified claims).
 Global constraints that bind this task:\n${gc}
 Return per schema: spec ("pass"/"fail"), findings[{severity,class,file,line,what,planMandated}], cannotVerify[], quality, ponytail{net,items}.
-Set planMandated=true for any finding the plan/brief explicitly mandates. "class" is a short stable label for the finding kind (used to detect oscillation).`;
+Set planMandated=true for any finding the plan/brief explicitly mandates.
+"class" must be exactly one of: ${FINDING_CLASSES.join(", ")}. Pick the closest; it is compared across review rounds to detect a defect the fixer cannot land.`;
 
   const fixPrompt = (task, findings, wd) =>
     `You are fixing review findings on Task ${task.n} ("${task.title}"). Work in ${wd}.
@@ -607,7 +617,8 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
 
     // Review + bounded fix loop.
     let head = impl.headSha, rounds = 0, review = null;
-    const roundClasses = [];
+    /** @type {string[][]} */
+    const postFixClasses = [];
     while (true) {
       review = await dispatchAgent(agent, reviewPrompt(task, base, head, wd), {
         label: `review:t${task.n}`, phase: "Review", model: reviewerModel(task.tier), effort: reviewerEffort(task.effort), schema: REVIEW_SCHEMA,
@@ -615,9 +626,11 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
       if (!review) return { halt: { taskN: task.n, reason: "reviewer returned no result", reportPath: impl.reportPath } };
       (review.findings || []).filter((f) => f.planMandated).forEach((c) => planConflicts.push({ taskN: task.n, ...c }));
       const actionable = (review.findings || []).filter((f) => !f.planMandated && (f.severity === "Critical" || f.severity === "Important"));
-      roundClasses.push(actionable.map((f) => f.class));
+      // Only rounds that follow a fix attempt count: the first review is the baseline, and a class
+      // present in it has not yet survived anything.
+      if (rounds > 0) postFixClasses.push(actionable.map((f) => f.class));
       if (review.spec === "pass" && actionable.length === 0) break;
-      if (rounds >= cfg.limits.fixRounds || detectOscillation(roundClasses)) {
+      if (rounds >= cfg.limits.fixRounds || detectOscillation(postFixClasses)) {
         return { halt: { taskN: task.n, reason: "review did not converge (cap or oscillation)", reportPath: impl.reportPath } };
       }
       rounds++;

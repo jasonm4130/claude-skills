@@ -27,6 +27,10 @@ test("reviewer prompt has three verdicts, the over-engineering tags, net score, 
   assert.match(s, /do not flag[\s\S]*ponytail:/i);
   assert.match(s, /planMandated/);
   assert.match(s, COUNTER);
+  assert.match(s, /finding class/i);
+  for (const c of ["correctness", "spec-gap", "test-gap"]) {
+    assert.ok(s.includes(c), `reviewer.md must list the '${c}' finding class`);
+  }
 });
 
 test("reviewer prompts grant a respected clean pass and scrutinize weakened test assertions (over-rejection calibration)", () => {

@@ -63,8 +63,23 @@ it.*
 ## Findings, severity, and oscillation
 
 Every finding carries `severity` (Critical / Important / Minor), `file`, `line`,
-`what`, a short stable `class` label (the kind of finding — used to detect
-oscillation across fix rounds), and `planMandated`. Set `planMandated: true` when
+`what`, a `class`, and `planMandated`.
+
+The finding class is a **closed vocabulary** — pick exactly one, the closest
+fit. A later round's reviewer is a different agent that never saw your labels,
+and the controller halts a task when the same class survives two fix attempts,
+so free-text labels would both hide real loops and stall sound work:
+
+- `correctness` — the code computes or does the wrong thing.
+- `spec-gap` — the brief asked for something missing, or built as something else.
+- `test-gap` — behavior with no test, or a test that cannot fail.
+- `error-handling` — an unhandled failure, swallowed error, or missing validation.
+- `security` — injection, secret exposure, auth/permission or unsafe-input defect.
+- `over-engineering` — speculative abstraction, unused flexibility, dead code.
+- `duplication` — logic repeated where an existing helper or one call site would do.
+- `naming` — a name, comment, or structure that misleads about what the code does.
+
+Set `planMandated: true` when
 the plan or brief explicitly mandates the thing you're flagging — the controller,
 not the reviewer, decides those. Calibrate honestly: Important means the task
 can't be trusted until fixed; polish is Minor.
