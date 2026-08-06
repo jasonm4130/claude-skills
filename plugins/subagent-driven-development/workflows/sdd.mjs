@@ -26,9 +26,12 @@ const EFFORTS = ["low", "medium", "high"];
 // rejected); strings may be any alphanumeric run, which is exactly the character
 // set that is safe in a git ref, a directory name and a file name.
 function taskId(n) {
-  if (typeof n === "number") return Number.isInteger(n) && n > 0 ? String(n) : null;
-  if (typeof n !== "string") return null;
-  return /^[A-Za-z0-9]+$/.test(n) ? n : null;
+  const s = typeof n === "number"
+    ? (Number.isInteger(n) && n > 0 ? String(n) : null)
+    : (typeof n === "string" ? n : null);
+  // The alphanumeric gate applies to numbers too: 1e21 is a positive integer that
+  // stringifies to "1e+21", which is neither alphanumeric nor a heading any plan writes.
+  return s !== null && /^[A-Za-z0-9]+$/.test(s) ? s : null;
 }
 
 function validateArgs(input) {
@@ -72,12 +75,15 @@ function validateArgs(input) {
   });
   const seen = new Set();
   for (const t of tasks) {
-    if (seen.has(t.n)) {
-      // n names the branch (sdd/t{n}), the worktree (<workdir>-t{n}) and the report path —
-      // two tasks sharing it would race on all three.
-      throw new Error(`duplicate task id ${t.n}: task ids must be unique`);
+    // Compared case-insensitively: n names the branch (sdd/t{n}), the worktree
+    // (<workdir>-t{n}) and the report path, and on a case-insensitive filesystem —
+    // the macOS default — "N2" and "n2" are the same directory and the same ref.
+    // Two tasks sharing any of those would race on all three.
+    const key = t.n.toLowerCase();
+    if (seen.has(key)) {
+      throw new Error(`duplicate task id ${t.n}: task ids must be unique, ignoring case`);
     }
-    seen.add(t.n);
+    seen.add(key);
   }
   const li = input.limits || {};
   const limits = {

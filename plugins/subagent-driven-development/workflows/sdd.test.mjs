@@ -116,7 +116,8 @@ test("taskId accepts positive ints and alphanumeric ids, rejects the rest", () =
   assert.equal(H.taskId(3), "3");
   assert.equal(H.taskId("N2"), "N2");
   assert.equal(H.taskId("9A"), "9A");
-  for (const bad of [0, -1, 1.5, NaN, "", "N 2", "t/1", "1.5", "a-b", null, undefined, true, {}]) {
+  // 1e21 is a positive integer that stringifies to "1e+21" — not a heading any plan writes.
+  for (const bad of [0, -1, 1.5, NaN, 1e21, "", "N 2", "t/1", "1.5", "a-b", null, undefined, true, {}]) {
     assert.equal(H.taskId(bad), null, `expected ${JSON.stringify(bad)} to be rejected`);
   }
 });
@@ -274,6 +275,11 @@ test("validateArgs rejects unusable and duplicate task ids", () => {
     () => H.validateArgs(withTasks([{ n: 1, title: "a" }, { n: "1", title: "b" }])),
     /duplicate/i,
     "1 and \"1\" name the same branch and worktree",
+  );
+  assert.throws(
+    () => H.validateArgs(withTasks([{ n: "N2", title: "a" }, { n: "n2", title: "b" }])),
+    /duplicate/i,
+    "on a case-insensitive filesystem <workdir>-tN2 and <workdir>-tn2 are one directory",
   );
   assert.throws(() => H.validateArgs(withTasks([{ n: 1.5, title: "a" }])), /integer/i);
   assert.throws(() => H.validateArgs(withTasks([{ n: 0, title: "a" }])), /integer|positive/i);
