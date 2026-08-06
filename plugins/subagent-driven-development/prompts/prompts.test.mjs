@@ -105,6 +105,15 @@ test("merger prompt merges in task order, bounds repair, cleans up, reports suit
   assert.match(s, /conflictsResolved/);
   assert.match(s, /"green" \| "red"/);
   assert.match(s, /full suite/i);
+  // The verify gate deliberately ignores untracked files, so the integration tree can carry
+  // suite output into the next wave — and `git merge` aborts outright when a task now tracks
+  // a path that output occupies. Without an instruction the merger improvises there, and the
+  // two obvious improvisations are deleting the file and forcing the merge.
+  assert.match(s, /untracked working tree files would be\s+overwritten by merge/i,
+    "merger.md must name the exact git refusal it has to handle");
+  assert.match(s, /preexisting-untracked/,
+    "the colliding output must be moved aside, not deleted");
+  assert.match(s, /do not force the merge/i);
 });
 
 test("implementer prompt covers task-worktree entry and the setup command", () => {

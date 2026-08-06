@@ -35,8 +35,9 @@ const payload = /** @type {PromptInput | null} */ (safeJsonParse(raw));
 // hook happened to be spawned in, under session id "unknown" — invisible until that
 // repo crossed the drift threshold, at which point the pair of hooks armed and then
 // consumed a flag nobody's session owned. The sibling PreToolUse guard already exits
-// here; these two were the outliers.
-if (payload === null) process.exit(0);
+// here; these two were the outliers. An array passes `safeJsonParse` (it is an object), so
+// check the shape, not just null: stdin of `[]` would otherwise take the same ambient path.
+if (payload === null || typeof payload !== "object" || Array.isArray(payload)) process.exit(0);
 const cwd =
   payload && typeof payload.cwd === "string" && payload.cwd.length > 0
     ? payload.cwd

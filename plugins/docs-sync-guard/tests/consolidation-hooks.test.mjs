@@ -414,6 +414,17 @@ test("both hooks exit 0 and stay silent on malformed stdin and non-repo cwd", ()
       assert.equal(bad.status, 0);
       assert.equal((bad.stdout ?? "").trim(), "");
 
+      // Valid JSON that is not a payload object. `safeJsonParse("[]")` returns an array, which
+      // is `typeof "object"` and not null, so a null-only guard lets it through to the ambient
+      // cwd and session "unknown" — the same defect as malformed stdin, one step further in.
+      const notAnObject = spawnSync("node", [hook], {
+        input: "[]",
+        encoding: "utf8",
+        env: { ...process.env, CLAUDE_PLUGIN_DATA: dataDir },
+      });
+      assert.equal(notAnObject.status, 0);
+      assert.equal((notAnObject.stdout ?? "").trim(), "");
+
       const nonRepo = run(hook, { session_id: "sid1", cwd: dir }, dataDir);
       assert.equal(nonRepo.status, 0);
       assert.equal(nonRepo.stdout.trim(), "");

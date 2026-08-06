@@ -335,6 +335,12 @@ const DIRTY_CONTEXT = {
 // the implementer and merger have run the test suite — and a repo whose tests drop `coverage/` or
 // `.pytest_cache/` would halt mid-run over output that `git merge` is perfectly happy to ignore.
 // Dirty TRACKED files are the real hazard: those are what abort a merge or get swept into one.
+//
+// Residual risk, accepted knowingly: untracked output surviving a wave DOES abort a later merge
+// if a task starts tracking that same path ("untracked working tree files would be overwritten").
+// That is rarer than the false halt this replaced — it needs a path collision, not merely output —
+// and prompts/merger.md handles it explicitly by moving the file aside. Do not "fix" this back to
+// a full --porcelain check without reading that instruction first.
 function acceptPreflight(p, context = "uncommitted work must be committed or stashed first") {
   if (!p || typeof p.porcelain !== "string") {
     return { ok: false, reason: "preflight did not report git status output" };
