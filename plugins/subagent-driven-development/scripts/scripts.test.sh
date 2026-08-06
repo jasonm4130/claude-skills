@@ -125,4 +125,31 @@ grep -q "## Diff" "$pkg2" || { echo "FAIL: review-package -C package missing dif
 # legacy no-arg behavior still resolves from cwd
 ws3=$("$dir/sdd-workspace")
 [ "$ws3" = "$(pwd -P)/.sdd" ] || { echo "FAIL: no-arg sdd-workspace changed behavior: $ws3"; exit 1; }
+
+# sdd-gc reports leftover SDD worktrees and branches without deleting them
+gcwt=$("$dir/sdd-worktree" "$repo" "$nb" 9)
+echo z > "$gcwt/z" && git -C "$gcwt" add z && git -C "$gcwt" commit -qm z
+out=$("$dir/sdd-gc" "$repo")
+echo "$out" | grep -q "unmerged worktree ${repo}-t9" || { echo "FAIL: sdd-gc missed the worktree"; exit 1; }
+echo "$out" | grep -q "unmerged branch sdd/t9" || { echo "FAIL: sdd-gc missed the branch"; exit 1; }
+echo "$out" | grep -q "# to remove:" || { echo "FAIL: sdd-gc printed no removal commands"; exit 1; }
+[ -d "$gcwt" ] || { echo "FAIL: sdd-gc deleted a worktree — it must only report"; exit 1; }
+
+# a registered-but-deleted worktree is REPORTED as prunable, never silently pruned away
+rm -rf "$gcwt"
+out=$("$dir/sdd-gc" "$repo")
+echo "$out" | grep -q "prunable worktree ${repo}-t9" || { echo "FAIL: sdd-gc hid the prunable worktree"; exit 1; }
+git -C "$repo" worktree list --porcelain | grep -qF "worktree ${repo}-t9" || { echo "FAIL: sdd-gc pruned metadata — it must only report"; exit 1; }
+git -C "$repo" worktree prune
+git -C "$repo" branch -D sdd/t9 >/dev/null
+
+# the printed removal commands survive a path containing a space
+spacerepo="$tmp/sdd run"
+git init -q "$spacerepo" && git -C "$spacerepo" config user.email t@t && git -C "$spacerepo" config user.name t
+echo a > "$spacerepo/f" && git -C "$spacerepo" add f && git -C "$spacerepo" commit -qm a
+sb=$(git -C "$spacerepo" rev-parse HEAD)
+"$dir/sdd-worktree" "$spacerepo" "$sb" 1 >/dev/null
+eval "$("$dir/sdd-gc" "$spacerepo" | sed -n "/# to remove:/,\$p" | tail -n +2)"
+[ -d "$spacerepo-t1" ] && { echo "FAIL: sdd-gc removal commands broke on a path with a space"; exit 1; }
+
 echo "OK"
