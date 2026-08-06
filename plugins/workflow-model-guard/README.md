@@ -9,12 +9,12 @@ on every worker agent.
 The `Workflow` tool spawns sub-agents that **inherit the main-loop model** unless each
 `agent()` call passes `opts.model`. The tool's own guidance says "omit `model` by
 default" — fine for a 1–3 agent workflow, but a `parallel`/`pipeline` fan-out or a
-loop-until-budget runs *every* spawned agent on Opus 4.8 and burns usage limits fast.
+loop-until-budget runs *every* spawned agent on the frontier session model and burns
+usage limits fast.
 
 This plugin adds a single `PreToolUse` hook that inspects the workflow script and, when
 it looks expensive and sets no model tiers, **denies the call with a reason**. Claude
-then revises the script — giving workers `model:'claude-sonnet-4-6'` or
-`'claude-haiku-4-5'` — and re-runs. The deny is self-clearing: once any `model:` appears,
+then revises the script — giving workers `model:'sonnet'` or `'haiku'` — and re-runs. The deny is self-clearing: once any `model:` appears,
 the call passes.
 
 ## When it fires
@@ -167,6 +167,5 @@ echo '{"tool_name":"Agent","tool_input":{"description":"d","prompt":"p","subagen
   `bin/ccguard <sub> "…/scripts/….mjs" || node "…/scripts/….mjs"`, so on Linux or an Intel Mac the binary
   fails to exec and the original `.mjs` guard runs instead — same behaviour, just
   without the speedup. (The path is passed twice deliberately; `rust/README.md`
-  explains which failure each copy covers.) That fallback needs Node, and
-  Claude Code ships a self-contained native binary whose documented system requirements do **not** include it, so it is an external prerequisite the host does not provide — install it via Homebrew, WinGet, or your distro's package manager. On a machine with neither the binary nor Node the hook cannot run and Claude Code shows a non-blocking `hook error` per matching event, so the guard fails open. There is no silent-skip: probing for node needs shell syntax that is not portable across the shells Claude Code picks per platform, and the exec-form alternative is unsupported before 2.1.139 with no way to enforce that floor (`engines` is not a recognised manifest field). See `scripts/hook-runtime-guard.test.mjs` for the full reasoning.
+  explains which failure each copy covers.) That fallback needs Node, which Claude Code does not ship — install it via Homebrew, WinGet, or your distro's package manager. With neither the binary nor Node the hook cannot run and the guard fails open (a non-blocking `hook error` per matching event). Why there is no silent-skip: `scripts/hook-runtime-guard.test.mjs`.
 - **Claude Code >= 2.1.110** — for `hooks.json` plugin hook registration.

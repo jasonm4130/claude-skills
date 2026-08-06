@@ -53,8 +53,8 @@ lives in git.
 Two consequences worth being explicit about:
 
 - **It is committed once per consuming plugin** (`plugins/*/bin/ccguard`), because
-  plugins cannot share files — the same constraint that forces six duplicated
-  `lib.mjs` copies. At 377KB that is cheap, but it is why binary size, not compile
+  plugins cannot share files — the same constraint that forces one duplicated
+  `lib.mjs` copy per plugin. At 377KB that is cheap, but it is why binary size, not compile
   ergonomics, drove the language and dependency choices.
 - **Delivery via `git clone` means no `com.apple.quarantine` xattr**, so Gatekeeper's
   unidentified-developer path is not involved. The toolchain ad-hoc-signs the
@@ -144,8 +144,8 @@ serializer key ordering.
 
 ## What this pilot does not do
 
-- **Does not remove node as a prerequisite.** Thirteen other hooks and every
-  session-invoked CLI still run `.mjs`. Until none do, the undeclared-prerequisite
+- **Does not remove node as a prerequisite.** Every other hook and every
+  session-invoked CLI still runs `.mjs`. Until none do, the undeclared-prerequisite
   argument stays unbanked.
 - **Does not target Intel Macs or Linux.** The committed binary is
   `aarch64-apple-darwin`. Elsewhere the `||` fallback runs node, so nothing breaks

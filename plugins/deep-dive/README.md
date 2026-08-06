@@ -71,7 +71,9 @@ not exist — `c` would be checked against wave-1 successes only and reported `d
 exist) before wave 1 runs, rather than let the workflow report a confident lie at synthesis.
 
 `verify.escalateOn` (`"low"` | `"medium"` | `"high"`) now actually works: an angle whose tier-1 verifier
-reports reliability at or below that threshold gets a tier-2 re-check.
+reports reliability at or below that threshold gets a tier-2 re-check — and that re-check runs
+`opus` at `high` effort. The "Sonnet, not Opus" headline above is about the *workers*: escalation is
+the one place the frontier tier is bought deliberately, on the angles that failed verification.
 
 ## Tools
 

@@ -108,7 +108,9 @@ count silently stops meaning what it looks like.
 
 **Every anomaly is silent, never "stale".** No record, an uncommitted record, an
 unparseable `audited=` line, a SHA that no longer exists or is no longer an ancestor,
-a shallow clone, a broken git — all of it exits 0 with no output. A nudge toward
+a shallow clone, a broken git, a hook payload that does not parse as a JSON object
+(0.3.7 — before it, that case fell through to `process.cwd()` and armed a nudge for
+whatever repo the hook happened to be spawned in) — all of it exits 0 with no output. A nudge toward
 optional work must never fire on "I cannot tell"; that is the effective false positive
 that gets a tool switched off. It also means shallow clones need no special-casing at
 all, because both shallow failure shapes land on paths that are already silent.
@@ -174,5 +176,5 @@ echo '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"cwd":"<rep
 
 ## Dependencies
 
-- Node.js 18+ and git on PATH. No third-party packages. Claude Code ships a self-contained native binary and its documented system requirements do **not** include Node, so this is an external prerequisite the host does not provide — install it via Homebrew, WinGet, or your distro's package manager. On a machine without it the hook cannot run and Claude Code shows a non-blocking `hook error` per matching event, so the guard fails open. There is no silent-skip: probing for node needs shell syntax that is not portable across the shells Claude Code picks per platform, and the exec-form alternative is unsupported before 2.1.139 with no way to enforce that floor (`engines` is not a recognised manifest field). See `scripts/hook-runtime-guard.test.mjs` for the full reasoning.
+- Node.js 18+ and git on PATH. No third-party packages. Node is an external prerequisite Claude Code does not ship — install it via Homebrew, WinGet, or your distro's package manager. Without it the hook cannot run and the guard fails open (Claude Code shows a non-blocking `hook error` per matching event). Why there is no silent-skip: `scripts/hook-runtime-guard.test.mjs`.
 - Claude Code >= 2.1.110 (hooks.json plugin registration).

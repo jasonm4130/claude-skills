@@ -57,6 +57,9 @@ plugins/<name>/
   skills/<skill>/SKILL.md         # skill definition + frontmatter
   hooks/hooks.json                # hook registrations (where applicable)
   scripts/ tests/                 # stdlib-only .mjs + node:test suites
+  bin/ccguard                     # committed Rust guard binary (compiled plugins only;
+                                  #   the .mjs stays as fallback AND reference impl)
+rust/                             # source for bin/ccguard, shared across those plugins
 docs/superpowers/{specs,plans}/   # design specs and implementation plans
 docs/plans/                       # dated research + triage records
 RESEARCH_*.md                     # standalone research write-ups
@@ -73,8 +76,9 @@ bash scripts/run-node-tests.sh    # run every *.test.mjs in one process
 CI (`.github/workflows/ci.yml`) validates all JSON manifests, runs `claude plugin
 validate` against every `plugins/<name>/` directory (catches malformed skill
 frontmatter that the JSON check above doesn't reach), runs the node test suite
-on ubuntu+macos (Node 24), runs the SDD bash smoke tests, and runs
-`version-bump-check` (see Releasing).
+on ubuntu+macos (Node 24), runs the SDD bash smoke tests, runs `rust-guards`
+(the `rust/` unit tests plus the differential test that fails on a stale
+committed `bin/ccguard`), and runs `version-bump-check` (see Releasing).
 
 ## Updating an installed plugin
 
