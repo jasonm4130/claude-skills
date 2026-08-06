@@ -372,3 +372,41 @@ test("return value: no path-shaped key points at a file the run never creates", 
   assert.equal(result.halted, null);
   assert.ok(!("ledgerPath" in result), "result must not advertise an unwritten ledger file");
 });
+
+test("the reviewer is never given the implementer's report path", async () => {
+  const { prompts } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "impl:t1": { status: "DONE", headSha: SHA("a"), testSummary: "1 pass", concerns: "worried about X", reportPath: "/w/.sdd/task-1-report.md" },
+    }),
+  });
+  assert.doesNotMatch(prompts["review:t1"], /task-1-report\.md/,
+    "the reviewer must judge the diff and the brief, never the implementer's self-assessment");
+});
+
+test("the merger still gets the reports — it needs them to read conflict intent", async () => {
+  const { prompts } = await runWorkflow({ args: waveArgs(), respond: happyResponder() });
+  assert.match(prompts["merge:w0"], /report/i);
+});
+
+test("an escalated implementer is reviewed at the tier it escalated to", async () => {
+  // Start the task at sonnet and BLOCK once, so the ladder escalates it to opus before it
+  // succeeds. Today the reviewer would be picked from the ORIGINAL sonnet assignment.
+  let implCalls = 0;
+  const { calls } = await runWorkflow({
+    args: { ...soloArgs(), tasks: [{ n: 1, title: "a", tier: "sonnet", effort: "medium", deps: [] }] },
+    respond: happyResponder({
+      get "impl:t1"() {
+        implCalls++;
+        return implCalls === 1
+          ? { status: "BLOCKED", headSha: "", testSummary: "", concerns: "need more context", reportPath: "r.md" }
+          : { status: "DONE", headSha: SHA("a"), testSummary: "1 pass", concerns: "", reportPath: "r.md" };
+      },
+    }),
+  });
+  const lastImpl = calls.filter((c) => c.label === "impl:t1").pop();
+  const review = calls.find((c) => c.label === "review:t1");
+  assert.equal(lastImpl.model, "opus", "the ladder must have escalated sonnet -> opus");
+  assert.equal(review.model, "opus",
+    "reviewerModel('opus') is 'opus'; a reviewer picked from the original sonnet would be 'sonnet'");
+});

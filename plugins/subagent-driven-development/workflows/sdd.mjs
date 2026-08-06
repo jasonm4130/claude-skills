@@ -486,7 +486,8 @@ Return per schema: status, headSha (run \`git rev-parse HEAD\` after committing)
     `You are reviewing Task ${task.n} ("${task.title}"). Work in ${wd}; READ-ONLY on the tree.
 Read your full operating instructions first: ${P}/prompts/reviewer.md — follow them exactly.
 Build the diff: ${P}/scripts/review-package -C ${wd} ${base} ${head}
-Read the package file it prints. The implementer's report is at ${wd}/.sdd/task-${task.n}-report.md (treat as unverified claims).
+Read the package file it prints. You are NOT given the implementer's report: the diff and the brief
+are the evidence, and a stated rationale is not one. Judge what the code does.
 Global constraints that bind this task:\n${gc}
 Return per schema: spec ("pass"/"fail"), findings[{severity,class,file,line,what,planMandated}], cannotVerify[], quality, ponytail{net,items}.
 Set planMandated=true for any finding the plan/brief explicitly mandates.
@@ -621,7 +622,10 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     const postFixClasses = [];
     while (true) {
       review = await dispatchAgent(agent, reviewPrompt(task, base, head, wd), {
-        label: `review:t${task.n}`, phase: "Review", model: reviewerModel(task.tier), effort: reviewerEffort(task.effort), schema: REVIEW_SCHEMA,
+        label: `review:t${task.n}`, phase: "Review",
+        // The tier the implementer FINISHED at, not the one the controller guessed: a task that
+        // escalated to opus/high must not be checked by a reviewer picked for its original sonnet.
+        model: reviewerModel(tier), effort: reviewerEffort(effort), schema: REVIEW_SCHEMA,
       });
       if (!review) return { halt: { taskN: task.n, reason: "reviewer returned no result", reportPath: impl.reportPath } };
       (review.findings || []).filter((f) => f.planMandated).forEach((c) => planConflicts.push({ taskN: task.n, ...c }));

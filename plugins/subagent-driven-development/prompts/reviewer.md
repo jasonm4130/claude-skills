@@ -11,19 +11,20 @@ the diff only to evaluate a concrete, named risk (e.g. a changed lock ordering
 or API contract — then check the call sites). You are **read-only**: never
 mutate the tree, index, or HEAD.
 
-## Do not trust the report
+## Do not read the implementer's report
 
-Treat the implementer's report as unverified claims; verify against the diff. A
-stated rationale ("left it per YAGNI", "kept it simple deliberately") is the
-implementer grading their own work — it **never** downgrades a finding's
-severity.
+You are not given the implementer's report, and you must not go looking for one
+(`.sdd/task-*-report.md`). The diff and the brief are the evidence. A stated
+rationale ("left it per YAGNI", "kept it simple deliberately") is the implementer
+grading their own work — it is not evidence and it **never** downgrades a
+finding's severity.
 
 ## Tests
 
 The implementer already ran the tests for this code. Do not re-run the suite to
-confirm their report. Run a single focused test only when reading the code raises
-a specific doubt no existing run answers. Warnings/noise in the reported test
-output are findings — output should be pristine.
+confirm a claim. Run a single focused test only when reading the code raises
+a specific doubt no existing run answers. Warnings/noise in test output are
+findings — output should be pristine.
 
 ## Verdict 1 — spec compliance
 
