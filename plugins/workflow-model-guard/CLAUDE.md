@@ -138,8 +138,10 @@ Source lives in `rust/` (shared with `design-gate-guard`); see `rust/README.md`.
 
 ## Dependencies
 
-- **Node.js 18+ on PATH.** No third-party packages, no `package.json`. Stdlib only.
-  Claude Code ships a self-contained native binary and its documented system requirements do **not** include Node, so this is an external prerequisite the host does not provide — install it via Homebrew, WinGet, or your distro's package manager. On a machine without it the hook cannot run and Claude Code shows a non-blocking `hook error` per matching event, so the guard fails open. There is no silent-skip: probing for node needs shell syntax that is not portable across the shells Claude Code picks per platform, and the exec-form alternative is unsupported before 2.1.139 with no way to enforce that floor (`engines` is not a recognised manifest field). See `scripts/hook-runtime-guard.test.mjs` for the full reasoning.
+- **On arm64 macOS: nothing.** Since 0.4.0 both hooks run the committed `bin/ccguard`
+  binary (see "The compiled guards" above); the `.mjs` fallback is what needs Node.
+- **Everywhere else: Node.js 18+ on PATH.** No third-party packages, no `package.json`. Stdlib only.
+  Node is an external prerequisite Claude Code does not ship — install it via Homebrew, WinGet, or your distro's package manager. Without it the hook cannot run and the guard fails open (Claude Code shows a non-blocking `hook error` per matching event). Why there is no silent-skip: `scripts/hook-runtime-guard.test.mjs`.
 - **Claude Code >= 2.1.110** — required for `hooks.json` plugin hook registration.
 
 ## Development

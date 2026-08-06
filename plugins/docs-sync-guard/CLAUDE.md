@@ -144,8 +144,8 @@ JSDoc typedefs, own `lib.mjs` copy (plugins can't share files), deny via the
 
 **The duplicated half of `lib.mjs` is enforced identical.** `scripts/lib-drift.test.mjs`
 fails the build if any function exported by two or more plugins' `lib.mjs` differs
-by even a byte — the invariant exists because the real hazard of six copies is a
-bug fixed in one and left in five. This file's `emitAdditionalContext` was the
+by even a byte — the invariant exists because the real hazard of one copy per plugin
+is a bug fixed in one and left in all the others. This file's `emitAdditionalContext` was the
 first casualty: it had drifted to a semantically-identical but differently-formatted
 five-line form and was normalised back. If a divergence is ever genuinely wanted,
 rename the diverging copy so it stops claiming to be the shared primitive.
