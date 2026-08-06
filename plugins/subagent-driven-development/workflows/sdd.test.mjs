@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "sdd.mjs"), "utf8");
 const pure = src.split("// >>> PURE")[1].split("// <<< PURE")[0];
 const H = new Function(
-  `${pure}; return { TIERS, EFFORTS, nextEffort, reviewerEffort, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchImpl, detectOscillation, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptVerification };`,
+  `${pure}; return { TIERS, EFFORTS, nextEffort, reviewerEffort, taskId, validateArgs, sequenceTasks, nextTier, reviewerModel, maxAttemptsAtTier, escalationStep, dispatchImpl, detectOscillation, computeWaves, taskWorkdir, runPool, partitionWaveResults, dispatchBase, isSha, isShaish, acceptVerification };`,
 )();
 
 const okArgs = () => ({
@@ -66,15 +66,59 @@ test("dispatchBase seeds wave 0 from branchTip, falling back to mergeBase", () =
   assert.equal(H.dispatchBase({ branchTip: "", mergeBase: "mb" }), "mb");
 });
 
-test("sequenceTasks sorts by n and rejects forward deps", () => {
+test("sequenceTasks orders dependencies before dependents", () => {
   assert.deepEqual(
     H.sequenceTasks([{ n: 2, title: "b", deps: [1] }, { n: 1, title: "a", deps: [] }]).map((t) => t.n),
     [1, 2],
   );
-  assert.throws(
-    () => H.sequenceTasks([{ n: 1, title: "a", deps: [2] }, { n: 2, title: "b", deps: [] }]),
-    /does not precede/,
+});
+
+test("sequenceTasks accepts a DAG whose order is not monotonic in the ids", () => {
+  // The shape from issue #76: execution order N3 -> 2 -> 9A -> N2, ids stable.
+  const order = H.sequenceTasks([
+    { n: "2", title: "b", deps: ["N3"] },
+    { n: "N2", title: "d", deps: ["9A"] },
+    { n: "N3", title: "a", deps: [] },
+    { n: "9A", title: "c", deps: ["2"] },
+  ]).map((t) => t.n);
+  assert.deepEqual(order, ["N3", "2", "9A", "N2"]);
+});
+
+test("sequenceTasks breaks ties on input order, not on id", () => {
+  assert.deepEqual(
+    H.sequenceTasks([{ n: 3, deps: [] }, { n: 1, deps: [] }, { n: 2, deps: [] }]).map((t) => t.n),
+    [3, 1, 2],
   );
+});
+
+test("sequenceTasks rejects an unknown dep and a real cycle", () => {
+  assert.throws(
+    () => H.sequenceTasks([{ n: 1, title: "a", deps: [9] }]),
+    /depends on 9, which is not a task in this plan/,
+  );
+  assert.throws(
+    () => H.sequenceTasks([{ n: 1, deps: [2] }, { n: 2, deps: [1] }]),
+    /dependency cycle among tasks: 1, 2/,
+  );
+  assert.throws(() => H.sequenceTasks([{ n: 1, deps: [1] }]), /dependency cycle/);
+});
+
+test("computeWaves levels a non-monotonic DAG by deps, not by id", () => {
+  const waves = H.computeWaves([
+    { n: "N3", deps: [] },
+    { n: "9A", deps: [] },
+    { n: "2", deps: ["N3", "9A"] },
+  ]);
+  assert.deepEqual(waves.map((w) => w.map((t) => t.n)), [["N3", "9A"], ["2"]]);
+});
+
+test("taskId accepts positive ints and alphanumeric ids, rejects the rest", () => {
+  assert.equal(H.taskId(3), "3");
+  assert.equal(H.taskId("N2"), "N2");
+  assert.equal(H.taskId("9A"), "9A");
+  for (const bad of [0, -1, 1.5, NaN, "", "N 2", "t/1", "1.5", "a-b", null, undefined, true, {}]) {
+    assert.equal(H.taskId(bad), null, `expected ${JSON.stringify(bad)} to be rejected`);
+  }
 });
 
 test("nextTier walks haiku->sonnet->opus->null", () => {
@@ -218,18 +262,42 @@ test("partitionWaveResults splits successes, halts, and pool errors", () => {
   ]);
 });
 
-test("validateArgs rejects non-integer, non-positive, and duplicate task numbers", () => {
-  const withTasks = (tasks) => ({ planPath: "p.md", workdir: "/w", pluginDir: "/p", mergeBase: "abc", tasks });
+const withTasks = (tasks) => ({ planPath: "p.md", workdir: "/w", pluginDir: "/p", mergeBase: "abc", tasks });
+
+test("validateArgs rejects unusable and duplicate task ids", () => {
   assert.throws(
     () => H.validateArgs(withTasks([{ n: 1, title: "a" }, { n: 1, title: "b" }])),
     /duplicate/i,
     "two tasks numbered 1 would race on sdd/t1, <workdir>-t1, and one report path",
   );
+  assert.throws(
+    () => H.validateArgs(withTasks([{ n: 1, title: "a" }, { n: "1", title: "b" }])),
+    /duplicate/i,
+    "1 and \"1\" name the same branch and worktree",
+  );
   assert.throws(() => H.validateArgs(withTasks([{ n: 1.5, title: "a" }])), /integer/i);
   assert.throws(() => H.validateArgs(withTasks([{ n: 0, title: "a" }])), /integer|positive/i);
   assert.throws(() => H.validateArgs(withTasks([{ n: -1, title: "a" }])), /integer|positive/i);
   assert.throws(() => H.validateArgs(withTasks([{ n: NaN, title: "a" }])), /integer/i);
+  // Anything that would not be safe as a branch/dir/file name component.
+  assert.throws(() => H.validateArgs(withTasks([{ n: "../etc", title: "a" }])), /alphanumeric/i);
+  assert.throws(() => H.validateArgs(withTasks([{ n: "N 2", title: "a" }])), /alphanumeric/i);
   assert.equal(H.validateArgs(withTasks([{ n: 1, title: "a" }, { n: 2, title: "b" }])).tasks.length, 2);
+});
+
+test("validateArgs keeps a plan's own alphanumeric ids and normalizes them to strings", () => {
+  const c = H.validateArgs(withTasks([
+    { n: "N3", title: "a" },
+    { n: 2, title: "b", deps: ["N3"] },
+    { n: "9A", title: "c", deps: [2] },
+  ]));
+  assert.deepEqual(c.tasks.map((t) => t.n), ["N3", "2", "9A"]);
+  // deps normalize too, so a numeric dep still matches a string id and vice versa.
+  assert.deepEqual(c.tasks.map((t) => t.deps), [[], ["N3"], ["2"]]);
+  assert.deepEqual(
+    H.computeWaves(c.tasks).map((w) => w.map((t) => t.n)),
+    [["N3"], ["2"], ["9A"]],
+  );
 });
 
 const SHA_A = "a".repeat(40);
@@ -277,7 +345,7 @@ test("acceptVerification: rejects an unresolvable claim, a red suite, and an unc
 });
 
 test("acceptVerification: rejects a head that does not contain a succeeded task's commit", () => {
-  const r = H.acceptVerification(ok({ missingCommits: [2] }), "npm test");
+  const r = H.acceptVerification(ok({ missingCommits: ["2"] }), "npm test");
   assert.equal(r.ok, false, "a green head that does not contain task 2 is not a merged wave");
   assert.match(r.reason, /2/);
 });

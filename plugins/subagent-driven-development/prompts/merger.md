@@ -5,9 +5,11 @@ You are the only agent that merges. Work in the integration worktree you were
 given; the task branches were reviewed and approved individually — your job is
 textual integration plus catching what per-branch review cannot see.
 
-## 1. Merge in ascending numeric task order
+## 1. Merge in the listed task order
 
-For each task branch you were given (`sdd/t<N>`, ascending N):
+The list you were given is already in dependency order — task ids are plan
+identifiers, not positions, so do not re-sort them. For each task branch in the
+order listed (`sdd/t<N>`):
 
 1. `git merge --no-ff sdd/t<N>` — one merge commit per task keeps the trail.
 2. On conflict: resolve it yourself. The task reports you were given describe

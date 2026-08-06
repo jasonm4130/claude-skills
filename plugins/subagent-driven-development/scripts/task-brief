@@ -16,10 +16,21 @@ plan=$1; n=$2
 [ -f "$plan" ] || { echo "no such plan file: $plan" >&2; exit 2; }
 if [ $# -eq 3 ]; then out=$3
 else dir=$("$(cd "$(dirname "$0")" && pwd)/sdd-workspace" ${workdir:+"$workdir"}); out="$dir/task-${n}-brief.md"; fi
+# Task ids are compared as whole tokens, not as a regex prefix: `Task 9` must not
+# match `### Task 9A`, and `Task N3` must be findable at all. A heading ends the
+# current task when it names any other task, or when it sits at the same level or
+# shallower than the task's own heading — so a retirement note or the next section
+# of an ADR is a boundary, instead of being silently appended to the brief.
 awk -v n="$n" '
   /^```/ { infence = !infence }
-  !infence && /^#+[ \t]+Task[ \t]+[0-9]+/ {
-    intask = ($0 ~ ("^#+[ \t]+Task[ \t]+" n "([^0-9]|$)"))
+  !infence && /^#+[ \t]/ {
+    match($0, /^#+/); depth = RLENGTH
+    head = $0
+    istask = sub(/^#+[ \t]+Task[ \t]+/, "", head)
+    if (!istask) { plural = $0; istask = sub(/^#+[ \t]+Tasks[ \t]+/, "", plural) }
+    id = (istask && match(head, /^[A-Za-z0-9]+/)) ? substr(head, 1, RLENGTH) : ""
+    if (id != "" && id == n) { intask = 1; taskdepth = depth }
+    else if (intask && (istask || depth <= taskdepth)) { intask = 0 }
   }
   intask { print }
 ' "$plan" > "$out"
