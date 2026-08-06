@@ -83,7 +83,8 @@ test("implementer halts on new load-bearing decisions instead of deciding them",
 
 test("merger prompt merges in task order, bounds repair, cleans up, reports suite verdict", () => {
   const s = read("merger.md");
-  assert.match(s, /ascending|numeric task order/i);
+  assert.match(s, /in the (order listed|listed task order)/i);
+  assert.match(s, /do not re-sort/i);
   assert.match(s, /ONE repair attempt/i);
   assert.match(s, /worktree remove/);
   assert.match(s, /branch -d/);

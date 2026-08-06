@@ -15,7 +15,7 @@
       "name": "adr",
       "source": "./plugins/adr",
       "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to the subagent-driven-development loop. Front-end for adr → sdd.",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "author": {
         "name": "Jason Matthew"
       },
@@ -235,7 +235,7 @@
       "name": "subagent-driven-development",
       "source": "./plugins/subagent-driven-development",
       "description": "Deterministic workflow-driven subagent development loop — plan/confirm in the controller, then a background Workflow enforces per-task implement/review/fix with tiered models and codified ponytail discipline.",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "author": {
         "name": "Jason Matthew"
       },

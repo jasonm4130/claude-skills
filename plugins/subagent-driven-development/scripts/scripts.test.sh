@@ -18,6 +18,49 @@ out=$("$dir/task-brief" plan.md 2 | sed 's/^wrote //; s/:.*//')
 grep -q beta "$out" || { echo "FAIL: brief missing task 2 body"; exit 1; }
 grep -q alpha "$out" && { echo "FAIL: brief leaked task 1"; exit 1; }
 
+# task-brief: task ids are whole tokens, and headings bound the block.
+# Regression for issues #75 (non-numeric ids unextractable; the preceding task
+# silently over-ran them) — a brief that quietly contains eight tasks is worse
+# than one that fails.
+cat > ids.md <<'PLAN'
+### Task 9: nine
+nine-body
+
+### Task 9A: nine-a
+nine-a-body
+
+#### Files
+sub-body
+
+### Task 16: sixteen
+sixteen-body
+
+### Tasks 17 and 18 are RETIRED
+retired-body
+
+### Task N1: en-one
+en-one-body
+
+## Appendix
+appendix-body
+PLAN
+brief() { "$dir/task-brief" ids.md "$1" | sed 's/^wrote //; s/:.*//'; }
+b=$(brief 9)
+grep -q nine-body "$b" || { echo "FAIL: task 9 body missing"; exit 1; }
+grep -q nine-a-body "$b" && { echo "FAIL: task 9 swallowed task 9A"; exit 1; }
+b=$(brief 9A)
+grep -q nine-a-body "$b" || { echo "FAIL: task 9A body missing"; exit 1; }
+grep -q sub-body "$b" || { echo "FAIL: deeper subheading dropped from task 9A"; exit 1; }
+grep -q sixteen-body "$b" && { echo "FAIL: task 9A ran into task 16"; exit 1; }
+b=$(brief N3 2>/dev/null) && { echo "FAIL: absent task N3 should exit non-zero"; exit 1; }
+b=$(brief N1)
+grep -q en-one-body "$b" || { echo "FAIL: non-numeric task N1 not extracted"; exit 1; }
+grep -q appendix-body "$b" && { echo "FAIL: shallower heading did not end the task"; exit 1; }
+b=$(brief 16)
+grep -q sixteen-body "$b" || { echo "FAIL: task 16 body missing"; exit 1; }
+grep -q retired-body "$b" && { echo "FAIL: task 16 ran into the RETIRED note"; exit 1; }
+grep -q en-one-body "$b" && { echo "FAIL: task 16 ran into task N1"; exit 1; }
+
 # review-package builds a 2-commit range package
 echo a > f && git add f && git commit -qm a
 base=$(git rev-parse HEAD)

@@ -21,6 +21,24 @@ const TIERS = ["haiku", "sonnet", "opus"];
 // existed. Anthropic names `low` as the fit for subagents specifically.
 const EFFORTS = ["low", "medium", "high"];
 
+// Normalize a task id to its canonical string form, or null if it is not a
+// usable id. Numbers must still be positive integers (so NaN, 0, -1 and 1.5 stay
+// rejected) and SAFE ones: JSON.parse silently rounds 9007199254740993 to
+// ...992, so an unsafe integer id would validate and then point task-brief at a
+// heading the plan does not contain. Strings may be any alphanumeric run, which
+// is exactly the character set that is safe in a git ref, a directory name and a
+// file name, and short enough that "<workdir>-t<n>" stays under NAME_MAX (255 on
+// this filesystem); ids beyond 2^53 can be passed as strings.
+const MAX_TASK_ID_LEN = 64;
+function taskId(n) {
+  const s = typeof n === "number"
+    ? (Number.isSafeInteger(n) && n > 0 ? String(n) : null)
+    : (typeof n === "string" ? n : null);
+  // The alphanumeric gate applies to numbers too: 1e21 is a positive integer that
+  // stringifies to "1e+21", which is neither alphanumeric nor a heading any plan writes.
+  return s !== null && s.length <= MAX_TASK_ID_LEN && /^[A-Za-z0-9]+$/.test(s) ? s : null;
+}
+
 function validateArgs(input) {
   if (typeof input === "string") {
     try { input = JSON.parse(input); } catch { throw new Error("args string is not valid JSON"); }
@@ -39,26 +57,39 @@ function validateArgs(input) {
   if (!Array.isArray(input.tasks) || input.tasks.length === 0)
     throw new Error("args.tasks must be a non-empty array");
   const tasks = input.tasks.map((t, i) => {
-    if (!Number.isInteger(t.n) || t.n <= 0) {
-      throw new Error(`tasks[${i}].n must be a positive integer (got ${JSON.stringify(t.n)})`);
+    // n is an identity, not a position. A plan's ids are stable cross-document
+    // references (an ADR cites "Task N3"), so renumbering them to satisfy this
+    // loop throws away the thing the plan and its ADR use to refer to each
+    // other. Accept any alphanumeric id; that keeps every downstream use safe —
+    // it names the branch (sdd/t{n}), the worktree (<workdir>-t{n}), the report
+    // path, and the task-brief argument, none of which need a number.
+    const id = taskId(t.n);
+    if (id === null) {
+      throw new Error(
+        `tasks[${i}].n must be a positive integer or an alphanumeric id of at most ` +
+          `${MAX_TASK_ID_LEN} characters, such as "N2" (got ${JSON.stringify(t.n)})`,
+      );
     }
     if (typeof t.title !== "string" || !t.title) throw new Error(`tasks[${i}].title is required`);
     return {
-      n: t.n,
+      n: id,
       title: t.title,
       tier: TIERS.includes(t.tier) ? t.tier : "opus",
       effort: EFFORTS.includes(t.effort) ? t.effort : "medium",
-      deps: Array.isArray(t.deps) ? t.deps : [],
+      deps: (Array.isArray(t.deps) ? t.deps : []).map((d) => String(d)),
     };
   });
   const seen = new Set();
   for (const t of tasks) {
-    if (seen.has(t.n)) {
-      // n names the branch (sdd/t{n}), the worktree (<workdir>-t{n}) and the report path —
-      // two tasks sharing it would race on all three.
-      throw new Error(`duplicate task number ${t.n}: task numbers must be unique`);
+    // Compared case-insensitively: n names the branch (sdd/t{n}), the worktree
+    // (<workdir>-t{n}) and the report path, and on a case-insensitive filesystem —
+    // the macOS default — "N2" and "n2" are the same directory and the same ref.
+    // Two tasks sharing any of those would race on all three.
+    const key = t.n.toLowerCase();
+    if (seen.has(key)) {
+      throw new Error(`duplicate task id ${t.n}: task ids must be unique, ignoring case`);
     }
-    seen.add(t.n);
+    seen.add(key);
   }
   const li = input.limits || {};
   const limits = {
@@ -87,16 +118,36 @@ function dispatchBase(cfg) {
   return cfg.branchTip || cfg.mergeBase;
 }
 
+// Topological sort over deps. Ordering used to be the numeric sort, with a check
+// that deps preceded numerically — which conflated a task's identity with its
+// position and rejected perfectly good DAGs whose execution order isn't
+// monotonic in the ids (N3 -> 2 -> 3 -> 9A -> N2 is a real plan's order).
+// Ties break on input order, so a plan already listed in execution order comes
+// back in exactly that order. Errors only on an unknown dep or a real cycle.
 function sequenceTasks(tasks) {
-  const sorted = [...tasks].sort((a, b) => a.n - b.n);
-  const seen = new Set();
-  for (const t of sorted) {
-    for (const d of t.deps) {
-      if (!seen.has(d)) throw new Error(`task ${t.n} depends on ${d} which does not precede it`);
+  const known = new Set(tasks.map((t) => String(t.n)));
+  for (const t of tasks) {
+    for (const d of t.deps || []) {
+      if (!known.has(String(d))) {
+        throw new Error(`task ${t.n} depends on ${d}, which is not a task in this plan`);
+      }
     }
-    seen.add(t.n);
   }
-  return sorted;
+  const pending = [...tasks];
+  const done = new Set();
+  /** @type {any[]} */
+  const out = [];
+  while (pending.length) {
+    const i = pending.findIndex((t) => (t.deps || []).every((d) => done.has(String(d))));
+    if (i === -1) {
+      // Every remaining task is waiting on another remaining task.
+      throw new Error(`dependency cycle among tasks: ${pending.map((t) => t.n).join(", ")}`);
+    }
+    const [t] = pending.splice(i, 1);
+    done.add(String(t.n));
+    out.push(t);
+  }
+  return out;
 }
 
 function nextTier(tier) {
@@ -173,14 +224,15 @@ function detectOscillation(roundClasses, cap = 2) {
 }
 
 // Topological levels from deps: wave 0 = no deps, else 1 + max(dep waves).
-// sequenceTasks validates deps precede numerically, which guarantees a DAG.
+// sequenceTasks has already rejected unknown deps and cycles, so every dep's
+// wave is known by the time it is read here.
 function computeWaves(tasks) {
   const sorted = sequenceTasks(tasks);
   const waveOf = new Map();
   const waves = [];
   for (const t of sorted) {
-    const w = t.deps.length ? 1 + Math.max(...t.deps.map((d) => waveOf.get(d))) : 0;
-    waveOf.set(t.n, w);
+    const w = t.deps.length ? 1 + Math.max(...t.deps.map((d) => waveOf.get(String(d)))) : 0;
+    waveOf.set(String(t.n), w);
     if (!waves[w]) waves[w] = [];
     waves[w].push(t);
   }
@@ -317,7 +369,8 @@ const MERGE_SCHEMA = {
   required: ["headSha", "merged", "conflictsResolved", "testSummary", "suite"],
   properties: {
     headSha: { type: "string" },
-    merged: { type: "array", items: { type: "number" } },
+    // Task ids, not positions — a plan may use "N3"/"9A" (see validateArgs).
+    merged: { type: "array", items: { type: "string" } },
     conflictsResolved: { type: "array", items: { type: "string" } },
     testSummary: { type: "string" },
     suite: { type: "string", enum: ["green", "red"] },
@@ -333,7 +386,7 @@ const VERIFY_SCHEMA = {
     claimSha: { type: "string" },  // what `rev-parse --verify <claim>^{commit}` printed; "" on failure
     headSha: { type: "string" },   // what `rev-parse HEAD` printed
     baseContained: { type: "boolean" }, // is the pre-transition base an ancestor of HEAD?
-    missingCommits: { type: "array", items: { type: "number" } },
+    missingCommits: { type: "array", items: { type: "string" } }, // task ids, not positions
     suite: { type: "string", enum: ["green", "red", "unknown"] },
     evidence: { type: "string" },
   },
@@ -418,7 +471,7 @@ Return per schema: headSha (after committing), testSummary, fixed[].`;
   const mergePrompt = (w, waveBase, merged) =>
     `You are the wave-${w} MERGER. Work in ${cfg.workdir} (the integration worktree).
 Read your full operating instructions first: ${P}/prompts/merger.md — follow them exactly.
-Merge these task branches into the current branch in ascending task order:
+Merge these task branches into the current branch in the order listed:
 ${merged
       .map((t) => `- Task ${t.n}: branch sdd/t${t.n} at ${t.headSha}, worktree ${taskWorkdir(cfg.workdir, t.n)}, report ${taskWorkdir(cfg.workdir, t.n)}/.sdd/task-${t.n}-report.md`)
       .join("\n")}
@@ -474,7 +527,7 @@ Run exactly these and report what they actually print:
 ${expectCommits.length
   ? `4. Each of these task commits must be contained in HEAD. For each, run:
 ${expectCommits.map((c) => `   task ${c.n}: \`git -C ${cfg.workdir} merge-base --is-ancestor ${c.sha} HEAD\` (exit 0 = contained)`).join("\n")}
-   Put the task number of every commit NOT contained in HEAD into missingCommits.
+   Put the task id of every commit NOT contained in HEAD into missingCommits (as strings).
    (Check the commit SHAs, not sdd/t<N> branches — the merger deletes those branches.)`
   : `4. No task commits to check for this claim: missingCommits=[].`}
 ${cfg.testCmd

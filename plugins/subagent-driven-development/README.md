@@ -53,6 +53,13 @@ finishing (see step 7 above).
 **args (controller → workflow):**
 `{ planPath, workdir, pluginDir, globalConstraints, mergeBase, branchTip?, tasks:[{n,title,tier,deps}], setupCmd?, testCmd?, limits:{fixRounds,escalateAttempts,maxParallel,fableEscalation} }`
 
+`n` is the plan's own task id, not a position. Any alphanumeric id works —
+`1`, `9A`, `"N2"` — because ids are load-bearing cross-document references
+(an ADR citing "Task N3" stops matching the plan the moment you renumber).
+Execution order comes from `deps` alone: a topological sort, ties broken on
+list order, erroring only on a dep naming a task that isn't in the list or on
+a real cycle. Ids never have to ascend.
+
 `mergeBase` anchors the final-review diff range; `branchTip` (the branch's
 current tip, `git rev-parse HEAD`) anchors wave-0 dispatch. Omitting
 `branchTip` falls back to `mergeBase`, which dispatches wave 0 against a
@@ -103,7 +110,7 @@ set on **every** `agent()` call, so none inherit the orchestrator and the
 - **Wave scheduling:** tasks whose `deps` are all satisfied run concurrently
   (capped at `limits.maxParallel`, default 4), each in a sibling worktree
   `<workdir>-t<N>` on branch `sdd/t<N>`. A sonnet merge gate integrates each
-  wave in task order, runs the full suite, and gets one bounded repair
+  wave in the dispatched (topological) order, runs the full suite, and gets one bounded repair
   attempt; red after repair halts the run. Task failures don't cancel
   siblings — successful siblings are merged before the halt. Linear plans
   degenerate to singleton waves: identical to sequential execution.
@@ -130,7 +137,11 @@ a `Critical` finding — reviewers read test-file changes more carefully than co
 
 ## Requirements
 
-- The plan must use `# Task N` / `## Task N` headings (parsed by `scripts/task-brief`).
+- The plan must use `# Task N` / `## Task N` headings (parsed by
+  `scripts/task-brief`). `N` may be any alphanumeric id — `9A`, `N2` — and ids
+  are matched as whole tokens, so `Task 9` never picks up `Task 9A`. Keep one
+  heading level per task: a heading at the task's own level or shallower ends
+  the brief, so anything deeper belongs to the task above it.
 - Sweet spot: well-specified plans with test coverage. Not for large ambiguous
   brownfield work.
 

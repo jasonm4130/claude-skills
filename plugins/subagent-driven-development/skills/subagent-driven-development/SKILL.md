@@ -20,7 +20,8 @@ fills every node's judgment; only the loop is fixed.
 ## When to use
 
 - A written plan exists with `# Task N` / `## Task N` headings (what `task-brief`
-  parses) and the work has test coverage.
+  parses — `N` may be any alphanumeric id, e.g. `Task 9A`, `Task N2`) and the
+  work has test coverage.
 - **Not** for large, ambiguous, or brownfield work where the plan can't be
   decomposed into independently testable tasks — elaborate task ceremony there
   creates review overload without guaranteeing compliance. Recommend smaller
@@ -109,8 +110,8 @@ literal path, pinned to **this** skill's version — the `args` contract moves
 between versions (in local dev, use the repo path directly):
 
 ```bash
-P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.8.0/workflows/sdd.mjs"
-[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.8.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
+P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.9.0/workflows/sdd.mjs"
+[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.9.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
 ```
 
 If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not
@@ -135,6 +136,13 @@ Workflow({ scriptPath: "<resolved sdd.mjs>", args: {
   limits: { fixRounds: 2, escalateAttempts: 2, maxParallel: 4, fableEscalation: true }
 }})
 ```
+
+`n` is the plan's own task id, not a position — **pass the id the plan uses and never
+renumber**. Any alphanumeric id works (`1`, `9A`, `"N2"`), because ids are load-bearing
+cross-document references: an ADR that cites "Task N3" stops matching the plan the moment
+you renumber. Execution order comes from `deps` alone (topologically sorted, ties broken on
+list order), so it does not have to ascend; the workflow errors only on a dep naming a task
+that isn't in the list, or on a real cycle.
 
 `testCmd` — **strongly recommended; pass it whenever the repo has a canonical suite command.**
 Without it, every verifier reports `suite: "unknown"` and the workflow can only check that the
@@ -267,7 +275,9 @@ Fable earns its place on stuck and long-horizon work, not on routine tasks.
 
 ## Dependencies
 
-- The plan must use `# Task N` / `## Task N` headings.
+- The plan must use `# Task N` / `## Task N` headings, one heading level per task,
+  with any deeper headings belonging to the task above them. A heading at the
+  task's own level or shallower ends the brief.
 - The nine superpowers post-plan skills stay disabled — this plugin is their
   self-contained replacement.
 - See `../../README.md`, the design spec, and `RESEARCH_subagent_driven_workflow.md`.
