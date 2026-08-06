@@ -66,7 +66,12 @@ current tip, `git rev-parse HEAD`) anchors wave-0 dispatch. Omitting
 stale tree whenever the branch is ahead of the merge-base — always pass it.
 
 **return:**
-`{ tasks, planConflicts, halted, finalReview, finalFix, mergeBase, head, merges, meta }`
+`{ tasks, planConflicts, deferred, halted, finalReview, finalFix, mergeBase, head, merges, meta }`
+
+Each entry in `tasks` carries the implementer's `concerns` and `reportPath`, so a
+`DONE_WITH_CONCERNS` status reaches you with the concerns attached. `deferred` is
+`{ minors, cannotVerify }` — what the per-task reviews chose not to act on, tagged with
+`taskN` and also handed to the final reviewer to triage against the whole branch.
 
 ### Progress phases
 

@@ -423,6 +423,61 @@ test("the merger still gets the reports — it needs them to read conflict inten
   assert.match(prompts["merge:w0"], /report/i);
 });
 
+// ---------------------------------------------------------------------------
+// Signal the loop collects and used to drop: the implementer's concerns, the reviewer's
+// cannotVerify[], and the Minors filtered out of `actionable`. The final reviewer is TOLD to triage
+// the deferred Minors, so it has to actually be given them.
+// ---------------------------------------------------------------------------
+
+test("a successful task carries its concerns and report path to the human", async () => {
+  const { result } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "impl:t1": { status: "DONE_WITH_CONCERNS", headSha: SHA("a"), testSummary: "1 pass", concerns: "the retry budget is a guess", reportPath: "/w/.sdd/task-1-report.md" },
+    }),
+  });
+  assert.equal(result.tasks[0].concerns, "the retry budget is a guess",
+    "DONE_WITH_CONCERNS with the concerns stripped is just DONE");
+  assert.equal(result.tasks[0].reportPath, "/w/.sdd/task-1-report.md");
+});
+
+test("deferred Minors and cannotVerify reach the return value and the final reviewer", async () => {
+  const { result, prompts } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      "review:t1": {
+        spec: "pass",
+        findings: [{ severity: "Minor", class: "naming", file: "a.js", line: "2", what: "shadowed name", planMandated: false }],
+        cannotVerify: ["could not exercise the timeout path"],
+        quality: "ok", ponytail: { net: 0, items: [] },
+      },
+    }),
+  });
+  assert.equal(result.deferred.minors.length, 1);
+  assert.equal(result.deferred.minors[0].taskN, "1");
+  assert.equal(result.deferred.cannotVerify.length, 1);
+  assert.match(prompts["final-review"], /shadowed name/);
+  assert.match(prompts["final-review"], /could not exercise the timeout path/);
+});
+
+test("only the terminal review's deferred items are forwarded, not one per round", async () => {
+  let reviews = 0;
+  const minor = { severity: "Minor", class: "naming", file: "a.js", line: "2", what: "shadowed name", planMandated: false };
+  const { result } = await runWorkflow({
+    args: soloArgs(),
+    respond: happyResponder({
+      get "review:t1"() {
+        reviews++;
+        return reviews === 1
+          ? { spec: "fail", findings: [minor, { severity: "Critical", class: "correctness", file: "a.js", line: "3", what: "bug", planMandated: false }], cannotVerify: [], quality: "ok", ponytail: { net: 0, items: [] } }
+          : { spec: "pass", findings: [minor], cannotVerify: [], quality: "ok", ponytail: { net: 0, items: [] } };
+      },
+      "fix:t1.1": { headSha: SHA("a"), testSummary: "1 pass", fixed: ["bug"] },
+    }),
+  });
+  assert.equal(result.deferred.minors.length, 1, "one surviving Minor is one entry, not one per round");
+});
+
 test("an escalated implementer is reviewed at the tier it escalated to", async () => {
   // Start the task at sonnet and BLOCK once, so the ladder escalates it to opus before it
   // succeeds. Today the reviewer would be picked from the ORIGINAL sonnet assignment.

@@ -577,7 +577,7 @@ ${cfg.testCmd
 
 Never report a result you did not observe. A claim you could not confirm is not confirmed.`;
 
-  const finalPrompt = (mergeBase, head) =>
+  const finalPrompt = (mergeBase, head, deferred) =>
     `You are the whole-branch FINAL reviewer (most capable model). Work in ${cfg.workdir}; READ-ONLY.
 Read your full operating instructions first: ${P}/prompts/final-reviewer.md — follow them exactly.
 Build the branch diff: ${P}/scripts/review-package -C ${cfg.workdir} ${mergeBase} ${head}
@@ -588,7 +588,9 @@ Global constraints:\n${gc}${
         : ""
     }
 Set planMandated=true for any finding the plan or an ADR explicitly mandates — those go to a human to
-adjudicate and are NEVER auto-fixed.
+adjudicate and are NEVER auto-fixed.${deferred.minors.length || deferred.cannotVerify.length
+  ? `\nDEFERRED FROM PER-TASK REVIEW — triage these against the whole branch. A Minor that recurs across tasks is not minor; a "could not verify" that is still unverified at branch level is a finding.\nMinors:\n${JSON.stringify(deferred.minors, null, 2)}\nCould not verify:\n${JSON.stringify(deferred.cannotVerify, null, 2)}`
+  : "\nNo per-task reviews deferred anything: there are no rolled-up Minors and nothing was reported unverifiable."}
 Return per schema: verdict ("approve"/"changes"), findings[{severity,file,line,what,planMandated}], ponytailDebt[]${cfg.successCriteria ? ", criteria[], holistic" : ""}.`;
 
   const finalFixPrompt = (findings) =>
@@ -598,6 +600,13 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
 
   const results = [];
   const planConflicts = [];
+  /** @type {any[]} */
+  const deferredMinors = [];
+  /** @type {any[]} */
+  const deferredCannotVerify = [];
+  // One object over the two arrays: it holds references, so it reflects every push. Both
+  // finalPrompt call sites and the return value hand out the same thing.
+  const deferred = { minors: deferredMinors, cannotVerify: deferredCannotVerify };
   const merges = [];
   let halted = null;
 
@@ -647,7 +656,17 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
       if (!fix) return { halt: { taskN: task.n, reason: "fixer returned no result", reportPath: impl.reportPath } };
       head = fix.headSha || head;
     }
-    return { task: { n: task.n, status: impl.status, headSha: head, reviewVerdict: review.spec, fixRounds: rounds } };
+    // The loop's LAST review is the one that describes the code being returned; earlier rounds
+    // describe code that has since been fixed. Recording every round would double-count a Minor
+    // that survived a fix and make one task look like a cross-task pattern.
+    (review.findings || []).filter((f) => !f.planMandated && f.severity === "Minor")
+      .forEach((f) => deferredMinors.push({ taskN: task.n, ...f }));
+    (review.cannotVerify || []).forEach((w) => deferredCannotVerify.push({ taskN: task.n, what: w }));
+    return { task: {
+      n: task.n, status: impl.status, headSha: head,
+      reviewVerdict: review.spec, fixRounds: rounds,
+      concerns: impl.concerns || "", reportPath: impl.reportPath || "",
+    } };
   }
 
   phase("Implement");
@@ -734,7 +753,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
   let finalFix = null;
   if (!halted && results.length) {
     phase("Final");
-    finalReview = await dispatchAgent(agent, finalPrompt(cfg.mergeBase, base), {
+    finalReview = await dispatchAgent(agent, finalPrompt(cfg.mergeBase, base, deferred), {
       label: "final-review", phase: "Final", model: "opus", effort: "high", schema: FINAL_SCHEMA,
     });
     const allFindings = finalReview ? (finalReview.findings || []) : [];
@@ -774,7 +793,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
           // finalReview described the PRE-fix head. Review the post-fix head once, report-only: the
           // returned head must not be unreviewed. Report-only keeps it bounded — findings here go to
           // the controller to adjudicate, they do NOT trigger another fix (that is the unbounded loop).
-          const postFix = await dispatchAgent(agent, finalPrompt(cfg.mergeBase, base), {
+          const postFix = await dispatchAgent(agent, finalPrompt(cfg.mergeBase, base, deferred), {
             label: "final-review-2", phase: "Final", model: "opus", effort: "high", schema: FINAL_SCHEMA,
           });
           if (!postFix) {
@@ -797,6 +816,7 @@ Re-run covering tests; return per schema: headSha, testSummary, fixed[].`;
     : `Completed ${results.length}/${order.length} tasks across ${waves.length} wave(s)`);
   return {
     tasks: results, planConflicts, halted, finalReview, finalFix,
+    deferred,
     mergeBase: cfg.mergeBase, head: base, merges,
     meta: {
       tasksCompleted: results.length, tasksTotal: order.length, waves: waves.length,
