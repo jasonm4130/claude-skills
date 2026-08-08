@@ -254,9 +254,43 @@ test("byte budget: an oversized input is truncated below 4KB", async (t) => {
     `line was ${Buffer.byteLength(line, "utf8")} bytes`,
   );
   const ev = JSON.parse(line);
-  assert.equal(ev.input_truncated, true);
+  assert.ok(ev.input_truncated, "truncation must be marked");
   assert.equal(ev.tool, "Write");
   assert.equal(ev.ok, false, "outcome must survive truncation");
+});
+
+// The Stop aggregator reads ev.input.file_path / ev.input.command and falls
+// back to {} when input is not an object. Truncating the whole payload into a
+// string silently zeroed "files touched" and stopped Bash commands matching
+// the tests/commit regexes — a large Write is exactly the case that truncates.
+test("byte budget: truncation preserves structured input keys", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      tool_name: "Write",
+      tool_input: { file_path: "/repo/a.ts", content: "x".repeat(90000) },
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "keep-keys" },
+  );
+  const ev = readOne(tmp, "keep-keys");
+  assert.equal(typeof ev.input, "object", "input must stay an object");
+  assert.equal(ev.input.file_path, "/repo/a.ts", "file_path must survive");
+  assert.ok(ev.input.content.length < 90000, "content must be clipped");
+});
+
+test("byte budget: a long Bash command keeps its head and tail", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const cmd = "npx vitest run " + "# pad ".repeat(2000) + "&& git commit -m x";
+  await run(
+    JSON.stringify({ tool_name: "Bash", tool_input: { command: cmd } }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "bash-clip" },
+  );
+  const ev = readOne(tmp, "bash-clip");
+  assert.equal(typeof ev.input, "object");
+  assert.match(ev.input.command, /vitest/, "head must survive for test regex");
+  assert.match(ev.input.command, /git commit/, "tail must survive too");
 });
 
 test("byte budget: parallel oversized writes stay race-free", async (t) => {

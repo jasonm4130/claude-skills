@@ -111,21 +111,49 @@ if (payload && typeof payload.tool_use_id === "string")
 
 // Budget enforcement. Only `input` is unbounded (a Write body, a long Bash
 // command), so it is the only field clipped — ts/tool/ok/err/id are already
-// small. On truncation `input` becomes a clipped JSON *string* rather than an
-// object, and `input_truncated` marks it so downstream analysis can tell a
-// short payload from a clipped one.
+// small.
+//
+// `input` MUST stay an object. The Stop aggregator reads input.file_path and
+// input.command and falls back to {} for a non-object, so stringifying the
+// whole payload silently zeroed "files touched" and stopped long Bash commands
+// matching the tests/commit regexes. Instead, clip the longest string values in
+// place — short structured keys like file_path survive untouched — and clip
+// from the middle so a command's head and tail both remain matchable.
+// `input_truncated` lists the clipped keys.
 let line = JSON.stringify(event);
 if (Buffer.byteLength(line, "utf8") > MAX_EVENT_BYTES) {
-  event.input = "";
-  event.input_truncated = true;
-  const overhead = Buffer.byteLength(JSON.stringify(event), "utf8");
-  const room = MAX_EVENT_BYTES - overhead;
-  const raw = JSON.stringify(
-    payload && payload.tool_input !== undefined ? payload.tool_input : {},
-  );
-  // Clip conservatively: JSON-escaping can expand a char to up to 6 bytes.
-  event.input = room > 0 ? raw.slice(0, Math.max(0, Math.floor(room / 6))) : "";
-  line = JSON.stringify(event);
+  /** @type {Record<string, any>} */
+  const clipped = { ...(event.input && typeof event.input === "object" ? event.input : {}) };
+  /** @type {string[]} */
+  const marks = [];
+
+  // Repeatedly halve the longest string value until the line fits.
+  for (let guard = 0; guard < 40; guard++) {
+    event.input = clipped;
+    event.input_truncated = marks.length ? marks : true;
+    line = JSON.stringify(event);
+    if (Buffer.byteLength(line, "utf8") <= MAX_EVENT_BYTES) break;
+
+    let key = "";
+    let len = 0;
+    for (const k of Object.keys(clipped)) {
+      const v = clipped[k];
+      const l = typeof v === "string" ? v.length : JSON.stringify(v ?? "").length;
+      if (l > len) {
+        len = l;
+        key = k;
+      }
+    }
+    if (!key || len <= 16) break;
+
+    const v = clipped[key];
+    const s = typeof v === "string" ? v : JSON.stringify(v);
+    const keep = Math.max(8, Math.floor(s.length / 2));
+    const head = Math.ceil(keep / 2);
+    const tail = keep - head;
+    clipped[key] = s.slice(0, head) + "…" + s.slice(s.length - tail);
+    if (!marks.includes(key)) marks.push(key);
+  }
 }
 
 try {
