@@ -124,27 +124,47 @@ function readsMessageFromStdin(command) {
 
 /**
  * True when this heredoc introducer line is itself a `git commit` reading its
- * message from stdin.
+ * message from stdin — i.e. its body really is the commit message.
  *
- * Token-matching the line is not enough: `echo git commit -F - <<'DOC'` contains
- * every token while `echo` is what actually consumes the heredoc, leaving the
- * real commit unmarked. So the line is split into segments and the segment's
- * HEAD must be git. Splitting ignores quoting, which can only over-split and
- * therefore only ever denies — the safe direction for a bypass check.
+ * Three separate bypasses forced this to be token-based rather than regex-based,
+ * each found by review after the previous fix:
+ *   1. `echo git commit -F - <<'DOC'` — every token present, but `echo` consumes
+ *      the heredoc. The command HEAD must be git.
+ *   2. `echo 'note; git commit -F - ' <<'DOC'` — splitting on `;` without
+ *      honouring quotes FABRICATES a git-headed segment out of quoted text. So
+ *      the line is tokenised with the quote-aware splitArgs, and operators only
+ *      count as separators when they appear as their own unquoted token.
+ *   3. `git commit -F - <<'ACK' <<'MSG'` — bash applies the LAST redirection, so
+ *      the first body is discarded; carrying the marker there authorised a
+ *      message that never had it. More than one heredoc on the line is refused.
+ *
+ * Anything unrecognised denies, which is the correct direction here: the cost of
+ * a false deny is one `-m` flag, the cost of a false allow is a silent bypass.
  * @param {string} intro
  * @returns {boolean}
  */
 function introIsGitCommitFromStdin(intro) {
-  for (const seg of intro.split(/;|&&|\|\||\||&/)) {
-    if (
-      /^\s*(?:\S*\/)?git\b/.test(seg) &&
-      /\bcommit\b/.test(seg) &&
-      readsMessageFromStdin(seg)
-    ) {
-      return true;
+  const tokens = splitArgs(intro);
+  // Ambiguous stdin redirection — refuse rather than guess which body wins.
+  if (tokens.filter((t) => t.startsWith("<<")).length !== 1) return false;
+
+  /** @type {string[][]} */
+  const segments = [[]];
+  for (const t of tokens) {
+    if (t === ";" || t === "&&" || t === "||" || t === "|" || t === "&") {
+      segments.push([]);
+      continue;
     }
+    segments[segments.length - 1].push(t);
   }
-  return false;
+
+  return segments.some(
+    (seg) =>
+      seg.length > 0 &&
+      /^(?:\S*\/)?git$/.test(seg[0]) &&
+      seg.includes("commit") &&
+      readsMessageFromStdin(seg.join(" ")),
+  );
 }
 
 /**

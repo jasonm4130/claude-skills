@@ -532,6 +532,40 @@ test("docs-sync: `git -C <path> commit -F -` heredoc ack still works", () => {
   }
 });
 
+// Bash applies the LAST stdin redirection, so with two heredocs on one line the
+// second is the commit message. Parsing only the first lets the discarded one
+// carry the marker.
+test("docs-sync: two heredocs on one introducer line do not authorise", () => {
+  const r = repo({ "plugins/p/scripts/a.mjs": "x", "plugins/p/README.md": "d" }, [
+    "plugins/p/scripts/a.mjs",
+  ]);
+  try {
+    const cmd =
+      "git commit -F - <<'ACK' <<'MESSAGE'\ndocs-sync:ack\nACK\nreal code change\nMESSAGE";
+    const d = parseDecision(run(bash(cmd, r.root)).stdout);
+    assert.equal(d.permissionDecision, "deny", "ambiguous redirection must deny");
+  } finally {
+    r.cleanup();
+  }
+});
+
+// Splitting on operators without honouring quotes can FABRICATE a git-headed
+// segment out of quoted text — the opposite of the fail-closed behaviour a
+// naive split is assumed to have.
+test("docs-sync: a git segment quoted inside an argument does not authorise", () => {
+  const r = repo({ "plugins/p/scripts/a.mjs": "x", "plugins/p/README.md": "d" }, [
+    "plugins/p/scripts/a.mjs",
+  ]);
+  try {
+    const cmd =
+      "echo 'note; git commit -F - ' <<'DOC'\ndocs-sync:ack\nDOC\ngit commit -m 'actual code change'";
+    const d = parseDecision(run(bash(cmd, r.root)).stdout);
+    assert.equal(d.permissionDecision, "deny", "quoted text is not a command");
+  } finally {
+    r.cleanup();
+  }
+});
+
 // A `commit -F -` with no ack anywhere must still deny — the new scan widens
 // where the marker is looked for, not whether one is required.
 test("docs-sync: `commit -F -` without an ack still denies", () => {

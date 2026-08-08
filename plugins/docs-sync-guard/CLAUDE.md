@@ -146,13 +146,27 @@ Codex-reviewed: 3 rounds + audit, chain `881f87716802`, 14 unique findings.
   A commit split across lines won't match either binding and denies — fail-closed
   is the right direction here.
 
-  The binding checks the segment **head**, not tokens. Matching `commit` and
-  `-F -` as text was the second attempt and left `echo git commit -F - <<'DOC'`
-  open: every token present, but `echo` consumes the heredoc and the real commit
-  goes unmarked. `introIsGitCommitFromStdin` splits the introducer on `;`, `&&`,
-  `||`, `|`, `&` and requires a segment whose head is `git`. That split ignores
-  quoting, which can only over-split and therefore only ever denies. All three
-  bypass variants have regression tests, as does `git -C <path> commit -F -`.
+  `introIsGitCommitFromStdin` took **four** attempts, each bypass found by review
+  after the previous fix. Recorded because the pattern is the lesson, not the
+  regexes:
+
+  | attempt | bypass it left open |
+  |---|---|
+  | scan every heredoc body | `cat >/dev/null <<'DOC'` decoy elsewhere in the command |
+  | bind body to its introducer line, match tokens | `echo git commit -F - <<'DOC'` — tokens present, `echo` consumes the body |
+  | split introducer on `;&&\|\|` for a git head | `echo 'note; git commit -F - '` — an unquoted split *fabricates* a git head from quoted text |
+  | tokenise with `splitArgs`, operators must be their own token | — |
+
+  Plus `git commit -F - <<'ACK' <<'MSG'`: bash applies the **last** redirection,
+  so a marker in the discarded first body authorised a message that never had
+  one. More than one `<<` token on the line now refuses outright.
+
+  The through-line: every regex attempt failed because a regex cannot tell a
+  command from text that looks like one. The fix that held reuses the quote-aware
+  `splitArgs` already in this file and requires `seg[0]` to be exactly `git`.
+  Anything unrecognised denies — a false deny costs one `-m` flag, a false allow
+  is a silent bypass. All five variants have regression tests, as does
+  `git -C <path> commit -F -`.
 
 - **An unparseable payload exits before anything else (0.3.7).** Both consolidation
   hooks used to fall through to `process.cwd()` and `session_id: "unknown"` when stdin
