@@ -211,8 +211,21 @@ and guessing wrong in that direction is the whole vulnerability.
 
 | Context % | Wording |
 |---|---|
-| threshold – 84% | `[handoff] Context at <pct>% (past threshold). Wrap the current step, then run the handoff skill before starting anything new; suggest /clear to the user.` |
-| ≥ 85% | `[handoff] Context at <pct>% — run the handoff skill NOW, then tell the user to /clear and resume from the handoff. Do not start new work.` |
+| threshold – 84% | `[handoff] Context at <pct>% (past threshold). Compaction handles this automatically — keep working. Mention the handoff:handoff skill only if the user is winding the session down.` |
+| ≥ 85% | `[handoff] Context at <pct>%. Compaction will carry this session forward on its own — a handoff is NOT needed to survive it, so do not interrupt the current task. If the user is deliberately stopping here or switching machines, offer the handoff:handoff skill (and /clear afterwards).` |
+
+Both tiers are offers, not stop-work orders. Earlier versions told the agent to
+run the handoff immediately and start nothing new, which suited a harness where
+auto-compact ended the useful session. Current Claude Code carries the compaction
+summary plus the remaining unsummarized context into the next window, so the
+cliff those tiers guarded against is gone and interrupting a task to write a
+handoff costs more than it saves. What survives is the deliberate stop — ending
+for the day, switching machines — where the skill's "What we tried" section still
+records what a compaction summary does not reproduce.
+
+To turn the automatic nudge off entirely while keeping the status line and the
+on-demand `/handoff` skill, set `HANDOFF_THRESHOLD_PCT` to a value the bar cannot
+reach (e.g. `999`).
 
 ### Band-crossing semantics
 

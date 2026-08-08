@@ -33,11 +33,12 @@ const script = path.join(here, "..", "scripts", "status-and-flag.mjs");
  */
 function run(stdinPayload, extraEnv) {
   return new Promise((resolve, reject) => {
-    // Strip HANDOFF_EFFECTIVE_MAX_TOKENS from the inherited env so that a
+    // Strip the HANDOFF_* config vars from the inherited env so that a
     // developer's shell setting doesn't bleed into tests that don't set it.
     // Tests that need the env var pass it explicitly via extraEnv.
     const baseEnv = { ...process.env };
     delete baseEnv.HANDOFF_EFFECTIVE_MAX_TOKENS;
+    delete baseEnv.HANDOFF_THRESHOLD_PCT;
     const child = spawn(process.execPath, [script], {
       env: { ...baseEnv, ...extraEnv },
       stdio: ["pipe", "pipe", "pipe"],

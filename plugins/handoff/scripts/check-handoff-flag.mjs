@@ -53,8 +53,17 @@ const pct = match ? match[1] : "?";
 // Name the skill plugin-qualified. An unqualified "the handoff skill" is a name
 // the model guesses — `Skill(handoff)` resolves to "Unknown skill: handoff",
 // which is exactly how the session-retro nudge failed 4 times before its fix.
+//
+// Both tiers are OFFERS, not stop-work orders. The original wording ("run it NOW",
+// "do not start new work") was written for a harness where auto-compact ended the
+// useful session; current Claude Code carries the compaction summary plus the
+// remaining unsummarized context into the next window and tells the model outright
+// that it need not hand off mid-task. A nudge that interrupts a task to guard
+// against a cliff that no longer exists costs more than it saves — so the value
+// left here is the deliberate stop (ending for the day, switching machines), where
+// the skill's "What we tried" section still records what no summary reproduces.
 const context =
   Number(pct) >= 85
-    ? `[handoff] Context at ${pct}% — run the handoff:handoff skill NOW, then tell the user to /clear and resume from the handoff. Do not start new work.`
-    : `[handoff] Context at ${pct}% (past threshold). Wrap the current step, then run the handoff:handoff skill before starting anything new; suggest /clear to the user.`;
+    ? `[handoff] Context at ${pct}%. Compaction will carry this session forward on its own — a handoff is NOT needed to survive it, so do not interrupt the current task. If the user is deliberately stopping here or switching machines, offer the handoff:handoff skill (and /clear afterwards).`
+    : `[handoff] Context at ${pct}% (past threshold). Compaction handles this automatically — keep working. Mention the handoff:handoff skill only if the user is winding the session down.`;
 emitAdditionalContext("UserPromptSubmit", context);
