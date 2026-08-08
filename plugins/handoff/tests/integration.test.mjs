@@ -28,6 +28,7 @@ function run(script, stdinPayload, extraEnv) {
     // doesn't bleed into tests that rely on the default (no effective max) path.
     const baseEnv = { ...process.env };
     delete baseEnv.HANDOFF_EFFECTIVE_MAX_TOKENS;
+    delete baseEnv.HANDOFF_THRESHOLD_PCT;
     const child = spawn(process.execPath, [script], {
       env: { ...baseEnv, ...extraEnv },
       stdio: ["pipe", "pipe", "pipe"],

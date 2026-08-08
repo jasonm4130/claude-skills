@@ -73,7 +73,7 @@ test("test_check_handoff_flag_consumes", async (t) => {
 
 // --- Severity-tiered wording (Task 7) ---
 
-test("check-handoff-flag: below-85 tier uses 'wrap the current step' wording", async (t) => {
+test("check-handoff-flag: below-85 tier defers to compaction and keeps working", async (t) => {
   const dir = mkTmp();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -88,8 +88,11 @@ test("check-handoff-flag: below-85 tier uses 'wrap the current step' wording", a
   assert.equal(result.code, 0);
   const out = JSON.parse(result.stdout);
   const ctx = out.hookSpecificOutput.additionalContext;
-  assert.match(ctx, /\[handoff\].*run the handoff:handoff skill/i, `unexpected wording: ${ctx}`);
-  assert.match(ctx, /wrap the current step/i, `unexpected wording: ${ctx}`);
+  assert.match(ctx, /\[handoff\].*handoff:handoff skill/i, `unexpected wording: ${ctx}`);
+  assert.match(ctx, /keep working/i, `unexpected wording: ${ctx}`);
+  // Same invariant as the >=85 tier: an offer, never an instruction to stop or
+  // to finish up before continuing.
+  assert.doesNotMatch(ctx, /before starting anything new/i, `stop-work order: ${ctx}`);
 });
 
 // Regression: a nudge must name the skill plugin-qualified. An unqualified name
@@ -144,7 +147,7 @@ test("check-handoff-flag: reads a flag the writer left in the tmpdir fallback", 
   assert.equal(existsSync(writerFlag), false, "flag was not consumed");
 });
 
-test("check-handoff-flag: >=85 tier uses urgent NOW/clear wording", async (t) => {
+test("check-handoff-flag: >=85 tier offers the handoff without ordering a stop", async (t) => {
   const dir = mkTmp();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -159,8 +162,13 @@ test("check-handoff-flag: >=85 tier uses urgent NOW/clear wording", async (t) =>
   assert.equal(result.code, 0);
   const out = JSON.parse(result.stdout);
   const ctx = out.hookSpecificOutput.additionalContext;
-  assert.match(ctx, /NOW/, `unexpected wording: ${ctx}`);
+  assert.match(ctx, /handoff:handoff/, `unexpected wording: ${ctx}`);
   assert.match(ctx, /\/clear/, `unexpected wording: ${ctx}`);
+  // The nudge must never tell the model to abandon the task it is mid-way
+  // through: compaction carries the session, so a stop-work order here is both
+  // wrong and the single most disruptive thing this hook can emit.
+  assert.doesNotMatch(ctx, /Do not start new work/i, `stop-work order: ${ctx}`);
+  assert.doesNotMatch(ctx, /\bNOW\b/, `urgency order: ${ctx}`);
 });
 
 test("test_check_handoff_flag_no_flag", async (t) => {
