@@ -83,7 +83,7 @@ function git(cwd, args) {
 function splitHeredocs(command) {
   const lines = command.split("\n");
   const out = [];
-  /** @type {string[]} */
+  /** @type {{ intro: string, body: string }[]} */
   const bodies = [];
   for (let i = 0; i < lines.length; i++) {
     out.push(lines[i]);
@@ -92,6 +92,7 @@ function splitHeredocs(command) {
     if (!m) continue;
     const delim = m[1] ?? m[2] ?? m[3];
     const strip = /<<-/.test(lines[i]);
+    const intro = lines[i]; // captured before the body loop advances `i`
     /** @type {string[]} */
     const body = [];
     // Consume the body, up to and including the terminator line.
@@ -100,7 +101,11 @@ function splitHeredocs(command) {
       if (cmp === delim) break;
       body.push(lines[i]);
     }
-    bodies.push(body.join("\n"));
+    // Bodies are kept WITH their introducer line. A body only means something
+    // for a given command if that command is the one it was redirected into —
+    // scanning every body in a compound command lets a decoy heredoc elsewhere
+    // launder the marker for a commit whose message never carried it.
+    bodies.push({ intro, body: body.join("\n") });
   }
   return { stripped: out.join("\n"), bodies };
 }
@@ -217,11 +222,21 @@ if (!/\bgit\b[^;&|]*\bcommit\b/.test(command)) process.exit(0);
 if (command.includes("docs-sync:ack")) process.exit(0);
 
 // Same marker, but written where a `git commit -F -` message actually lives.
-// Bodies are only consulted for the stdin-message form: a heredoc that merely
-// *documents* the marker — this plugin's own README does — must not bypass.
+// Scoped twice over, because each scope closes a different bypass:
+//   1. only the stdin-message form — a heredoc that merely *documents* the
+//      marker (this plugin's own README does) must not authorise anything;
+//   2. only the body whose OWN introducer line is that commit — otherwise a
+//      decoy heredoc anywhere in a compound command launders the marker for a
+//      commit whose message never carried it.
+// A commit split across lines won't match and will deny: fail-closed is the
+// right direction for a bypass check.
 if (
-  readsMessageFromStdin(command) &&
-  heredocBodies.some((b) => b.includes("docs-sync:ack"))
+  heredocBodies.some(
+    (h) =>
+      /\bcommit\b/.test(h.intro) &&
+      readsMessageFromStdin(h.intro) &&
+      h.body.includes("docs-sync:ack"),
+  )
 ) {
   process.exit(0);
 }

@@ -138,6 +138,14 @@ Codex-reviewed: 3 rounds + audit, chain `881f87716802`, 14 unique findings.
   literal token and still cannot bypass, because a README is written with a file
   redirect, not a `commit -F -`.
 
+  Each body is kept **with its introducer line**, and only the body whose own
+  introducer is the `commit -F -` counts. Scanning every body in the compound
+  command was the first attempt and it opened a fresh bypass: a decoy
+  `cat >/dev/null <<'DOC' … docs-sync:ack … DOC` ahead of a real
+  `git commit -F - <<'MSG'` authorised a commit whose message had no marker.
+  A commit split across lines won't match either binding and denies — fail-closed
+  is the right direction here. Both cases have regression tests.
+
 - **An unparseable payload exits before anything else (0.3.7).** Both consolidation
   hooks used to fall through to `process.cwd()` and `session_id: "unknown"` when stdin
   did not parse, so a malformed call armed and then consumed a nudge flag for whatever

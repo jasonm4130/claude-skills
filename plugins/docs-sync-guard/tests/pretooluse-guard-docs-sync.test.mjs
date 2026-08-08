@@ -485,6 +485,24 @@ test("docs-sync: ack in a non-message heredoc does NOT bypass the gate", () => {
   }
 });
 
+// A decoy heredoc must not launder the ack for a different commit. The body
+// scanned has to be the one feeding THIS `commit -F -`, not any body in the
+// compound command — otherwise the committed message carries no marker and the
+// audit trail is gone, which is the bypass this whole carve-out exists to avoid.
+test("docs-sync: an ack in a decoy heredoc does not authorise a `-F -` commit", () => {
+  const r = repo({ "plugins/p/scripts/a.mjs": "x", "plugins/p/README.md": "d" }, [
+    "plugins/p/scripts/a.mjs",
+  ]);
+  try {
+    const cmd =
+      "cat >/dev/null <<'DOC'\ndocs-sync:ack\nDOC\ngit commit -F - <<'MSG'\nimplement behaviour change\nMSG";
+    const d = parseDecision(run(bash(cmd, r.root)).stdout);
+    assert.equal(d.permissionDecision, "deny", "decoy heredoc must not bypass");
+  } finally {
+    r.cleanup();
+  }
+});
+
 // A `commit -F -` with no ack anywhere must still deny — the new scan widens
 // where the marker is looked for, not whether one is required.
 test("docs-sync: `commit -F -` without an ack still denies", () => {
