@@ -503,6 +503,35 @@ test("docs-sync: an ack in a decoy heredoc does not authorise a `-F -` commit", 
   }
 });
 
+// Matching the TOKENS `commit` and `-F -` on the introducer line is not enough:
+// the line's command head has to actually be git. `echo git commit -F -` reads
+// the heredoc into echo, and the real commit is elsewhere with no marker.
+test("docs-sync: a non-git introducer holding the tokens does not authorise", () => {
+  const r = repo({ "plugins/p/scripts/a.mjs": "x", "plugins/p/README.md": "d" }, [
+    "plugins/p/scripts/a.mjs",
+  ]);
+  try {
+    const cmd =
+      "echo git commit -F - <<'DOC'\ndocs-sync:ack\nDOC\ngit commit -m \"actual code change\"";
+    const d = parseDecision(run(bash(cmd, r.root)).stdout);
+    assert.equal(d.permissionDecision, "deny", "echo is not git commit");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("docs-sync: `git -C <path> commit -F -` heredoc ack still works", () => {
+  const r = repo({ "plugins/p/scripts/a.mjs": "x", "plugins/p/README.md": "d" }, [
+    "plugins/p/scripts/a.mjs",
+  ]);
+  try {
+    const cmd = `git -C ${r.root} commit -F - <<'EOF'\nfix: x\n\ndocs-sync:ack\nEOF`;
+    assert.equal(run(bash(cmd, r.root)).stdout.trim(), "", "git -C form must pass");
+  } finally {
+    r.cleanup();
+  }
+});
+
 // A `commit -F -` with no ack anywhere must still deny — the new scan widens
 // where the marker is looked for, not whether one is required.
 test("docs-sync: `commit -F -` without an ack still denies", () => {

@@ -144,7 +144,15 @@ Codex-reviewed: 3 rounds + audit, chain `881f87716802`, 14 unique findings.
   `cat >/dev/null <<'DOC' … docs-sync:ack … DOC` ahead of a real
   `git commit -F - <<'MSG'` authorised a commit whose message had no marker.
   A commit split across lines won't match either binding and denies — fail-closed
-  is the right direction here. Both cases have regression tests.
+  is the right direction here.
+
+  The binding checks the segment **head**, not tokens. Matching `commit` and
+  `-F -` as text was the second attempt and left `echo git commit -F - <<'DOC'`
+  open: every token present, but `echo` consumes the heredoc and the real commit
+  goes unmarked. `introIsGitCommitFromStdin` splits the introducer on `;`, `&&`,
+  `||`, `|`, `&` and requires a segment whose head is `git`. That split ignores
+  quoting, which can only over-split and therefore only ever denies. All three
+  bypass variants have regression tests, as does `git -C <path> commit -F -`.
 
 - **An unparseable payload exits before anything else (0.3.7).** Both consolidation
   hooks used to fall through to `process.cwd()` and `session_id: "unknown"` when stdin

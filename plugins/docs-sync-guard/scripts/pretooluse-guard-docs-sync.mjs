@@ -123,6 +123,31 @@ function readsMessageFromStdin(command) {
 }
 
 /**
+ * True when this heredoc introducer line is itself a `git commit` reading its
+ * message from stdin.
+ *
+ * Token-matching the line is not enough: `echo git commit -F - <<'DOC'` contains
+ * every token while `echo` is what actually consumes the heredoc, leaving the
+ * real commit unmarked. So the line is split into segments and the segment's
+ * HEAD must be git. Splitting ignores quoting, which can only over-split and
+ * therefore only ever denies — the safe direction for a bypass check.
+ * @param {string} intro
+ * @returns {boolean}
+ */
+function introIsGitCommitFromStdin(intro) {
+  for (const seg of intro.split(/;|&&|\|\||\||&/)) {
+    if (
+      /^\s*(?:\S*\/)?git\b/.test(seg) &&
+      /\bcommit\b/.test(seg) &&
+      readsMessageFromStdin(seg)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Split a command-line argument string the way a shell words it: honouring single
  * quotes, double quotes and backslash escapes, and splitting only on UNQUOTED
  * whitespace.
@@ -225,17 +250,15 @@ if (command.includes("docs-sync:ack")) process.exit(0);
 // Scoped twice over, because each scope closes a different bypass:
 //   1. only the stdin-message form — a heredoc that merely *documents* the
 //      marker (this plugin's own README does) must not authorise anything;
-//   2. only the body whose OWN introducer line is that commit — otherwise a
-//      decoy heredoc anywhere in a compound command launders the marker for a
-//      commit whose message never carried it.
+//   2. only the body whose OWN introducer line is a `git commit` reading stdin —
+//      otherwise a decoy heredoc launders the marker for a commit whose message
+//      never carried it, whether the decoy is `cat >/dev/null <<'DOC'` or the
+//      token-bearing `echo git commit -F - <<'DOC'`.
 // A commit split across lines won't match and will deny: fail-closed is the
 // right direction for a bypass check.
 if (
   heredocBodies.some(
-    (h) =>
-      /\bcommit\b/.test(h.intro) &&
-      readsMessageFromStdin(h.intro) &&
-      h.body.includes("docs-sync:ack"),
+    (h) => introIsGitCommitFromStdin(h.intro) && h.body.includes("docs-sync:ack"),
   )
 ) {
   process.exit(0);
