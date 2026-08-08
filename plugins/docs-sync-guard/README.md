@@ -77,6 +77,23 @@ Add `docs-sync:ack` anywhere in the commit command (conventionally in the messag
 git commit -m "refactor internals, no behavior change docs-sync:ack"
 ```
 
+Multi-paragraph messages work too — for the stdin form the marker goes in the
+heredoc body, because that body *is* the message:
+
+```
+git commit -F - <<'EOF'
+refactor(p): rename an internal helper
+
+No behavioural or usage change: docs-sync:ack
+EOF
+```
+
+**Only `-F -` / `--file=-` / `--file -` heredocs are scanned.** Every other
+heredoc body is stripped before the check, so writing documentation that
+*mentions* the marker — as this README does — cannot bypass the gate. Putting
+the marker after a heredoc terminator would satisfy the hook while leaving no
+trace in history; that is the failure this carve-out exists to prevent.
+
 The marker lands in the commit message, so the "no doc impact" judgment stays
 auditable in history. Any git error, non-repo cwd, or unparseable payload fails
 open — the guard never blocks a commit by accident.

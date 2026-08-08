@@ -12,6 +12,12 @@
 //   - command contains `docs-sync:ack`        → allow (deliberate no-doc-impact call;
 //                                               the marker lands in the commit message,
 //                                               so the judgment is auditable later).
+//     Heredoc bodies are stripped before that check, EXCEPT for the stdin-message
+//     form (`git commit -F -` / `--file=-` / `--file -`) where the body *is* the
+//     message. Without that carve-out the marker could work or be auditable, never
+//     both: inside the heredoc it was stripped, outside it never reached the message.
+//     Every other heredoc stays stripped — this plugin's own README documents the
+//     literal token and must not thereby bypass the gate.
 //   - staged/added executable plugin code (scripts|hooks|agents|workflows) without a
 //     staged README.md or CLAUDE.md in the SAME plugin → deny with the plugin names.
 //   - tests, version bumps (plugin.json/marketplace.json), and skills/commands
@@ -74,23 +80,99 @@ function git(cwd, args) {
  * @param {string} command
  * @returns {string}
  */
-function stripHeredocs(command) {
+function splitHeredocs(command) {
   const lines = command.split("\n");
   const out = [];
+  /** @type {{ intro: string, body: string }[]} */
+  const bodies = [];
   for (let i = 0; i < lines.length; i++) {
     out.push(lines[i]);
-    // `<<`, optional `-` (tab-stripping), optional quotes around the delimiter.
-    const m = /<<-?\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z_][\w.-]*))/.exec(lines[i]);
-    if (!m) continue;
-    const delim = m[1] ?? m[2] ?? m[3];
-    const strip = /<<-/.test(lines[i]);
-    // Consume the body, up to and including the terminator line.
-    while (++i < lines.length) {
-      const cmp = strip ? lines[i].replace(/^\t+/, "") : lines[i];
-      if (cmp === delim) break;
+    // ALL heredocs on the line, in order: `cmd <<'A' <<'B'` queues two bodies
+    // back to back. Consuming only the first left the second body in the
+    // "stripped" command, where it was indistinguishable from real shell — the
+    // marker check found it there, and commit detection and the `git add` union
+    // saw it too.
+    const intro = lines[i]; // captured before the body loop advances `i`
+    const introducers = [
+      ...intro.matchAll(/<<(-?)\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z_][\w.-]*))/g),
+    ];
+    if (introducers.length === 0) continue;
+    for (const m of introducers) {
+      const delim = m[2] ?? m[3] ?? m[4];
+      const strip = m[1] === "-";
+      /** @type {string[]} */
+      const body = [];
+      // Consume the body, up to and including the terminator line.
+      while (++i < lines.length) {
+        const cmp = strip ? lines[i].replace(/^\t+/, "") : lines[i];
+        if (cmp === delim) break;
+        body.push(lines[i]);
+      }
+      // Bodies are kept WITH their introducer line. A body only means something
+      // for a given command if that command is the one it was redirected into —
+      // scanning every body in a compound command lets a decoy heredoc elsewhere
+      // launder the marker for a commit whose message never carried it.
+      bodies.push({ intro, body: body.join("\n") });
     }
   }
-  return out.join("\n");
+  return { stripped: out.join("\n"), bodies };
+}
+
+/**
+ * True when the commit reads its message from stdin — `-F -`, `--file=-`,
+ * `--file -`. In that form the heredoc body IS the commit message, so the ack
+ * marker legitimately lives there and must be honoured. `-F msg.txt` is a file,
+ * not stdin, and does not qualify.
+ * @param {string} command  the heredoc-stripped form
+ * @returns {boolean}
+ */
+function readsMessageFromStdin(command) {
+  return /(?:^|\s)(?:-F|--file)(?:=|\s+)-(?=\s|$)/m.test(command);
+}
+
+/**
+ * True when this heredoc introducer line is itself a `git commit` reading its
+ * message from stdin — i.e. its body really is the commit message.
+ *
+ * Three separate bypasses forced this to be token-based rather than regex-based,
+ * each found by review after the previous fix:
+ *   1. `echo git commit -F - <<'DOC'` — every token present, but `echo` consumes
+ *      the heredoc. The command HEAD must be git.
+ *   2. `echo 'note; git commit -F - ' <<'DOC'` — splitting on `;` without
+ *      honouring quotes FABRICATES a git-headed segment out of quoted text. So
+ *      the line is tokenised with the quote-aware splitArgs, and operators only
+ *      count as separators when they appear as their own unquoted token.
+ *   3. `git commit -F - <<'ACK' <<'MSG'` — bash applies the LAST redirection, so
+ *      the first body is discarded; carrying the marker there authorised a
+ *      message that never had it. More than one heredoc on the line is refused.
+ *
+ * Anything unrecognised denies, which is the correct direction here: the cost of
+ * a false deny is one `-m` flag, the cost of a false allow is a silent bypass.
+ * @param {string} intro
+ * @returns {boolean}
+ */
+function introIsGitCommitFromStdin(intro) {
+  const tokens = splitArgs(intro);
+  // Ambiguous stdin redirection — refuse rather than guess which body wins.
+  if (tokens.filter((t) => t.startsWith("<<")).length !== 1) return false;
+
+  /** @type {string[][]} */
+  const segments = [[]];
+  for (const t of tokens) {
+    if (t === ";" || t === "&&" || t === "||" || t === "|" || t === "&") {
+      segments.push([]);
+      continue;
+    }
+    segments[segments.length - 1].push(t);
+  }
+
+  return segments.some(
+    (seg) =>
+      seg.length > 0 &&
+      /^(?:\S*\/)?git$/.test(seg[0]) &&
+      seg.includes("commit") &&
+      readsMessageFromStdin(seg.join(" ")),
+  );
 }
 
 /**
@@ -182,7 +264,7 @@ if (!payload || payload.tool_name !== "Bash") process.exit(0);
 // is not a command. Everything below — commit detection, the ack marker, and the
 // `git add` path union — reads the stripped form, so a heredoc that merely
 // mentions a commit neither triggers the gate nor bypasses it.
-const command = stripHeredocs(
+const { stripped: command, bodies: heredocBodies } = splitHeredocs(
   typeof payload.tool_input?.command === "string" ? payload.tool_input.command : "",
 );
 
@@ -191,6 +273,24 @@ if (!/\bgit\b[^;&|]*\bcommit\b/.test(command)) process.exit(0);
 
 // Explicit no-doc-impact ack — ends up in the commit message, auditable later.
 if (command.includes("docs-sync:ack")) process.exit(0);
+
+// Same marker, but written where a `git commit -F -` message actually lives.
+// Scoped twice over, because each scope closes a different bypass:
+//   1. only the stdin-message form — a heredoc that merely *documents* the
+//      marker (this plugin's own README does) must not authorise anything;
+//   2. only the body whose OWN introducer line is a `git commit` reading stdin —
+//      otherwise a decoy heredoc launders the marker for a commit whose message
+//      never carried it, whether the decoy is `cat >/dev/null <<'DOC'` or the
+//      token-bearing `echo git commit -F - <<'DOC'`.
+// A commit split across lines won't match and will deny: fail-closed is the
+// right direction for a bypass check.
+if (
+  heredocBodies.some(
+    (h) => introIsGitCommitFromStdin(h.intro) && h.body.includes("docs-sync:ack"),
+  )
+) {
+  process.exit(0);
+}
 
 let cwd = typeof payload.cwd === "string" && payload.cwd.length ? payload.cwd : process.cwd();
 // git prints the REAL toplevel path; symlinked cwds (macOS /var → /private/var)
@@ -292,7 +392,9 @@ const reason =
   "session will read those docs as the source of truth and act on stale claims. " +
   "If behavior, structure, or usage changed, update and stage the covering docs in " +
   "the same commit. If this change genuinely has no doc impact (pure refactor, " +
-  'comment fix), add "docs-sync:ack" to the commit message and re-run.';
+  'comment fix), add "docs-sync:ack" to the commit message and re-run — either in ' +
+  "a -m string, or in the heredoc body of a `git commit -F -`. In any other " +
+  "heredoc the marker is ignored.";
 
 emitPermissionDecision("deny", reason);
 process.exit(0);

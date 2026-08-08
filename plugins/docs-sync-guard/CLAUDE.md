@@ -123,10 +123,56 @@ Codex-reviewed: 3 rounds + audit, chain `881f87716802`, 14 unique findings.
   `cat >> notes.md <<'EOF' … git add x && git commit … EOF` must not read as a
   commit. This bit twice for real while writing the quoting tests above — the
   fixture strings tripped the gate the tests exercise. Stripping happens first, so
-  commit detection, the `docs-sync:ack` marker and the `git add` union all see the
-  stripped form; an ack inside a heredoc correctly does NOT bypass.
+  commit detection and the `git add` union always see the stripped form.
   `design-gate-guard` solves a harder version of this with a full tokenizer,
   because it needs segment *heads*; here only the bodies must go.
+
+- **One carve-out: the stdin-message form (0.3.9).** `splitHeredocs` now returns
+  the bodies alongside the stripped command, and the `docs-sync:ack` check also
+  scans them when the command is `git commit -F -` / `--file=-` / `--file -` —
+  where the heredoc body *is* the commit message. Without it the marker's stated
+  contract was unachievable: inside the heredoc it was stripped so the gate still
+  denied, and outside it satisfied the gate while never reaching the message,
+  which is a silent bypass with no audit trail. Scoping the scan to the stdin
+  form keeps the original property — this plugin's own README documents the
+  literal token and still cannot bypass, because a README is written with a file
+  redirect, not a `commit -F -`.
+
+  Each body is kept **with its introducer line**, and only the body whose own
+  introducer is the `commit -F -` counts. Scanning every body in the compound
+  command was the first attempt and it opened a fresh bypass: a decoy
+  `cat >/dev/null <<'DOC' … docs-sync:ack … DOC` ahead of a real
+  `git commit -F - <<'MSG'` authorised a commit whose message had no marker.
+  A commit split across lines won't match either binding and denies — fail-closed
+  is the right direction here.
+
+  `introIsGitCommitFromStdin` took **four** attempts, each bypass found by review
+  after the previous fix. Recorded because the pattern is the lesson, not the
+  regexes:
+
+  | attempt | bypass it left open |
+  |---|---|
+  | scan every heredoc body | `cat >/dev/null <<'DOC'` decoy elsewhere in the command |
+  | bind body to its introducer line, match tokens | `echo git commit -F - <<'DOC'` — tokens present, `echo` consumes the body |
+  | split introducer on `;&&\|\|` for a git head | `echo 'note; git commit -F - '` — an unquoted split *fabricates* a git head from quoted text |
+  | tokenise with `splitArgs`, operators must be their own token | — |
+
+  Plus `git commit -F - <<'ACK' <<'MSG'`: bash applies the **last** redirection,
+  so a marker in the discarded first body authorised a message that never had
+  one. More than one `<<` token on the line now refuses outright.
+
+  And a **pre-existing parser bug** the same review surfaced: `splitHeredocs`
+  consumed only the first heredoc per line, so `cat <<'A' <<'B'` left B's body
+  sitting in the "stripped" command, indistinguishable from real shell. That fed
+  the marker check, commit detection and the `git add` union alike — it was never
+  ack-specific. All introducers on a line are now consumed in order.
+
+  The through-line: every regex attempt failed because a regex cannot tell a
+  command from text that looks like one. The fix that held reuses the quote-aware
+  `splitArgs` already in this file and requires `seg[0]` to be exactly `git`.
+  Anything unrecognised denies — a false deny costs one `-m` flag, a false allow
+  is a silent bypass. All five variants have regression tests, as does
+  `git -C <path> commit -F -`.
 
 - **An unparseable payload exits before anything else (0.3.7).** Both consolidation
   hooks used to fall through to `process.cwd()` and `session_id: "unknown"` when stdin
