@@ -39,6 +39,10 @@ import {
 const MAX_EVENT_BYTES = 4096;
 const MAX_ERR_CHARS = 200;
 
+// Fields the Stop aggregator pattern-matches over. Clipped last — see the
+// budget block below.
+const CLASSIFIER_KEYS = new Set(["command"]);
+
 /**
  * Extract a bounded human-readable error string from a tool response.
  * @param {any} resp
@@ -134,15 +138,26 @@ if (Buffer.byteLength(line, "utf8") > MAX_EVENT_BYTES) {
     line = JSON.stringify(event);
     if (Buffer.byteLength(line, "utf8") <= MAX_EVENT_BYTES) break;
 
+    // `command` carries the classifiers the Stop hook greps for (test runs,
+    // commits), and they can sit anywhere in the string — a middle-of-command
+    // `npm test` is lost to any head+tail clip. So spend the whole budget on
+    // the other fields first and only clip `command` when nothing else can
+    // give. Residual limit: a single command over the budget is still clipped
+    // and can lose a classifier. That is unavoidable at a fixed line size.
     let key = "";
     let len = 0;
-    for (const k of Object.keys(clipped)) {
-      const v = clipped[k];
-      const l = typeof v === "string" ? v.length : JSON.stringify(v ?? "").length;
-      if (l > len) {
-        len = l;
-        key = k;
+    for (const pass of [0, 1]) {
+      for (const k of Object.keys(clipped)) {
+        if (pass === 0 && CLASSIFIER_KEYS.has(k)) continue;
+        const v = clipped[k];
+        const l =
+          typeof v === "string" ? v.length : JSON.stringify(v ?? "").length;
+        if (l > len) {
+          len = l;
+          key = k;
+        }
       }
+      if (key && len > 16) break;
     }
     if (!key || len <= 16) break;
 

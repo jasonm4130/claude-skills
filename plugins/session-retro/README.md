@@ -11,7 +11,7 @@ At the end of a productive Claude Code session, you've made decisions, hit error
 
 ## What it does
 
-- **Logs your work** — a tiny `PostToolUse` hook appends one JSONL line per Edit/Write/Bash event to `events-{session_id}.jsonl` (POSIX `O_APPEND`, atomic per PIPE_BUF, race-free under parallel tool calls)
+- **Logs your work, with outcomes** — a tiny `PostToolUse` hook appends one JSONL line per Edit/Write/Bash event to `events-{session_id}.jsonl`, recording whether the call succeeded (`ok`, tri-state: `true`/`false`/`null` for "no signal in this payload"). POSIX `O_APPEND`, race-free under parallel tool calls: lines are *enforced* under the 4KB `PIPE_BUF` bound by clipping oversized `input` values, not merely assumed to fit
 - **Suggests retros, batched** — `Stop` aggregates the event log and writes a nudge flag when thresholds are met; `UserPromptSubmit` folds Stop-origin flags into a cross-session worthy log and only surfaces an agent-directed nudge once enough worthy sessions have piled up since the last retro; `PreCompact` still nudges immediately
 - **Walks you through the whole batch** — `/retro` spans every unprocessed worthy session (current session diff-driven, older ones event-log-driven) to ask specific, non-generic questions, one at a time
 - **Writes native memory** — entries land in your project memory dir using `feedback` / `project` / `reference` types with `**Why:**` and `**How to apply:**` slots

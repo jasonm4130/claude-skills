@@ -71,12 +71,33 @@ external service. Each line in `${CLAUDE_PLUGIN_DATA}/events-{session_id}.jsonl`
 is one tool-use event:
 
 ```
-{"ts":"2026-05-25T12:34:56Z","tool":"Edit","input":{"file_path":"/repo/foo.ts"}}
+{"ts":"2026-05-25T12:34:56Z","v":2,"tool":"Edit","input":{"file_path":"/repo/foo.ts"},"ok":true,"id":"toolu_abc"}
 ```
 
-The append-only design uses POSIX `O_APPEND` (via `fs.appendFileSync`), which is
-atomic per `PIPE_BUF` (typically 4KB) — events are ~50–600 bytes, so parallel
-hook invocations cannot interleave or corrupt lines.
+Fields, as of schema `v: 2`:
+
+| field | meaning |
+|---|---|
+| `v` | schema version. Absent on pre-2026-08 events — filter on it before computing any outcome rate |
+| `ok` | **`true` \| `false` \| `null`.** `null` means the payload carried no outcome signal — **never coerce it to `false`** |
+| `err` | bounded error string (≤200 chars), present only when `ok` is `false` |
+| `id` | `tool_use_id`, for correlating a call with its result |
+| `input_truncated` | array of `input` keys that were clipped, or `true`; absent when nothing was clipped |
+
+`ok` is tri-state because roughly 44% of real tool results carry no `is_error`
+field at all, and a `Bash` response has no exit code — stderr output and failure
+are indistinguishable from this payload. Guessing a boolean would manufacture
+failures that never happened, so unknown stays unknown.
+
+The append-only design uses POSIX `O_APPEND` (via `fs.appendFileSync`), atomic
+per `PIPE_BUF` (typically 4KB). Lines are **enforced** under a 4096-byte budget
+rather than assumed small — the previous version assumed "~50–600 bytes" and was
+wrong, with 3108 events in the live store exceeding `PIPE_BUF` (largest 118,989
+bytes) and therefore able to interleave. When a line would exceed the budget the
+longest `input` values are clipped from the middle, leaving short structured keys
+like `file_path` intact; `command` is clipped last because the `Stop` hook greps
+it for test/commit classifiers. `input` always stays an object — the aggregator
+falls back to `{}` for a non-object and would silently stop counting files.
 
 The `Stop` hook reads the event log, aggregates counts and timestamps, evaluates
 thresholds, and writes `retro-nudge-{sid}.flag` if any of these match:

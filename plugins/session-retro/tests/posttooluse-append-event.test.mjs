@@ -317,6 +317,30 @@ test("byte budget: parallel oversized writes stay race-free", async (t) => {
   for (const line of lines) JSON.parse(line);
 });
 
+// A middle-of-command classifier survives when the bloat is in another field:
+// `command` is clipped only after everything else has given what it can.
+test("byte budget: a mid-command classifier survives other-field bloat", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      tool_name: "Bash",
+      tool_input: {
+        command: "cd /repo && npm test && echo done",
+        description: "z".repeat(90000),
+      },
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "mid-clf" },
+  );
+  const ev = readOne(tmp, "mid-clf");
+  assert.equal(
+    ev.input.command,
+    "cd /repo && npm test && echo done",
+    "command must be untouched while another field can still be clipped",
+  );
+  assert.ok(ev.input.description.length < 90000);
+});
+
 test("missing tool_name: silent exit, no file created", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
