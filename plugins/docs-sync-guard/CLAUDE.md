@@ -161,6 +161,12 @@ Codex-reviewed: 3 rounds + audit, chain `881f87716802`, 14 unique findings.
   so a marker in the discarded first body authorised a message that never had
   one. More than one `<<` token on the line now refuses outright.
 
+  And a **pre-existing parser bug** the same review surfaced: `splitHeredocs`
+  consumed only the first heredoc per line, so `cat <<'A' <<'B'` left B's body
+  sitting in the "stripped" command, indistinguishable from real shell. That fed
+  the marker check, commit detection and the `git add` union alike — it was never
+  ack-specific. All introducers on a line are now consumed in order.
+
   The through-line: every regex attempt failed because a regex cannot tell a
   command from text that looks like one. The fix that held reuses the quote-aware
   `splitArgs` already in this file and requires `seg[0]` to be exactly `git`.

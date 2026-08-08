@@ -566,6 +566,40 @@ test("docs-sync: a git segment quoted inside an argument does not authorise", ()
   }
 });
 
+// splitHeredocs consumed only the FIRST heredoc per line, so the second body
+// leaked into the "stripped" command — where the unconditional marker check
+// found it. Pre-existing parser bug: the leak also corrupts commit detection
+// and the `git add` path union, not just the ack.
+test("docs-sync: a second heredoc body on one line does not leak into the command", () => {
+  const r = repo({ "plugins/p/scripts/a.mjs": "x", "plugins/p/README.md": "d" }, [
+    "plugins/p/scripts/a.mjs",
+  ]);
+  try {
+    const cmd =
+      "cat <<'FIRST' <<'SECOND'\ninnocuous\nFIRST\ndocs-sync:ack\nSECOND\ngit commit -m x";
+    const d = parseDecision(run(bash(cmd, r.root)).stdout);
+    assert.equal(d.permissionDecision, "deny", "leaked body must not authorise");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("docs-sync: a commit after two heredocs on one line is still detected", () => {
+  // Guard against over-correction: consuming N bodies must not swallow what
+  // follows them.
+  const r = repo({ "plugins/p/scripts/a.mjs": "x", "plugins/p/README.md": "d" }, [
+    "plugins/p/scripts/a.mjs",
+  ]);
+  try {
+    const cmd = "cat <<'A' <<'B'\none\nA\ntwo\nB\ngit commit -m x";
+    const d = parseDecision(run(bash(cmd, r.root)).stdout);
+    assert.equal(d.permissionDecision, "deny");
+    assert.match(d.permissionDecisionReason, /plugin "p"/);
+  } finally {
+    r.cleanup();
+  }
+});
+
 // A `commit -F -` with no ack anywhere must still deny — the new scan widens
 // where the marker is looked for, not whether one is required.
 test("docs-sync: `commit -F -` without an ack still denies", () => {

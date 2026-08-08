@@ -87,25 +87,33 @@ function splitHeredocs(command) {
   const bodies = [];
   for (let i = 0; i < lines.length; i++) {
     out.push(lines[i]);
-    // `<<`, optional `-` (tab-stripping), optional quotes around the delimiter.
-    const m = /<<-?\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z_][\w.-]*))/.exec(lines[i]);
-    if (!m) continue;
-    const delim = m[1] ?? m[2] ?? m[3];
-    const strip = /<<-/.test(lines[i]);
+    // ALL heredocs on the line, in order: `cmd <<'A' <<'B'` queues two bodies
+    // back to back. Consuming only the first left the second body in the
+    // "stripped" command, where it was indistinguishable from real shell — the
+    // marker check found it there, and commit detection and the `git add` union
+    // saw it too.
     const intro = lines[i]; // captured before the body loop advances `i`
-    /** @type {string[]} */
-    const body = [];
-    // Consume the body, up to and including the terminator line.
-    while (++i < lines.length) {
-      const cmp = strip ? lines[i].replace(/^\t+/, "") : lines[i];
-      if (cmp === delim) break;
-      body.push(lines[i]);
+    const introducers = [
+      ...intro.matchAll(/<<(-?)\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z_][\w.-]*))/g),
+    ];
+    if (introducers.length === 0) continue;
+    for (const m of introducers) {
+      const delim = m[2] ?? m[3] ?? m[4];
+      const strip = m[1] === "-";
+      /** @type {string[]} */
+      const body = [];
+      // Consume the body, up to and including the terminator line.
+      while (++i < lines.length) {
+        const cmp = strip ? lines[i].replace(/^\t+/, "") : lines[i];
+        if (cmp === delim) break;
+        body.push(lines[i]);
+      }
+      // Bodies are kept WITH their introducer line. A body only means something
+      // for a given command if that command is the one it was redirected into —
+      // scanning every body in a compound command lets a decoy heredoc elsewhere
+      // launder the marker for a commit whose message never carried it.
+      bodies.push({ intro, body: body.join("\n") });
     }
-    // Bodies are kept WITH their introducer line. A body only means something
-    // for a given command if that command is the one it was redirected into —
-    // scanning every body in a compound command lets a decoy heredoc elsewhere
-    // launder the marker for a commit whose message never carried it.
-    bodies.push({ intro, body: body.join("\n") });
   }
   return { stripped: out.join("\n"), bodies };
 }
