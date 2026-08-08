@@ -434,6 +434,84 @@ test("docs-sync: a commit mentioned inside a heredoc body is not a commit", () =
   }
 });
 
+// The guard promises the ack "lands in the commit message, so the judgment is
+// auditable later". With `git commit -F -` the heredoc IS the message, so
+// stripping it before the ack check made that promise unachievable: you could
+// have the ack work, or have it in the message, never both.
+test("docs-sync: ack inside a `commit -F -` heredoc is honoured", () => {
+  const r = repo({ "plugins/p/scripts/a.mjs": "x", "plugins/p/README.md": "d" }, [
+    "plugins/p/scripts/a.mjs",
+  ]);
+  try {
+    const cmd =
+      "git commit -F - <<'EOF'\nfix(p): tweak a comment\n\nNo behavioural change: docs-sync:ack\nEOF";
+    assert.equal(
+      run(bash(cmd, r.root)).stdout.trim(),
+      "",
+      "ack in the commit message must allow the commit",
+    );
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("docs-sync: `--file=-` and `--file -` heredoc acks are honoured too", () => {
+  const r = repo({ "plugins/p/scripts/a.mjs": "x", "plugins/p/README.md": "d" }, [
+    "plugins/p/scripts/a.mjs",
+  ]);
+  try {
+    for (const flag of ["--file=-", "--file -"]) {
+      const cmd = `git commit ${flag} <<'EOF'\nfix: x\n\ndocs-sync:ack\nEOF`;
+      assert.equal(run(bash(cmd, r.root)).stdout.trim(), "", `should pass: ${flag}`);
+    }
+  } finally {
+    r.cleanup();
+  }
+});
+
+// The bypass this must NOT open: a heredoc that merely documents the marker.
+// The docs-sync-guard's own README necessarily contains the literal token.
+test("docs-sync: ack in a non-message heredoc does NOT bypass the gate", () => {
+  const r = repo({ "plugins/p/scripts/a.mjs": "x", "plugins/p/README.md": "d" }, [
+    "plugins/p/scripts/a.mjs",
+  ]);
+  try {
+    const cmd =
+      "cat >> notes.md <<'EOF'\nTo skip the gate write docs-sync:ack in the message.\nEOF\ngit commit -m x";
+    const d = parseDecision(run(bash(cmd, r.root)).stdout);
+    assert.equal(d.permissionDecision, "deny", "documenting the token must not bypass");
+  } finally {
+    r.cleanup();
+  }
+});
+
+// A `commit -F -` with no ack anywhere must still deny — the new scan widens
+// where the marker is looked for, not whether one is required.
+test("docs-sync: `commit -F -` without an ack still denies", () => {
+  const r = repo({ "plugins/p/scripts/a.mjs": "x", "plugins/p/README.md": "d" }, [
+    "plugins/p/scripts/a.mjs",
+  ]);
+  try {
+    const cmd = "git commit -F - <<'EOF'\nfeat(p): real behaviour change\nEOF";
+    const d = parseDecision(run(bash(cmd, r.root)).stdout);
+    assert.equal(d.permissionDecision, "deny");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("docs-sync: the deny reason says where the marker must go", () => {
+  const r = repo({ "plugins/p/scripts/a.mjs": "x", "plugins/p/README.md": "d" }, [
+    "plugins/p/scripts/a.mjs",
+  ]);
+  try {
+    const d = parseDecision(run(bash("git commit -m x", r.root)).stdout);
+    assert.match(d.permissionDecisionReason, /heredoc/i, "must explain heredoc placement");
+  } finally {
+    r.cleanup();
+  }
+});
+
 test("docs-sync: a real commit AFTER a heredoc terminator still denies", () => {
   // Guard against over-correction: stripping the body must not swallow the
   // commands that follow it.

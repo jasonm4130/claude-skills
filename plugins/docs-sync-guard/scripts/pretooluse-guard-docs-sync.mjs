@@ -12,6 +12,12 @@
 //   - command contains `docs-sync:ack`        → allow (deliberate no-doc-impact call;
 //                                               the marker lands in the commit message,
 //                                               so the judgment is auditable later).
+//     Heredoc bodies are stripped before that check, EXCEPT for the stdin-message
+//     form (`git commit -F -` / `--file=-` / `--file -`) where the body *is* the
+//     message. Without that carve-out the marker could work or be auditable, never
+//     both: inside the heredoc it was stripped, outside it never reached the message.
+//     Every other heredoc stays stripped — this plugin's own README documents the
+//     literal token and must not thereby bypass the gate.
 //   - staged/added executable plugin code (scripts|hooks|agents|workflows) without a
 //     staged README.md or CLAUDE.md in the SAME plugin → deny with the plugin names.
 //   - tests, version bumps (plugin.json/marketplace.json), and skills/commands
@@ -74,9 +80,11 @@ function git(cwd, args) {
  * @param {string} command
  * @returns {string}
  */
-function stripHeredocs(command) {
+function splitHeredocs(command) {
   const lines = command.split("\n");
   const out = [];
+  /** @type {string[]} */
+  const bodies = [];
   for (let i = 0; i < lines.length; i++) {
     out.push(lines[i]);
     // `<<`, optional `-` (tab-stripping), optional quotes around the delimiter.
@@ -84,13 +92,29 @@ function stripHeredocs(command) {
     if (!m) continue;
     const delim = m[1] ?? m[2] ?? m[3];
     const strip = /<<-/.test(lines[i]);
+    /** @type {string[]} */
+    const body = [];
     // Consume the body, up to and including the terminator line.
     while (++i < lines.length) {
       const cmp = strip ? lines[i].replace(/^\t+/, "") : lines[i];
       if (cmp === delim) break;
+      body.push(lines[i]);
     }
+    bodies.push(body.join("\n"));
   }
-  return out.join("\n");
+  return { stripped: out.join("\n"), bodies };
+}
+
+/**
+ * True when the commit reads its message from stdin — `-F -`, `--file=-`,
+ * `--file -`. In that form the heredoc body IS the commit message, so the ack
+ * marker legitimately lives there and must be honoured. `-F msg.txt` is a file,
+ * not stdin, and does not qualify.
+ * @param {string} command  the heredoc-stripped form
+ * @returns {boolean}
+ */
+function readsMessageFromStdin(command) {
+  return /(?:^|\s)(?:-F|--file)(?:=|\s+)-(?=\s|$)/m.test(command);
 }
 
 /**
@@ -182,7 +206,7 @@ if (!payload || payload.tool_name !== "Bash") process.exit(0);
 // is not a command. Everything below — commit detection, the ack marker, and the
 // `git add` path union — reads the stripped form, so a heredoc that merely
 // mentions a commit neither triggers the gate nor bypasses it.
-const command = stripHeredocs(
+const { stripped: command, bodies: heredocBodies } = splitHeredocs(
   typeof payload.tool_input?.command === "string" ? payload.tool_input.command : "",
 );
 
@@ -191,6 +215,16 @@ if (!/\bgit\b[^;&|]*\bcommit\b/.test(command)) process.exit(0);
 
 // Explicit no-doc-impact ack — ends up in the commit message, auditable later.
 if (command.includes("docs-sync:ack")) process.exit(0);
+
+// Same marker, but written where a `git commit -F -` message actually lives.
+// Bodies are only consulted for the stdin-message form: a heredoc that merely
+// *documents* the marker — this plugin's own README does — must not bypass.
+if (
+  readsMessageFromStdin(command) &&
+  heredocBodies.some((b) => b.includes("docs-sync:ack"))
+) {
+  process.exit(0);
+}
 
 let cwd = typeof payload.cwd === "string" && payload.cwd.length ? payload.cwd : process.cwd();
 // git prints the REAL toplevel path; symlinked cwds (macOS /var → /private/var)
@@ -292,7 +326,9 @@ const reason =
   "session will read those docs as the source of truth and act on stale claims. " +
   "If behavior, structure, or usage changed, update and stage the covering docs in " +
   "the same commit. If this change genuinely has no doc impact (pure refactor, " +
-  'comment fix), add "docs-sync:ack" to the commit message and re-run.';
+  'comment fix), add "docs-sync:ack" to the commit message and re-run — either in ' +
+  "a -m string, or in the heredoc body of a `git commit -F -`. In any other " +
+  "heredoc the marker is ignored.";
 
 emitPermissionDecision("deny", reason);
 process.exit(0);

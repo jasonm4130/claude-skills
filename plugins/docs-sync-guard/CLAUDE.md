@@ -123,10 +123,20 @@ Codex-reviewed: 3 rounds + audit, chain `881f87716802`, 14 unique findings.
   `cat >> notes.md <<'EOF' … git add x && git commit … EOF` must not read as a
   commit. This bit twice for real while writing the quoting tests above — the
   fixture strings tripped the gate the tests exercise. Stripping happens first, so
-  commit detection, the `docs-sync:ack` marker and the `git add` union all see the
-  stripped form; an ack inside a heredoc correctly does NOT bypass.
+  commit detection and the `git add` union always see the stripped form.
   `design-gate-guard` solves a harder version of this with a full tokenizer,
   because it needs segment *heads*; here only the bodies must go.
+
+- **One carve-out: the stdin-message form (0.3.9).** `splitHeredocs` now returns
+  the bodies alongside the stripped command, and the `docs-sync:ack` check also
+  scans them when the command is `git commit -F -` / `--file=-` / `--file -` —
+  where the heredoc body *is* the commit message. Without it the marker's stated
+  contract was unachievable: inside the heredoc it was stripped so the gate still
+  denied, and outside it satisfied the gate while never reaching the message,
+  which is a silent bypass with no audit trail. Scoping the scan to the stdin
+  form keeps the original property — this plugin's own README documents the
+  literal token and still cannot bypass, because a README is written with a file
+  redirect, not a `commit -F -`.
 
 - **An unparseable payload exits before anything else (0.3.7).** Both consolidation
   hooks used to fall through to `process.cwd()` and `session_id: "unknown"` when stdin
