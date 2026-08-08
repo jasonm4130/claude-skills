@@ -12,6 +12,8 @@ import {
   safeJsonParse,
   resolveSessionId,
   resolveDataDir,
+  TESTS_RE,
+  COMMIT_RE,
 } from "./lib.mjs";
 
 /**
@@ -62,8 +64,11 @@ let lastTs = null;
 let ranTests = false;
 let ranCommit = false;
 
-const testsRe = /pytest|jest |go test|cargo test|npm test|npm run test|bun test|yarn test/;
-const commitRe = /git commit/;
+// Regexes live in lib.mjs so the PostToolUse hook classifies the full command
+// before clipping. These still run here as the fallback for pre-v2 events,
+// which carry no `clf`.
+const testsRe = TESTS_RE;
+const commitRe = COMMIT_RE;
 
 for (const line of lines) {
   if (line.length === 0) continue;
@@ -89,6 +94,11 @@ for (const line of lines) {
     if (fp) files.add(fp);
   } else if (tool === "Bash") {
     bashCalls += 1;
+    // Prefer the flags recorded at hook time against the unclipped command;
+    // fall back to re-matching the stored (possibly clipped) string.
+    const clf = ev.clf && typeof ev.clf === "object" ? ev.clf : null;
+    if (clf?.t) ranTests = true;
+    if (clf?.c) ranCommit = true;
     const cmd = typeof input.command === "string" ? input.command : "";
     if (cmd) {
       if (testsRe.test(cmd)) ranTests = true;

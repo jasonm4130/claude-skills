@@ -341,6 +341,34 @@ test("byte budget: a mid-command classifier survives other-field bloat", async (
   assert.ok(ev.input.description.length < 90000);
 });
 
+// Classification runs on the full command before the budget clips it, so a
+// classifier buried in the middle of an oversized command is not lost.
+test("byte budget: an oversized command still records its classifiers", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const cmd = `: '${"x".repeat(2200)}'; npm test; : '${"y".repeat(2200)}'`;
+  await run(
+    JSON.stringify({ tool_name: "Bash", tool_input: { command: cmd } }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "clf-clip" },
+  );
+  const ev = readOne(tmp, "clf-clip");
+  assert.ok(
+    !/npm test/.test(ev.input.command),
+    "precondition: the command really was clipped past the classifier",
+  );
+  assert.equal(ev.clf.t, true, "classifier must survive the clip");
+});
+
+test("no classifier match adds no clf field", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({ tool_name: "Bash", tool_input: { command: "ls -la" } }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "no-clf" },
+  );
+  assert.equal("clf" in readOne(tmp, "no-clf"), false);
+});
+
 test("missing tool_name: silent exit, no file created", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));

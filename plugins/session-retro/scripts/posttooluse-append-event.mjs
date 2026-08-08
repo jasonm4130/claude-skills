@@ -20,6 +20,7 @@ import {
   resolveSessionId,
   resolveDataDir,
   nowIso,
+  classifyCommand,
 } from "./lib.mjs";
 
 /**
@@ -112,6 +113,12 @@ const event = {
 if (outcome.err !== undefined) event.err = outcome.err;
 if (payload && typeof payload.tool_use_id === "string")
   event.id = payload.tool_use_id;
+
+// Classify the FULL command before the byte budget can clip it. A >4KB command
+// with `npm test` in the middle would otherwise lose the classifier to any
+// head+tail clip, and Stop would miss the "ran tests" trigger.
+const clf = classifyCommand(/** @type {any} */ (event.input)?.command);
+if (clf) event.clf = clf;
 
 // Budget enforcement. Only `input` is unbounded (a Write body, a long Bash
 // command), so it is the only field clipped — ts/tool/ok/err/id are already

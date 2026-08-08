@@ -83,6 +83,7 @@ Fields, as of schema `v: 2`:
 | `err` | bounded error string (≤200 chars), present only when `ok` is `false` |
 | `id` | `tool_use_id`, for correlating a call with its result |
 | `input_truncated` | array of `input` keys that were clipped, or `true`; absent when nothing was clipped |
+| `clf` | Bash classifiers matched against the **full** command before clipping — `{t: true}` ran tests, `{c: true}` committed. Absent when nothing matched |
 
 `ok` is tri-state because roughly 44% of real tool results carry no `is_error`
 field at all, and a `Bash` response has no exit code — stderr output and failure
