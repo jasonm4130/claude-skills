@@ -150,14 +150,32 @@ test("schema marker: every event carries v:2", async (t) => {
   assert.equal(readOne(tmp, "v2").v, 2);
 });
 
-test("outcome ok:true when tool_response reports is_error false", async (t) => {
+// ---------------------------------------------------------------------------
+// Outcome payloads below are REAL shapes captured from a live Claude Code
+// session on 2026-08-09 (v2.1.226), not hand-invented ones. The distinguishing
+// fact: success and failure arrive as DIFFERENT HOOK EVENTS, and neither
+// carries an `is_error` field. An earlier version of this suite fabricated
+// `is_error` payloads that the hook never actually receives, and passed while
+// the feature recorded `ok: null` for every real call.
+// ---------------------------------------------------------------------------
+
+// Captured: successful Write → PostToolUse, tool_response has no is_error.
+test("outcome ok:true for a real successful Write payload", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   await run(
     JSON.stringify({
-      tool_name: "Edit",
-      tool_input: { file_path: "/a.ts" },
-      tool_response: { is_error: false, filePath: "/a.ts" },
+      hook_event_name: "PostToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: "/repo/ok.txt", content: "hello" },
+      tool_response: {
+        type: "create",
+        filePath: "/repo/ok.txt",
+        content: "hello",
+        structuredPatch: [],
+        originalFile: null,
+        userModified: false,
+      },
     }),
     { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "ok-true" },
   );
@@ -166,31 +184,13 @@ test("outcome ok:true when tool_response reports is_error false", async (t) => {
   assert.equal("err" in ev, false, "err must be absent on success");
 });
 
-test("outcome ok:false carries a bounded err string", async (t) => {
+// Captured: successful Bash → PostToolUse, no exit code anywhere in the shape.
+test("outcome ok:true for a real successful Bash payload", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   await run(
     JSON.stringify({
-      tool_name: "Edit",
-      tool_input: { file_path: "/a.ts" },
-      tool_response: { is_error: true, error: "boom ".repeat(500) },
-    }),
-    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "ok-false" },
-  );
-  const ev = readOne(tmp, "ok-false");
-  assert.equal(ev.ok, false);
-  assert.equal(typeof ev.err, "string");
-  assert.ok(ev.err.length <= 200, `err was ${ev.err.length} chars`);
-});
-
-// The gate that matters: 43.6% of real tool_result blocks carry no is_error at
-// all, and a Bash response has no exit code. Guessing false would invent
-// failures; guessing true would hide them. Unknown must stay unknown.
-test("outcome ok:null when the payload carries no outcome signal", async (t) => {
-  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
-  t.after(() => rmSync(tmp, { recursive: true, force: true }));
-  await run(
-    JSON.stringify({
+      hook_event_name: "PostToolUse",
       tool_name: "Bash",
       tool_input: { command: "echo hi" },
       tool_response: {
@@ -198,26 +198,75 @@ test("outcome ok:null when the payload carries no outcome signal", async (t) => 
         stderr: "",
         interrupted: false,
         isImage: false,
+        noOutputExpected: false,
       },
     }),
-    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "ok-null" },
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "ok-bash" },
   );
-  const ev = readOne(tmp, "ok-null");
-  assert.equal(ev.ok, null, "no signal must record null, never false");
+  assert.equal(readOne(tmp, "ok-bash").ok, true);
 });
 
-test("stderr on a Bash response is not treated as failure", async (t) => {
+// Captured: `exit 7` → PostToolUseFailure, NO tool_response, top-level `error`.
+test("outcome ok:false for a real PostToolUseFailure payload", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   await run(
     JSON.stringify({
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Bash",
+      tool_input: { command: "exit 7" },
+      error: "Exit code 7",
+      is_interrupt: false,
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "ok-false" },
+  );
+  const ev = readOne(tmp, "ok-false");
+  assert.equal(ev.ok, false);
+  assert.equal(ev.err, "Exit code 7");
+});
+
+test("failure err is bounded", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Bash",
+      tool_input: { command: "x" },
+      error: "boom ".repeat(500),
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "err-bound" },
+  );
+  const ev = readOne(tmp, "err-bound");
+  assert.ok(ev.err.length <= 200, `err was ${ev.err.length} chars`);
+});
+
+// stderr output on a PostToolUse call is a SUCCESS — the command exited 0 and
+// merely wrote a warning. Only PostToolUseFailure means failure.
+test("stderr on a successful Bash call is not a failure", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      hook_event_name: "PostToolUse",
       tool_name: "Bash",
       tool_input: { command: "cmd" },
       tool_response: { stdout: "", stderr: "warning: deprecated" },
     }),
     { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "stderr-ok" },
   );
-  assert.equal(readOne(tmp, "stderr-ok").ok, null);
+  assert.equal(readOne(tmp, "stderr-ok").ok, true);
+});
+
+// Unknown stays unknown: an unrecognised event with no error field.
+test("outcome ok:null when the payload identifies no event and no error", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({ tool_name: "Bash", tool_input: { command: "echo hi" } }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "ok-null" },
+  );
+  assert.equal(readOne(tmp, "ok-null").ok, null, "must be null, never false");
 });
 
 test("tool_use_id is captured when present", async (t) => {

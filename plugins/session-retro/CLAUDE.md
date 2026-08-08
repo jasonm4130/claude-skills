@@ -85,10 +85,25 @@ Fields, as of schema `v: 2`:
 | `input_truncated` | array of `input` keys that were clipped, or `true`; absent when nothing was clipped |
 | `clf` | Bash classifiers matched against the **full** command before clipping — `{t: true}` ran tests, `{c: true}` committed. Absent when nothing matched |
 
-`ok` is tri-state because roughly 44% of real tool results carry no `is_error`
-field at all, and a `Bash` response has no exit code — stderr output and failure
-are indistinguishable from this payload. Guessing a boolean would manufacture
-failures that never happened, so unknown stays unknown.
+**Outcome comes from which hook event fired, not from a field.** Captured from a
+live session (2026-08-09, v2.1.226):
+
+- A successful call fires **`PostToolUse`** with a tool-specific `tool_response`
+  that has **no `is_error` and no `success` field** — `Write` gives
+  `{content, filePath, originalFile, structuredPatch, type, userModified}`,
+  `Bash` gives `{interrupted, isImage, noOutputExpected, stderr, stdout}` with
+  no exit code anywhere.
+- A failing call fires **`PostToolUseFailure`** instead, with **no
+  `tool_response` at all** and a top-level `error` string (e.g. `"Exit code 7"`).
+
+Both events are registered in `hooks/hooks.json` and route to the same script.
+Registering only `PostToolUse` — as this plugin did before v0.7.5 — means
+failures are never recorded at all.
+
+Because failure is a separate event, stderr output on a `PostToolUse` call is a
+**success**: the command exited 0 and merely warned. `ok: null` is reserved for
+a payload that identifies no event and carries no error, and must never be
+coerced to `false`.
 
 The append-only design uses POSIX `O_APPEND` (via `fs.appendFileSync`), atomic
 per `PIPE_BUF` (typically 4096 bytes). The *whole append* is `line + "\n"`, so

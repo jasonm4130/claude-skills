@@ -30,7 +30,9 @@ import {
  * @property {object} [tool_input]
  * @property {any} [tool_response]
  * @property {string} [tool_use_id]
+ * @property {string} [hook_event_name]
  * @property {boolean} [is_error]
+ * @property {any} [error]
  * @property {any} [tool_error]
  */
 
@@ -62,31 +64,53 @@ function errText(resp) {
 }
 
 /**
- * Derive a tri-state outcome. `null` means "no signal in this payload" and must
- * never be coerced to false downstream — 43.6% of real tool results carry no
- * is_error at all, and a Bash response has no exit code, so stderr content and
- * failure are not distinguishable here. Inventing a boolean would manufacture
- * failures that never happened.
+ * Derive a tri-state outcome.
+ *
+ * The signal is WHICH HOOK EVENT FIRED, not a field. Captured from a live
+ * session (2026-08-09): a successful call fires `PostToolUse` carrying a
+ * tool-specific `tool_response` with no `is_error` and no `success` field
+ * (Write: {content, filePath, originalFile, structuredPatch, type,
+ * userModified}; Bash: {interrupted, isImage, noOutputExpected, stderr,
+ * stdout}). A failing call fires `PostToolUseFailure` instead, with NO
+ * `tool_response` at all and a top-level `error` string ("Exit code 7").
+ *
+ * So field-sniffing for `is_error` finds nothing on either path. The explicit
+ * checks below are kept only as forward-compatible fallbacks for payload
+ * shapes that do carry a flag; they are not the primary route.
+ *
+ * `null` means "this payload did not identify itself" — an unrecognised hook
+ * event. Never coerce it to false downstream.
+ *
  * @param {PostToolUseInput} payload
  * @returns {{ ok: boolean | null, err?: string }}
  */
 function deriveOutcome(payload) {
   const resp = payload.tool_response;
-  // Precedence 1: explicit flag on the response object.
+  const evName = payload.hook_event_name;
+
+  // Explicit flags win when a payload actually carries one.
   if (resp && typeof resp === "object" && typeof resp.is_error === "boolean") {
     return resp.is_error ? { ok: false, err: errText(resp) } : { ok: true };
   }
-  // Precedence 2: explicit flag on the payload envelope.
   if (typeof payload.is_error === "boolean") {
     return payload.is_error
-      ? { ok: false, err: errText(resp ?? payload.tool_error) }
+      ? { ok: false, err: errText(payload.error ?? resp ?? payload.tool_error) }
       : { ok: true };
   }
-  // Precedence 3: a populated tool_error field.
-  if (payload.tool_error) {
-    return { ok: false, err: errText(payload.tool_error) };
+
+  // The real production path: the event name is the outcome.
+  if (evName === "PostToolUseFailure") {
+    return {
+      ok: false,
+      err: errText(payload.error ?? payload.tool_error ?? "tool call failed"),
+    };
   }
-  // Precedence 4: no recognised signal. Unknown stays unknown.
+  if (evName === "PostToolUse") return { ok: true };
+
+  // Last resort for an unnamed payload that still carries an error field.
+  if (payload.error || payload.tool_error) {
+    return { ok: false, err: errText(payload.error ?? payload.tool_error) };
+  }
   return { ok: null };
 }
 
