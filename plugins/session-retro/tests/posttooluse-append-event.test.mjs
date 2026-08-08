@@ -249,9 +249,10 @@ test("byte budget: an oversized input is truncated below 4KB", async (t) => {
   );
   const raw = readFileSync(path.join(tmp, "events-budget.jsonl"), "utf8");
   const line = raw.split("\n").filter((l) => l.length > 0)[0];
+  // The appended write is `line + "\n"` — the newline counts against PIPE_BUF.
   assert.ok(
-    Buffer.byteLength(line, "utf8") <= 4096,
-    `line was ${Buffer.byteLength(line, "utf8")} bytes`,
+    Buffer.byteLength(line + "\n", "utf8") <= 4096,
+    `append was ${Buffer.byteLength(line + "\n", "utf8")} bytes`,
   );
   const ev = JSON.parse(line);
   assert.ok(ev.input_truncated, "truncation must be marked");
@@ -367,6 +368,28 @@ test("no classifier match adds no clf field", async (t) => {
     { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "no-clf" },
   );
   assert.equal("clf" in readOne(tmp, "no-clf"), false);
+});
+
+// The exact boundary the audit reproduced: a 7,926-char content produced a
+// 4,096-byte JSON line and therefore a 4,097-byte append, one past PIPE_BUF.
+test("byte budget: the append including newline never exceeds PIPE_BUF", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  for (const n of [7920, 7926, 7930, 8192, 60000]) {
+    await run(
+      JSON.stringify({
+        tool_name: "Write",
+        tool_input: { file_path: "/b.ts", content: "x".repeat(n) },
+      }),
+      { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "pipebuf" },
+    );
+  }
+  const raw = readFileSync(path.join(tmp, "events-pipebuf.jsonl"), "utf8");
+  for (const line of raw.split("\n").filter((l) => l.length > 0)) {
+    const bytes = Buffer.byteLength(line + "\n", "utf8");
+    assert.ok(bytes <= 4096, `append was ${bytes} bytes`);
+    JSON.parse(line);
+  }
 });
 
 test("missing tool_name: silent exit, no file created", async (t) => {

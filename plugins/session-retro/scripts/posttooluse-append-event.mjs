@@ -37,7 +37,10 @@ import {
 // Keep the serialized line under PIPE_BUF so the O_APPEND atomicity claimed in
 // the header actually holds. It did not before: 3108 events in the live store
 // exceeded this, the largest at 118,989 bytes.
-const MAX_EVENT_BYTES = 4096;
+// PIPE_BUF is the guarantee boundary for the *whole append*, and we append
+// `line + "\n"` — so the JSON itself gets one byte less than PIPE_BUF.
+const PIPE_BUF = 4096;
+const MAX_EVENT_BYTES = PIPE_BUF - 1;
 const MAX_ERR_CHARS = 200;
 
 // Fields the Stop aggregator pattern-matches over. Clipped last — see the

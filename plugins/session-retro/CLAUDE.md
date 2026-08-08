@@ -91,8 +91,9 @@ are indistinguishable from this payload. Guessing a boolean would manufacture
 failures that never happened, so unknown stays unknown.
 
 The append-only design uses POSIX `O_APPEND` (via `fs.appendFileSync`), atomic
-per `PIPE_BUF` (typically 4KB). Lines are **enforced** under a 4096-byte budget
-rather than assumed small — the previous version assumed "~50–600 bytes" and was
+per `PIPE_BUF` (typically 4096 bytes). The *whole append* is `line + "\n"`, so
+the JSON is budgeted at `PIPE_BUF - 1` and the append lands exactly on the
+guarantee. Lines are **enforced** under that budget rather than assumed small — the previous version assumed "~50–600 bytes" and was
 wrong, with 3108 events in the live store exceeding `PIPE_BUF` (largest 118,989
 bytes) and therefore able to interleave. When a line would exceed the budget the
 longest `input` values are clipped from the middle, leaving short structured keys
