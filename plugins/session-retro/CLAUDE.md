@@ -116,6 +116,19 @@ like `file_path` intact; `command` is clipped last because the `Stop` hook greps
 it for test/commit classifiers. `input` always stays an object — the aggregator
 falls back to `{}` for a non-object and would silently stop counting files.
 
+**Failed calls do not count as completed work.** Since v0.7.5 the event log
+contains failures (`ok: false`), so `Stop` and `collect-batch-sessions` gate the
+completed-work counters on `ok !== false` — otherwise a rejected `git commit`
+would report "committed during session" and failed Edits would satisfy the edit
+threshold while changing nothing. Events with `ok` absent are pre-v2 and still
+count, so historical sessions are unaffected.
+
+Two deliberate exceptions, because "failed" and "did no work" differ:
+`bash_calls` stays inclusive (a volume threshold — a session of failing commands
+is *more* retro-worthy), and `ran_tests` stays inclusive (a suite exiting
+non-zero still ran; a red run is the normal TDD state). `ran_commit` is gated —
+a rejected commit did not commit.
+
 The `Stop` hook reads the event log, aggregates counts and timestamps, evaluates
 thresholds, and writes `retro-nudge-{sid}.flag` if any of these match:
 

@@ -441,6 +441,43 @@ test("byte budget: the append including newline never exceeds PIPE_BUF", async (
   }
 });
 
+// Registering PostToolUseFailure means failures now reach the aggregator for
+// the first time. They must not read as completed work.
+test("failed Edit records ok:false so aggregators can exclude it", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Edit",
+      tool_input: { file_path: "/repo/a.ts" },
+      error: "String to replace not found in file.",
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "failed-edit" },
+  );
+  const ev = readOne(tmp, "failed-edit");
+  assert.equal(ev.ok, false);
+  assert.equal(ev.tool, "Edit");
+  assert.equal(ev.input.file_path, "/repo/a.ts");
+});
+
+test("failed git commit still records its classifier alongside ok:false", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Bash",
+      tool_input: { command: "git commit -m x" },
+      error: "pre-commit hook failed",
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "failed-commit" },
+  );
+  const ev = readOne(tmp, "failed-commit");
+  assert.equal(ev.ok, false);
+  assert.equal(ev.clf.c, true, "classifier recorded; consumer gates on ok");
+});
+
 test("missing tool_name: silent exit, no file created", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
