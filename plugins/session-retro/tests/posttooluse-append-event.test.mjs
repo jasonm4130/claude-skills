@@ -127,6 +127,162 @@ test("session_id from stdin: event lands in events-{stdin-sid}.jsonl", async (t)
   );
 });
 
+/**
+ * Read the single event written by one run.
+ * @param {string} tmp
+ * @param {string} sid
+ * @returns {any}
+ */
+function readOne(tmp, sid) {
+  const content = readFileSync(path.join(tmp, `events-${sid}.jsonl`), "utf8");
+  const lines = content.split("\n").filter((l) => l.length > 0);
+  assert.equal(lines.length, 1);
+  return JSON.parse(lines[0]);
+}
+
+test("schema marker: every event carries v:2", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({ tool_name: "Edit", tool_input: { file_path: "/a.ts" } }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "v2" },
+  );
+  assert.equal(readOne(tmp, "v2").v, 2);
+});
+
+test("outcome ok:true when tool_response reports is_error false", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      tool_name: "Edit",
+      tool_input: { file_path: "/a.ts" },
+      tool_response: { is_error: false, filePath: "/a.ts" },
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "ok-true" },
+  );
+  const ev = readOne(tmp, "ok-true");
+  assert.equal(ev.ok, true);
+  assert.equal("err" in ev, false, "err must be absent on success");
+});
+
+test("outcome ok:false carries a bounded err string", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      tool_name: "Edit",
+      tool_input: { file_path: "/a.ts" },
+      tool_response: { is_error: true, error: "boom ".repeat(500) },
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "ok-false" },
+  );
+  const ev = readOne(tmp, "ok-false");
+  assert.equal(ev.ok, false);
+  assert.equal(typeof ev.err, "string");
+  assert.ok(ev.err.length <= 200, `err was ${ev.err.length} chars`);
+});
+
+// The gate that matters: 43.6% of real tool_result blocks carry no is_error at
+// all, and a Bash response has no exit code. Guessing false would invent
+// failures; guessing true would hide them. Unknown must stay unknown.
+test("outcome ok:null when the payload carries no outcome signal", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      tool_name: "Bash",
+      tool_input: { command: "echo hi" },
+      tool_response: {
+        stdout: "hi\n",
+        stderr: "",
+        interrupted: false,
+        isImage: false,
+      },
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "ok-null" },
+  );
+  const ev = readOne(tmp, "ok-null");
+  assert.equal(ev.ok, null, "no signal must record null, never false");
+});
+
+test("stderr on a Bash response is not treated as failure", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      tool_name: "Bash",
+      tool_input: { command: "cmd" },
+      tool_response: { stdout: "", stderr: "warning: deprecated" },
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "stderr-ok" },
+  );
+  assert.equal(readOne(tmp, "stderr-ok").ok, null);
+});
+
+test("tool_use_id is captured when present", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      tool_name: "Edit",
+      tool_input: { file_path: "/a.ts" },
+      tool_use_id: "toolu_abc123",
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "tuid" },
+  );
+  assert.equal(readOne(tmp, "tuid").id, "toolu_abc123");
+});
+
+// 3108 events in the live store already exceed 4KB (max 118,989 bytes), which
+// silently broke the O_APPEND atomicity the header comment claims.
+test("byte budget: an oversized input is truncated below 4KB", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      tool_name: "Write",
+      tool_input: { file_path: "/big.ts", content: "x".repeat(120000) },
+      tool_response: { is_error: true, error: "nope ".repeat(400) },
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "budget" },
+  );
+  const raw = readFileSync(path.join(tmp, "events-budget.jsonl"), "utf8");
+  const line = raw.split("\n").filter((l) => l.length > 0)[0];
+  assert.ok(
+    Buffer.byteLength(line, "utf8") <= 4096,
+    `line was ${Buffer.byteLength(line, "utf8")} bytes`,
+  );
+  const ev = JSON.parse(line);
+  assert.equal(ev.input_truncated, true);
+  assert.equal(ev.tool, "Write");
+  assert.equal(ev.ok, false, "outcome must survive truncation");
+});
+
+test("byte budget: parallel oversized writes stay race-free", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const N = 30;
+  const runs = [];
+  for (let i = 0; i < N; i++) {
+    runs.push(
+      run(
+        JSON.stringify({
+          tool_name: "Write",
+          tool_input: { file_path: `/f${i}.ts`, content: "y".repeat(60000) },
+        }),
+        { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "budget-par" },
+      ),
+    );
+  }
+  await Promise.all(runs);
+  const lines = readFileSync(path.join(tmp, "events-budget-par.jsonl"), "utf8")
+    .split("\n")
+    .filter((l) => l.length > 0);
+  assert.equal(lines.length, N);
+  for (const line of lines) JSON.parse(line);
+});
+
 test("missing tool_name: silent exit, no file created", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
