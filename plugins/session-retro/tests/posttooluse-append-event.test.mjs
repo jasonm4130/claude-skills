@@ -127,6 +127,357 @@ test("session_id from stdin: event lands in events-{stdin-sid}.jsonl", async (t)
   );
 });
 
+/**
+ * Read the single event written by one run.
+ * @param {string} tmp
+ * @param {string} sid
+ * @returns {any}
+ */
+function readOne(tmp, sid) {
+  const content = readFileSync(path.join(tmp, `events-${sid}.jsonl`), "utf8");
+  const lines = content.split("\n").filter((l) => l.length > 0);
+  assert.equal(lines.length, 1);
+  return JSON.parse(lines[0]);
+}
+
+test("schema marker: every event carries v:2", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({ tool_name: "Edit", tool_input: { file_path: "/a.ts" } }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "v2" },
+  );
+  assert.equal(readOne(tmp, "v2").v, 2);
+});
+
+// ---------------------------------------------------------------------------
+// Outcome payloads below are REAL shapes captured from a live Claude Code
+// session on 2026-08-09 (v2.1.226), not hand-invented ones. The distinguishing
+// fact: success and failure arrive as DIFFERENT HOOK EVENTS, and neither
+// carries an `is_error` field. An earlier version of this suite fabricated
+// `is_error` payloads that the hook never actually receives, and passed while
+// the feature recorded `ok: null` for every real call.
+// ---------------------------------------------------------------------------
+
+// Captured: successful Write → PostToolUse, tool_response has no is_error.
+test("outcome ok:true for a real successful Write payload", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      hook_event_name: "PostToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: "/repo/ok.txt", content: "hello" },
+      tool_response: {
+        type: "create",
+        filePath: "/repo/ok.txt",
+        content: "hello",
+        structuredPatch: [],
+        originalFile: null,
+        userModified: false,
+      },
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "ok-true" },
+  );
+  const ev = readOne(tmp, "ok-true");
+  assert.equal(ev.ok, true);
+  assert.equal("err" in ev, false, "err must be absent on success");
+});
+
+// Captured: successful Bash → PostToolUse, no exit code anywhere in the shape.
+test("outcome ok:true for a real successful Bash payload", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      hook_event_name: "PostToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "echo hi" },
+      tool_response: {
+        stdout: "hi\n",
+        stderr: "",
+        interrupted: false,
+        isImage: false,
+        noOutputExpected: false,
+      },
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "ok-bash" },
+  );
+  assert.equal(readOne(tmp, "ok-bash").ok, true);
+});
+
+// Captured: `exit 7` → PostToolUseFailure, NO tool_response, top-level `error`.
+test("outcome ok:false for a real PostToolUseFailure payload", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Bash",
+      tool_input: { command: "exit 7" },
+      error: "Exit code 7",
+      is_interrupt: false,
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "ok-false" },
+  );
+  const ev = readOne(tmp, "ok-false");
+  assert.equal(ev.ok, false);
+  assert.equal(ev.err, "Exit code 7");
+});
+
+test("failure err is bounded", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Bash",
+      tool_input: { command: "x" },
+      error: "boom ".repeat(500),
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "err-bound" },
+  );
+  const ev = readOne(tmp, "err-bound");
+  assert.ok(ev.err.length <= 200, `err was ${ev.err.length} chars`);
+});
+
+// stderr output on a PostToolUse call is a SUCCESS — the command exited 0 and
+// merely wrote a warning. Only PostToolUseFailure means failure.
+test("stderr on a successful Bash call is not a failure", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      hook_event_name: "PostToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "cmd" },
+      tool_response: { stdout: "", stderr: "warning: deprecated" },
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "stderr-ok" },
+  );
+  assert.equal(readOne(tmp, "stderr-ok").ok, true);
+});
+
+// Unknown stays unknown: an unrecognised event with no error field.
+test("outcome ok:null when the payload identifies no event and no error", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({ tool_name: "Bash", tool_input: { command: "echo hi" } }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "ok-null" },
+  );
+  assert.equal(readOne(tmp, "ok-null").ok, null, "must be null, never false");
+});
+
+test("tool_use_id is captured when present", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      tool_name: "Edit",
+      tool_input: { file_path: "/a.ts" },
+      tool_use_id: "toolu_abc123",
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "tuid" },
+  );
+  assert.equal(readOne(tmp, "tuid").id, "toolu_abc123");
+});
+
+// 3108 events in the live store already exceed 4KB (max 118,989 bytes), which
+// silently broke the O_APPEND atomicity the header comment claims.
+test("byte budget: an oversized input is truncated below 4KB", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      tool_name: "Write",
+      tool_input: { file_path: "/big.ts", content: "x".repeat(120000) },
+      tool_response: { is_error: true, error: "nope ".repeat(400) },
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "budget" },
+  );
+  const raw = readFileSync(path.join(tmp, "events-budget.jsonl"), "utf8");
+  const line = raw.split("\n").filter((l) => l.length > 0)[0];
+  // The appended write is `line + "\n"` — the newline counts against PIPE_BUF.
+  assert.ok(
+    Buffer.byteLength(line + "\n", "utf8") <= 4096,
+    `append was ${Buffer.byteLength(line + "\n", "utf8")} bytes`,
+  );
+  const ev = JSON.parse(line);
+  assert.ok(ev.input_truncated, "truncation must be marked");
+  assert.equal(ev.tool, "Write");
+  assert.equal(ev.ok, false, "outcome must survive truncation");
+});
+
+// The Stop aggregator reads ev.input.file_path / ev.input.command and falls
+// back to {} when input is not an object. Truncating the whole payload into a
+// string silently zeroed "files touched" and stopped Bash commands matching
+// the tests/commit regexes — a large Write is exactly the case that truncates.
+test("byte budget: truncation preserves structured input keys", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      tool_name: "Write",
+      tool_input: { file_path: "/repo/a.ts", content: "x".repeat(90000) },
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "keep-keys" },
+  );
+  const ev = readOne(tmp, "keep-keys");
+  assert.equal(typeof ev.input, "object", "input must stay an object");
+  assert.equal(ev.input.file_path, "/repo/a.ts", "file_path must survive");
+  assert.ok(ev.input.content.length < 90000, "content must be clipped");
+});
+
+test("byte budget: a long Bash command keeps its head and tail", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const cmd = "npx vitest run " + "# pad ".repeat(2000) + "&& git commit -m x";
+  await run(
+    JSON.stringify({ tool_name: "Bash", tool_input: { command: cmd } }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "bash-clip" },
+  );
+  const ev = readOne(tmp, "bash-clip");
+  assert.equal(typeof ev.input, "object");
+  assert.match(ev.input.command, /vitest/, "head must survive for test regex");
+  assert.match(ev.input.command, /git commit/, "tail must survive too");
+});
+
+test("byte budget: parallel oversized writes stay race-free", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const N = 30;
+  const runs = [];
+  for (let i = 0; i < N; i++) {
+    runs.push(
+      run(
+        JSON.stringify({
+          tool_name: "Write",
+          tool_input: { file_path: `/f${i}.ts`, content: "y".repeat(60000) },
+        }),
+        { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "budget-par" },
+      ),
+    );
+  }
+  await Promise.all(runs);
+  const lines = readFileSync(path.join(tmp, "events-budget-par.jsonl"), "utf8")
+    .split("\n")
+    .filter((l) => l.length > 0);
+  assert.equal(lines.length, N);
+  for (const line of lines) JSON.parse(line);
+});
+
+// A middle-of-command classifier survives when the bloat is in another field:
+// `command` is clipped only after everything else has given what it can.
+test("byte budget: a mid-command classifier survives other-field bloat", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      tool_name: "Bash",
+      tool_input: {
+        command: "cd /repo && npm test && echo done",
+        description: "z".repeat(90000),
+      },
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "mid-clf" },
+  );
+  const ev = readOne(tmp, "mid-clf");
+  assert.equal(
+    ev.input.command,
+    "cd /repo && npm test && echo done",
+    "command must be untouched while another field can still be clipped",
+  );
+  assert.ok(ev.input.description.length < 90000);
+});
+
+// Classification runs on the full command before the budget clips it, so a
+// classifier buried in the middle of an oversized command is not lost.
+test("byte budget: an oversized command still records its classifiers", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const cmd = `: '${"x".repeat(2200)}'; npm test; : '${"y".repeat(2200)}'`;
+  await run(
+    JSON.stringify({ tool_name: "Bash", tool_input: { command: cmd } }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "clf-clip" },
+  );
+  const ev = readOne(tmp, "clf-clip");
+  assert.ok(
+    !/npm test/.test(ev.input.command),
+    "precondition: the command really was clipped past the classifier",
+  );
+  assert.equal(ev.clf.t, true, "classifier must survive the clip");
+});
+
+test("no classifier match adds no clf field", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({ tool_name: "Bash", tool_input: { command: "ls -la" } }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "no-clf" },
+  );
+  assert.equal("clf" in readOne(tmp, "no-clf"), false);
+});
+
+// The exact boundary the audit reproduced: a 7,926-char content produced a
+// 4,096-byte JSON line and therefore a 4,097-byte append, one past PIPE_BUF.
+test("byte budget: the append including newline never exceeds PIPE_BUF", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  for (const n of [7920, 7926, 7930, 8192, 60000]) {
+    await run(
+      JSON.stringify({
+        tool_name: "Write",
+        tool_input: { file_path: "/b.ts", content: "x".repeat(n) },
+      }),
+      { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "pipebuf" },
+    );
+  }
+  const raw = readFileSync(path.join(tmp, "events-pipebuf.jsonl"), "utf8");
+  for (const line of raw.split("\n").filter((l) => l.length > 0)) {
+    const bytes = Buffer.byteLength(line + "\n", "utf8");
+    assert.ok(bytes <= 4096, `append was ${bytes} bytes`);
+    JSON.parse(line);
+  }
+});
+
+// Registering PostToolUseFailure means failures now reach the aggregator for
+// the first time. They must not read as completed work.
+test("failed Edit records ok:false so aggregators can exclude it", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Edit",
+      tool_input: { file_path: "/repo/a.ts" },
+      error: "String to replace not found in file.",
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "failed-edit" },
+  );
+  const ev = readOne(tmp, "failed-edit");
+  assert.equal(ev.ok, false);
+  assert.equal(ev.tool, "Edit");
+  assert.equal(ev.input.file_path, "/repo/a.ts");
+});
+
+test("failed git commit still records its classifier alongside ok:false", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  await run(
+    JSON.stringify({
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Bash",
+      tool_input: { command: "git commit -m x" },
+      error: "pre-commit hook failed",
+    }),
+    { CLAUDE_PLUGIN_DATA: tmp, CLAUDE_SESSION_ID: "failed-commit" },
+  );
+  const ev = readOne(tmp, "failed-commit");
+  assert.equal(ev.ok, false);
+  assert.equal(ev.clf.c, true, "classifier recorded; consumer gates on ok");
+});
+
 test("missing tool_name: silent exit, no file created", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-evlog-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));

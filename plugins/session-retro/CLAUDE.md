@@ -71,12 +71,63 @@ external service. Each line in `${CLAUDE_PLUGIN_DATA}/events-{session_id}.jsonl`
 is one tool-use event:
 
 ```
-{"ts":"2026-05-25T12:34:56Z","tool":"Edit","input":{"file_path":"/repo/foo.ts"}}
+{"ts":"2026-05-25T12:34:56Z","v":2,"tool":"Edit","input":{"file_path":"/repo/foo.ts"},"ok":true,"id":"toolu_abc"}
 ```
 
-The append-only design uses POSIX `O_APPEND` (via `fs.appendFileSync`), which is
-atomic per `PIPE_BUF` (typically 4KB) — events are ~50–600 bytes, so parallel
-hook invocations cannot interleave or corrupt lines.
+Fields, as of schema `v: 2`:
+
+| field | meaning |
+|---|---|
+| `v` | schema version. Absent on pre-2026-08 events — filter on it before computing any outcome rate |
+| `ok` | **`true` \| `false` \| `null`.** `null` means the payload carried no outcome signal — **never coerce it to `false`** |
+| `err` | bounded error string (≤200 chars), present only when `ok` is `false` |
+| `id` | `tool_use_id`, for correlating a call with its result |
+| `input_truncated` | array of `input` keys that were clipped, or `true`; absent when nothing was clipped |
+| `clf` | Bash classifiers matched against the **full** command before clipping — `{t: true}` ran tests, `{c: true}` committed. Absent when nothing matched |
+
+**Outcome comes from which hook event fired, not from a field.** Captured from a
+live session (2026-08-09, v2.1.226):
+
+- A successful call fires **`PostToolUse`** with a tool-specific `tool_response`
+  that has **no `is_error` and no `success` field** — `Write` gives
+  `{content, filePath, originalFile, structuredPatch, type, userModified}`,
+  `Bash` gives `{interrupted, isImage, noOutputExpected, stderr, stdout}` with
+  no exit code anywhere.
+- A failing call fires **`PostToolUseFailure`** instead, with **no
+  `tool_response` at all** and a top-level `error` string (e.g. `"Exit code 7"`).
+
+Both events are registered in `hooks/hooks.json` and route to the same script.
+Registering only `PostToolUse` — as this plugin did before v0.7.5 — means
+failures are never recorded at all.
+
+Because failure is a separate event, stderr output on a `PostToolUse` call is a
+**success**: the command exited 0 and merely warned. `ok: null` is reserved for
+a payload that identifies no event and carries no error, and must never be
+coerced to `false`.
+
+The append-only design uses POSIX `O_APPEND` (via `fs.appendFileSync`), atomic
+per `PIPE_BUF` (typically 4096 bytes). The *whole append* is `line + "\n"`, so
+the JSON is budgeted at `PIPE_BUF - 1` and the append lands exactly on the
+guarantee. Lines are **enforced** under that budget rather than assumed small — the previous version assumed "~50–600 bytes" and was
+wrong, with 3108 events in the live store exceeding `PIPE_BUF` (largest 118,989
+bytes) and therefore able to interleave. When a line would exceed the budget the
+longest `input` values are clipped from the middle, leaving short structured keys
+like `file_path` intact; `command` is clipped last because the `Stop` hook greps
+it for test/commit classifiers. `input` always stays an object — the aggregator
+falls back to `{}` for a non-object and would silently stop counting files.
+
+**Failed calls do not count as completed work.** Since v0.7.5 the event log
+contains failures (`ok: false`), so `Stop` and `collect-batch-sessions` gate the
+completed-work counters on `ok !== false` — otherwise a rejected `git commit`
+would report "committed during session" and failed Edits would satisfy the edit
+threshold while changing nothing. Events with `ok` absent are pre-v2 and still
+count, so historical sessions are unaffected.
+
+Two deliberate exceptions, because "failed" and "did no work" differ:
+`bash_calls` stays inclusive (a volume threshold — a session of failing commands
+is *more* retro-worthy), and `ran_tests` stays inclusive (a suite exiting
+non-zero still ran; a red run is the normal TDD state). `ran_commit` is gated —
+a rejected commit did not commit.
 
 The `Stop` hook reads the event log, aggregates counts and timestamps, evaluates
 thresholds, and writes `retro-nudge-{sid}.flag` if any of these match:

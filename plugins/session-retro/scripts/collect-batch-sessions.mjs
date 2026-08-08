@@ -139,14 +139,22 @@ function aggregateSession(sid, reasons) {
       if (!ev || typeof ev !== "object") continue;
       const tool = typeof ev.tool === "string" ? ev.tool : "";
       const input = ev.input && typeof ev.input === "object" ? ev.input : {};
+      // Mirrors stop-write-retro-flag.mjs: failed calls changed nothing, so
+      // they must not inflate the counts the retro interview quotes back at
+      // you ("you edited auth.ts 4 times"). `ok` absent = pre-v2, so count it.
+      const failed = ev.ok === false;
       if (tool === "Edit") {
-        edits += 1;
-        if (typeof input.file_path === "string" && input.file_path)
-          files.add(input.file_path);
+        if (!failed) {
+          edits += 1;
+          if (typeof input.file_path === "string" && input.file_path)
+            files.add(input.file_path);
+        }
       } else if (tool === "Write") {
-        writes += 1;
-        if (typeof input.file_path === "string" && input.file_path)
-          files.add(input.file_path);
+        if (!failed) {
+          writes += 1;
+          if (typeof input.file_path === "string" && input.file_path)
+            files.add(input.file_path);
+        }
       } else if (tool === "Bash") {
         bashCalls += 1;
       }

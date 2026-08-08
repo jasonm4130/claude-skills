@@ -101,6 +101,29 @@ export function emitAdditionalContext(eventName, additionalContext) {
   process.stdout.write(JSON.stringify(payload) + "\n");
 }
 
+// Shared with stop-write-retro-flag.mjs. The PostToolUse hook classifies the
+// *full* command before the byte budget can clip it, so a classifier buried in
+// the middle of an oversized command survives; Stop still re-checks the stored
+// command so pre-v2 events keep working.
+export const TESTS_RE =
+  /pytest|jest |go test|cargo test|npm test|npm run test|bun test|yarn test/;
+export const COMMIT_RE = /git commit/;
+
+/**
+ * Classify a Bash command. Returns null when nothing matched, so the common
+ * case adds no bytes to the event.
+ * @param {unknown} cmd
+ * @returns {{ t?: true, c?: true } | null}
+ */
+export function classifyCommand(cmd) {
+  if (typeof cmd !== "string" || cmd.length === 0) return null;
+  /** @type {{ t?: true, c?: true }} */
+  const out = {};
+  if (TESTS_RE.test(cmd)) out.t = true;
+  if (COMMIT_RE.test(cmd)) out.c = true;
+  return out.t || out.c ? out : null;
+}
+
 /**
  * ISO-8601 UTC timestamp ("YYYY-MM-DDTHH:MM:SSZ"). No fractional seconds.
  * @returns {string}

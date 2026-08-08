@@ -12,6 +12,8 @@ import {
   safeJsonParse,
   resolveSessionId,
   resolveDataDir,
+  TESTS_RE,
+  COMMIT_RE,
 } from "./lib.mjs";
 
 /**
@@ -62,8 +64,11 @@ let lastTs = null;
 let ranTests = false;
 let ranCommit = false;
 
-const testsRe = /pytest|jest |go test|cargo test|npm test|npm run test|bun test|yarn test/;
-const commitRe = /git commit/;
+// Regexes live in lib.mjs so the PostToolUse hook classifies the full command
+// before clipping. These still run here as the fallback for pre-v2 events,
+// which carry no `clf`.
+const testsRe = TESTS_RE;
+const commitRe = COMMIT_RE;
 
 for (const line of lines) {
   if (line.length === 0) continue;
@@ -79,21 +84,37 @@ for (const line of lines) {
   const tool = typeof ev.tool === "string" ? ev.tool : "";
   const input = ev.input && typeof ev.input === "object" ? ev.input : {};
 
+  // Failures were never logged before v0.7.5, so these counters only ever saw
+  // successful calls. Now that PostToolUseFailure is registered they must
+  // exclude failures explicitly, or a session of failed edits looks productive.
+  // `ok` absent means a pre-v2 event — count it, as before.
+  const failed = ev.ok === false;
+
   if (tool === "Edit") {
-    edits += 1;
-    const fp = typeof input.file_path === "string" ? input.file_path : "";
-    if (fp) files.add(fp);
-  } else if (tool === "Write") {
-    writes += 1;
-    const fp = typeof input.file_path === "string" ? input.file_path : "";
-    if (fp) files.add(fp);
-  } else if (tool === "Bash") {
-    bashCalls += 1;
-    const cmd = typeof input.command === "string" ? input.command : "";
-    if (cmd) {
-      if (testsRe.test(cmd)) ranTests = true;
-      if (commitRe.test(cmd)) ranCommit = true;
+    if (!failed) {
+      edits += 1;
+      const fp = typeof input.file_path === "string" ? input.file_path : "";
+      if (fp) files.add(fp);
     }
+  } else if (tool === "Write") {
+    if (!failed) {
+      writes += 1;
+      const fp = typeof input.file_path === "string" ? input.file_path : "";
+      if (fp) files.add(fp);
+    }
+  } else if (tool === "Bash") {
+    // bashCalls stays inclusive: it is a volume/churn threshold, and a session
+    // full of failing commands is *more* retro-worthy, not less.
+    bashCalls += 1;
+    // Prefer the flags recorded at hook time against the unclipped command;
+    // fall back to re-matching the stored (possibly clipped) string.
+    const clf = ev.clf && typeof ev.clf === "object" ? ev.clf : null;
+    const cmd = typeof input.command === "string" ? input.command : "";
+    // ranTests stays inclusive: a suite that exits non-zero still ran, and a
+    // red run is the normal TDD state. ranCommit does not — a failed commit
+    // (rejected pre-commit hook, nothing staged) definitively did not commit.
+    if (clf?.t || (cmd && testsRe.test(cmd))) ranTests = true;
+    if (!failed && (clf?.c || (cmd && commitRe.test(cmd)))) ranCommit = true;
   }
 
   const ts = typeof ev.ts === "string" ? ev.ts : "";
