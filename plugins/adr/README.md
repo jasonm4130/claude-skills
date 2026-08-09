@@ -35,5 +35,5 @@ SDD `sdd.mjs` workflow, not in this prose.
 
 ## See also
 
-- Design spec: `docs/superpowers/specs/2026-06-27-adr-driven-development-design.md`
-- The loop it drives: `plugins/subagent-driven-development/`
+- Design spec: [`2026-06-27-adr-driven-development-design.md`](https://github.com/jasonm4130/claude-skills/blob/main/docs/superpowers/specs/2026-06-27-adr-driven-development-design.md)
+- The loop it drives: the `subagent-driven-development` plugin

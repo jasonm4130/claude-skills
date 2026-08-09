@@ -30,7 +30,7 @@ govern *selection* (what an ephemeral reply includes); this skill governs
 Word-level bans backfire (naming the forbidden word primes it — arXiv:2601.08070),
 and every coherent writing *system* tested halved lint-scored slop while a
 banned-words list barely moved it (woosal1337 STE experiment, 2026). Grounding and
-sources: `RESEARCH_writing-systems.md` at the repo root.
+sources: [`RESEARCH_writing-systems.md`](https://github.com/jasonm4130/claude-skills/blob/main/RESEARCH_writing-systems.md).
 
 ## Install
 

@@ -75,12 +75,18 @@ bash scripts/run-node-tests.sh    # run every *.test.mjs in one process
 
 Local Node is pinned to 24 (`mise.toml`), matching the version CI tests on.
 
-Only `plugins/<name>/` is copied into the install cache, so anything a shipped
-file cites must resolve for someone who installed the plugin rather than cloning
-the repo. Cite `docs/`, a repo-root `RESEARCH_*.md`, or another repo by
-**github.com URL**, not by path — `repo-consistency.test.mjs` fails the build
-otherwise. Instructional templates naming where to *save* a file are exempt: a
-citation carries a concrete date, a template carries `YYYY-MM-DD`.
+The whole `plugins/<name>/` tree is copied into the install cache — `README.md`,
+`CLAUDE.md` and `tests/` included — so anything a shipped file cites must resolve
+for someone who installed the plugin rather than cloning the repo. Cite `docs/`,
+a repo-root `RESEARCH_*.md`, or another repo by **github.com URL**, not by path.
+`repo-consistency.test.mjs` fails the build on a bare path, and also resolves
+every `blob/main/…` link against the working tree, so a link left behind by a
+file move is caught rather than silently 404ing.
+
+Two things are deliberately not flagged: instructional templates naming where to
+*save* a file (a citation carries a concrete date, a template carries
+`YYYY-MM-DD`), and paths that exist nowhere in the repo, which are test fixtures
+rather than references anyone can follow.
 
 CI (`.github/workflows/ci.yml`) validates all JSON manifests, runs `claude plugin
 validate` against every `plugins/<name>/` directory (catches malformed skill
