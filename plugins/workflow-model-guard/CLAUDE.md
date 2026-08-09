@@ -15,7 +15,7 @@ Two `PreToolUse` hooks that keep sub-model choices deliberate:
   design) or the `subagent_type` resolves to a custom agent definition with pinned
   frontmatter `model:` (≠ `inherit`). Any explicit `model` — including `fable` — passes:
   setting it IS the ack. Design rationale + probe evidence:
-  `RESEARCH_delegation_model_tiering.md` at the repo root.
+  [`RESEARCH_delegation_model_tiering.md`](https://github.com/jasonm4130/claude-skills/blob/main/RESEARCH_delegation_model_tiering.md).
 
 ## Plugin structure
 

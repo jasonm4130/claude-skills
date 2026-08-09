@@ -188,5 +188,5 @@ bash plugins/subagent-driven-development/scripts/scripts.test.sh
 
 ## See also
 
-- Design spec: `docs/superpowers/specs/2026-06-27-sdd-workflow-design.md`
-- Research brief: `RESEARCH_subagent_driven_workflow.md`
+- Design spec: [`2026-06-27-sdd-workflow-design.md`](https://github.com/jasonm4130/claude-skills/blob/main/docs/superpowers/specs/2026-06-27-sdd-workflow-design.md)
+- Research brief: [`RESEARCH_subagent_driven_workflow.md`](https://github.com/jasonm4130/claude-skills/blob/main/RESEARCH_subagent_driven_workflow.md)

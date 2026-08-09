@@ -2,10 +2,9 @@
 // scripts/repo-consistency.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, relative, sep } from "node:path";
-import { isExempt } from "./check-version-bumps.mjs";
+import { dirname, join, relative } from "node:path";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const marketplace = JSON.parse(
@@ -154,46 +153,70 @@ test("hook-emitted skill references are plugin-qualified", () => {
 });
 
 test("shipped plugin files cite no path outside their own payload", () => {
-  // Only plugins/<name>/ is copied into the install cache. A shipped file that
-  // points at docs/, RESEARCH_*.md at the repo root, or another repo entirely is
-  // a dead end for everyone who installed the plugin rather than cloned the repo.
-  // Provenance still belongs in the text — as a github.com URL, which resolves
-  // for both audiences.
+  // The WHOLE plugins/<name>/ tree is copied into the install cache — README.md,
+  // CLAUDE.md and tests/ included (verified against a real cache directory). So a
+  // shipped file pointing at docs/, a repo-root RESEARCH_*.md, or another repo is
+  // a dead end for everyone who installed the plugin rather than cloning it.
+  //
+  // Deliberately NOT check-version-bumps.mjs's isExempt(): that answers a
+  // different question — "does changing this file require a version bump?" — and
+  // its exemptions (README/CLAUDE/tests) are all things that ship. Reusing it here
+  // silently skipped the files carrying most of the repo's provenance citations.
   const TEXT = /\.(md|mjs|js|cjs|sh|json|txt|rs)$/i;
 
-  /** @param {string} dir @param {string} base @returns {{label:string,path:string}[]} */
-  function walk(dir, base) {
+  /** @param {string} dir @returns {{label:string,path:string}[]} */
+  function walk(dir) {
     const out = [];
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const abs = join(dir, e.name);
-      if (e.isDirectory()) out.push(...walk(abs, base));
-      else if (e.isFile() && TEXT.test(e.name)) {
-        const rel = relative(base, abs).split(sep).join("/");
-        if (!isExempt(rel)) out.push({ label: `${relative(root, abs)}`, path: abs });
-      }
+      if (e.isDirectory()) out.push(...walk(abs));
+      else if (e.isFile() && TEXT.test(e.name)) out.push({ label: relative(root, abs), path: abs });
     }
     return out;
   }
 
-  const files = dirs.flatMap((d) => walk(join(root, "plugins", d), join(root, "plugins", d)));
+  const files = dirs.flatMap((d) => walk(join(root, "plugins", d)));
   assert.ok(files.length > 0, "found no shipped files to check — the walk is broken");
 
   // A citation names one concrete existing file; an instruction names a template
   // ("save plans to docs/superpowers/plans/YYYY-MM-DD-<name>.md"). Requiring a
   // real ISO date in the filename separates them without an allowlist to maintain.
-  /** @type {[RegExp, string][]} */
+  // The optional prefix catches ./docs/…, ../../docs/… and plugins/<name>/docs/…,
+  // which are the same defect wearing a different path.
+  const PREFIX = String.raw`(?:(?:\.{1,2}\/)+|plugins\/[\w-]+\/)?`;
+  // `mustExist` distinguishes a citation from test data. A citation names a file
+  // that exists HERE and won't in the cache; a synthetic fixture path
+  // (sdd.test.mjs's "docs/adr/2026-06-27-x.md") resolves nowhere and is not a
+  // reference anyone can follow. Paths into another repo can't be resolved from
+  // here at all, so that pattern skips the check.
+  /** @type {{re: RegExp, why: string, mustExist: boolean}[]} */
   const PATTERNS = [
-    [/(?<![\w/-])(?:\.\.\/)*docs\/[\w/-]*\d{4}-\d{2}-\d{2}-[\w-]+\.md/g, "repo docs path"],
-    [/(?<![\w/-])RESEARCH_[\w-]+\.md/g, "repo-root research doc"],
-    [/(?<![\w/-])dotfiles\/[\w/-]+/g, "a different repo"],
+    { re: new RegExp(`(?<![\\w-])${PREFIX}docs\\/[\\w/-]*\\d{4}-\\d{2}-\\d{2}-[\\w-]+\\.md`, "g"), why: "repo docs path", mustExist: true },
+    { re: /(?<![\w/-])RESEARCH_[\w-]+\.md/g, why: "repo-root research doc", mustExist: true },
+    { re: /(?<![\w/-])dotfiles\/[\w/-]+/g, why: "a different repo", mustExist: false },
   ];
+  const stripRelative = (/** @type {string} */ p) => p.replace(/^(?:\.{1,2}\/)+/, "");
+
+  // A github.com link to this repo is the sanctioned fix, so it must stay checkable
+  // — blanket-stripping URLs would turn every fix into a reference nothing verifies
+  // again, and the docs/plans → docs/research rename would have silently 404'd them.
+  const REPO_BLOB = /https:\/\/github\.com\/jasonm4130\/claude-skills\/blob\/[^/\s]+\/([^\s)`"']+)/g;
 
   const offenders = [];
   for (const { label, path } of files) {
     let src = readFileSync(path, "utf8");
-    // Anything inside a URL already resolves for installed users — that is the fix,
-    // not the defect, so drop URLs before scanning.
+
+    for (const m of src.matchAll(REPO_BLOB)) {
+      if (!existsSync(join(root, m[1]))) offenders.push(`${label}: ${m[1]} (github link to a path that no longer exists)`);
+    }
+    // Drop each whole `[label](url)` construct, not just the url — the label of a
+    // correctly-linked citation names the file it points at, so stripping only the
+    // url leaves the label behind to be re-flagged as a bare path.
+    src = src.replace(/\[[^\]]*\]\(\s*https?:\/\/[^)]*\)/g, "");
+    // Then any remaining bare URLs, so the patterns below don't match path
+    // components inside them.
     src = src.replace(/https?:\/\/\S+/g, "");
+
     // In code, only emitted text reaches the agent; comments are dev-facing.
     // Markdown is model-facing in full, so it is scanned whole. Same reasoning as
     // the skill-qualification test above.
@@ -204,8 +227,11 @@ test("shipped plugin files cite no path outside their own payload", () => {
         .filter((l) => !/^\s*(\/\/|\*|#)/.test(l))
         .join("\n");
     }
-    for (const [re, why] of PATTERNS) {
-      for (const m of src.matchAll(re)) offenders.push(`${label}: ${m[0]} (${why})`);
+    for (const { re, why, mustExist } of PATTERNS) {
+      for (const m of src.matchAll(re)) {
+        if (mustExist && !existsSync(join(root, stripRelative(m[0])))) continue;
+        offenders.push(`${label}: ${m[0]} (${why})`);
+      }
     }
   }
   assert.deepEqual(
