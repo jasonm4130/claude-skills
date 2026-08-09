@@ -2,7 +2,7 @@
 
 Cross-provider adversarial **plan/design-doc review** for Claude Code, using OpenAI Codex (GPT-5.6 Terra) as the reviewer. Fills the gap the official [`openai/codex-plugin-cc`](https://github.com/openai/codex-plugin-cc) plugin doesn't cover (its issue #4): reviewing plans and design docs, not just diffs. v0.2 added **diff mode** (see below), now proven on three dogfoods — still not a replacement for the official plugin's interactive `/codex:review`.
 
-Design: `docs/superpowers/specs/2026-07-14-codex-plan-review-design.md`. Research: `docs/plans/2026-07-14-codex-adversarial-review-skill-research.md`.
+Design: `docs/superpowers/specs/2026-07-14-codex-plan-review-design.md`. Research: `docs/research/2026-07-14-codex-adversarial-review-skill-research.md`.
 
 ## Install
 
@@ -66,7 +66,7 @@ The trial required **≥1 confirmed unique finding per ~5 eligible chains** by ~
 survival test; if `uniquePer5` collapses toward 1, revisit. Treat `uniquePer5` as a **floor, not a
 target**: a clean review that produces zero findings is a success, and the reviewer is never tuned toward
 producing findings (LLM reviewers over-reject correct code — see
-`docs/plans/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md`).
+`docs/research/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md`).
 
 ```
 node plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs stats
@@ -79,7 +79,7 @@ node plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs stat
    an SDD run whose 8 tasks each passed their own per-task gate still had 6 whole-branch blockers (2
    data-destroying) that per-task review structurally cannot see; and a per-task external reviewer pays
    N× the paid-call cost and N× the reviewer's over-rejection surface to catch strictly less. See
-   `docs/plans/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md`.
+   `docs/research/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md`.
 
 Diff mode has now earned its keep (above), which was the precondition. This is not built yet: it puts a
 **paid external call on a hot path** (every SDD run), so it needs its own trial before it goes in — the

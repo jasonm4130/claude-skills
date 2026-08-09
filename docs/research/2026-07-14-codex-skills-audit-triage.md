@@ -38,7 +38,7 @@ reject it, hanging SessionStart). Plan:
 
 ### B2. TOCTOU race in statusline overlap guard — P2 — ✅ SHIPPED (PR #33, handoff 0.6.0)
 
-**Resolved 2026-07-14.** Research: `docs/plans/2026-07-14-statusline-architecture-research.md`.
+**Resolved 2026-07-14.** Research: `docs/research/2026-07-14-statusline-architecture-research.md`.
 Plan: `docs/superpowers/plans/2026-07-14-statusline-architecture.md` (3 Codex rounds + audit,
 11 unique findings). Outcome: the lock was the wrong primitive. Nudge firing is now idempotent
 via an atomic exclusive-create band marker (`claimBand`), so **correctness no longer depends on

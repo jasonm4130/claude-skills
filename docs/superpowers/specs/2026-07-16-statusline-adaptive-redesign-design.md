@@ -3,7 +3,7 @@
 - **Date:** 2026-07-16
 - **Status:** design approved (brainstorming); pending implementation plan
 - **Plugin:** `handoff` — source at `plugins/handoff/scripts/status-and-flag.mjs` (render) and `plugins/handoff/scripts/lib.mjs` (pure helpers). The `~/.claude/plugins/cache/.../handoff/<ver>/` copy is regenerated on install — never edit it.
-- **Prior art:** `docs/plans/2026-07-14-statusline-architecture-research.md` (statusline contract + pile-up/caching architecture, shipped in 0.7.0). This spec adds the **percentage-stability** and **adaptive-display** layers that doc never covered (it flagged its context-derivation section "medium confidence").
+- **Prior art:** `docs/research/2026-07-14-statusline-architecture-research.md` (statusline contract + pile-up/caching architecture, shipped in 0.7.0). This spec adds the **percentage-stability** and **adaptive-display** layers that doc never covered (it flagged its context-derivation section "medium confidence").
 
 ## Problem
 

@@ -61,7 +61,7 @@ plugins/<name>/
                                   #   the .mjs stays as fallback AND reference impl)
 rust/                             # source for bin/ccguard, shared across those plugins
 docs/superpowers/{specs,plans}/   # design specs and implementation plans
-docs/plans/                       # dated research + triage records
+docs/research/                    # dated research + triage records
 RESEARCH_*.md                     # standalone research write-ups
 scripts/run-node-tests.sh         # CI test runner (globs files — `node --test <dir>`
                                   #   is broken on Node 24)

@@ -112,7 +112,7 @@ test("audit-concerns-unattended is a valid outcome and passes the CONCERNS lifec
 test("review and diff prompts grant a respected clean pass and gate findings on reproducibility", () => {
   // Counters the documented LLM-reviewer over-rejection bias: an adversarial reviewer with no
   // legitimate "nothing to fix" state, tuned to always find something, systematically rejects
-  // correct code. See docs/plans/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md.
+  // correct code. See docs/research/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md.
   const review = buildReviewPrompt("docs/plan.md");
   const diff = buildDiffPrompt("aaa111..bbb222", ["src/x.mjs"]);
   for (const p of [review, diff]) {
