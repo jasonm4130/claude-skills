@@ -73,6 +73,15 @@ scripts/run-node-tests.sh         # CI test runner (globs files — `node --test
 bash scripts/run-node-tests.sh    # run every *.test.mjs in one process
 ```
 
+Local Node is pinned to 24 (`mise.toml`), matching the version CI tests on.
+
+Only `plugins/<name>/` is copied into the install cache, so anything a shipped
+file cites must resolve for someone who installed the plugin rather than cloning
+the repo. Cite `docs/`, a repo-root `RESEARCH_*.md`, or another repo by
+**github.com URL**, not by path — `repo-consistency.test.mjs` fails the build
+otherwise. Instructional templates naming where to *save* a file are exempt: a
+citation carries a concrete date, a template carries `YYYY-MM-DD`.
+
 CI (`.github/workflows/ci.yml`) validates all JSON manifests, runs `claude plugin
 validate` against every `plugins/<name>/` directory (catches malformed skill
 frontmatter that the JSON check above doesn't reach), runs the node test suite

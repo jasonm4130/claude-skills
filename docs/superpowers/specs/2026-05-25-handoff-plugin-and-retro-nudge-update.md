@@ -310,7 +310,7 @@ Alternative if a safer rollout is preferred: PR 1 = handoff plugin standalone (n
 
 ## References
 
-- session-retro v3 design: `plugins/session-retro/docs/superpowers/specs/2026-05-01-retro-v3-design.md`
+- session-retro v3 design: `docs/superpowers/specs/2026-05-01-retro-v3-design.md`
 - Anthropic hooks reference: https://code.claude.com/docs/en/hooks
 - Anthropic statusLine reference: https://code.claude.com/docs/en/statusline
 - Issue #53682 (additionalContext envelope silent-drop): https://github.com/anthropics/claude-code/issues/53682

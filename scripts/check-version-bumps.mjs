@@ -94,7 +94,10 @@ function gt(a, b) {
  * @param {string} rel
  * @returns {boolean}
  */
-function isExempt(rel) {
+// Exported so the shipped-payload surface is defined in exactly one place —
+// repo-consistency.test.mjs scans the same set for dangling out-of-payload
+// citations, and a second copy of this rule would drift from this one.
+export function isExempt(rel) {
   if (rel.startsWith(".claude-plugin/")) return true;
   if (/(^|\/)tests?\//.test(rel)) return true;
   if (/\.test\.[a-z0-9]+$/i.test(rel)) return true;

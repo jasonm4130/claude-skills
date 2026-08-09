@@ -93,10 +93,10 @@ don't need.
 guidance is therefore SDD-specific and does not generalize to Agent dispatches,
 where the model tier remains the only lever.
 
-Treat the floor as **provisional** — it is the open arm of the effort sweep in
-`dotfiles/docs/plans/2026-07-28-opus5-agent-config-alignment.md`. Anthropic's own
-instruction is to sweep on your own evals rather than inherit a setting, and no
-published benchmark compares Opus-5-at-low against Sonnet-5-at-high.
+Treat the floor as **provisional** — it is the open arm of an unfinished effort
+sweep, not a measured result. Anthropic's own instruction is to sweep on your own
+evals rather than inherit a setting, and no published benchmark compares
+Opus-5-at-low against Sonnet-5-at-high.
 
 **`deps` is the parallelism contract.** Tasks whose deps are all satisfied run
 concurrently in sibling worktrees (waves), so mark a dep wherever task B
@@ -117,8 +117,8 @@ literal path, pinned to **this** skill's version — the `args` contract moves
 between versions (in local dev, use the repo path directly):
 
 ```bash
-P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.10.2/workflows/sdd.mjs"
-[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.10.2 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
+P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.10.3/workflows/sdd.mjs"
+[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.10.3 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
 ```
 
 If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not
@@ -312,4 +312,6 @@ Fable earns its place on stuck and long-horizon work, not on routine tasks.
   task's own level or shallower ends the brief.
 - The nine superpowers post-plan skills stay disabled — this plugin is their
   self-contained replacement.
-- See `../../README.md`, the design spec, and `RESEARCH_subagent_driven_workflow.md`.
+- Background: the plugin [README](https://github.com/jasonm4130/claude-skills/blob/main/plugins/subagent-driven-development/README.md),
+  the [design spec](https://github.com/jasonm4130/claude-skills/blob/main/docs/superpowers/specs/2026-06-27-sdd-workflow-design.md),
+  and the [originating research](https://github.com/jasonm4130/claude-skills/blob/main/RESEARCH_subagent_driven_workflow.md).
