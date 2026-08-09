@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-14
 **Status:** approved — survived a full dogfood of its own protocol (3 Terra review rounds + final audit; all findings dispositioned by user 2026-07-14)
-**Research basis:** `docs/plans/2026-07-14-codex-adversarial-review-skill-research.md` and `docs/plans/2026-07-11-cross-provider-review-research.md`
+**Research basis:** `docs/research/2026-07-14-codex-adversarial-review-skill-research.md` and `docs/research/2026-07-11-cross-provider-review-research.md`
 
 ## Purpose
 

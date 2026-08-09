@@ -467,7 +467,7 @@ Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
 
 ---
 
-## Out of scope (all tracked in `docs/plans/2026-07-14-codex-skills-audit-triage.md`)
+## Out of scope (all tracked in `docs/research/2026-07-14-codex-skills-audit-triage.md`)
 
 - **Batch B2 — the statusline overlap guard.** Pulled from this batch; needs the
   idempotent-marker redesign, not a fourth lock patch.

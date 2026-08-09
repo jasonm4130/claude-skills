@@ -87,7 +87,7 @@ The skill is **kept**. `stats` is now a health check, not a survival test: if `u
 toward 1, revisit. But `uniquePer5` is a **floor, not a target** — a review that produces zero findings
 on genuinely-clean work is a success, not a miss, and the reviewer must never be tuned toward producing
 findings to keep the number up (LLM reviewers already over-reject correct code; see the
-[calibration research](https://github.com/jasonm4130/claude-skills/blob/main/docs/plans/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md)). Remaining escalation paths
+[calibration research](https://github.com/jasonm4130/claude-skills/blob/main/docs/research/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md)). Remaining escalation paths
 (SDD hook, adversarial persona) live in the plugin README and are still ungated — do not wire this into
 an automated gate without a fresh trial.
 

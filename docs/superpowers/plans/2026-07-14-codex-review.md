@@ -1262,7 +1262,7 @@ Keep the reviewer's original text available on request ("want the raw reviewer o
 
 Cross-provider adversarial **plan/design-doc review** for Claude Code, using OpenAI Codex (GPT-5.6 Terra) as the reviewer. Fills the gap the official [`openai/codex-plugin-cc`](https://github.com/openai/codex-plugin-cc) plugin doesn't cover (its issue #4): reviewing plans and design docs rather than diffs. Diff review is deliberately out of scope — use the official plugin's `/codex:review` for that.
 
-Design: `docs/superpowers/specs/2026-07-14-codex-plan-review-design.md`. Research: `docs/plans/2026-07-14-codex-adversarial-review-skill-research.md`.
+Design: `docs/superpowers/specs/2026-07-14-codex-plan-review-design.md`. Research: `docs/research/2026-07-14-codex-adversarial-review-skill-research.md`.
 
 ## Install
 

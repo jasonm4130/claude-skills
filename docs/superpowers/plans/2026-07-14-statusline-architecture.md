@@ -3,7 +3,7 @@
 > **For agentic workers:** Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rebuild the handoff statusline's concurrency story on the right primitives. Research:
-`docs/plans/2026-07-14-statusline-architecture-research.md`.
+`docs/research/2026-07-14-statusline-architecture-research.md`.
 
 ## Why the 0.5.1 guard is the wrong shape
 
@@ -1198,7 +1198,7 @@ Expected: PASS, including the pre-existing render/threshold tests.
 git add plugins/handoff/scripts/status-and-flag.mjs plugins/handoff/tests/status-and-flag.test.mjs
 git commit -m "refactor(handoff): the overlap guard is a performance guard, not a mutex
 
-Research (docs/plans/2026-07-14-statusline-architecture-research.md): statusline invocations really do
+Research (docs/research/2026-07-14-statusline-architecture-research.md): statusline invocations really do
 pile up (ccusage#459 — 34 concurrent processes) despite the docs' cancel-and-replace claim, so a guard
 is warranted; but all three production statusline tools use best-effort markers with pid-liveness, not
 locks. With band firing now idempotent, nothing correctness-critical rides on this guard, so it stops

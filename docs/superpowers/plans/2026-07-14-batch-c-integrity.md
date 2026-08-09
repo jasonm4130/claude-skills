@@ -3,7 +3,7 @@
 > **For agentic workers:** Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Close the last of the Codex skills-audit triage
-(`docs/plans/2026-07-14-codex-skills-audit-triage.md`): deep-dive result integrity (C1, C2, and the
+(`docs/research/2026-07-14-codex-skills-audit-triage.md`): deep-dive result integrity (C1, C2, and the
 newly-found C3), the double-breaker bug in `codex-review`'s own lock (B4), and two P3 doc fixes.
 
 **Architecture.** Three plugins, one branch.
@@ -1382,7 +1382,7 @@ Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
 
 - [ ] **Step 6: Mark the triage closed — and commit it**
 
-In `docs/plans/2026-07-14-codex-skills-audit-triage.md`:
+In `docs/research/2026-07-14-codex-skills-audit-triage.md`:
 
 - Mark **C1, C2, A2, A3 shipped** (in the style B2 already uses).
 - Mark **A1 stale — already fixed, nothing shipped.**
@@ -1397,7 +1397,7 @@ In `docs/plans/2026-07-14-codex-skills-audit-triage.md`:
 This edit needs its own commit; the previous step's commit does not stage it:
 
 ```bash
-git add docs/plans/2026-07-14-codex-skills-audit-triage.md
+git add docs/research/2026-07-14-codex-skills-audit-triage.md
 git commit -m "docs(triage): close C1, C2, C3, A2, A3; B4 mitigated; A1 stale; B3 still open
 
 Claude-Session: https://claude.ai/code/session_014M3mNy7fL8MH3BtwZAZigw"
