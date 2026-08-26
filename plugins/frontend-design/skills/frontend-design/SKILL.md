@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: 'Guidance for distinctive, intentional frontend/UI design — aesthetic direction, typography, layout, motion, and copy — when building new UI or reshaping existing UI. Gates by scope before designing: a light/surgical change (one component, one page section, extending an existing design system) gets inline design principles; a wide-sweeping or highly-detailed design (a new page, a new flow, a visual identity, an ambiguous "make it look better") gets routed to Claude Design in the browser with a paste-ready design brief instead of being designed blind in a terminal. Do NOT use for backend/API/data-model work, copy-only edits with no visual change, or a design the user has already fully specified (exact tokens/brand guide supplied) — apply those directly.'
+description: 'Guidance for distinctive, intentional frontend/UI design — aesthetic direction, typography, layout, motion, and copy — when building new UI or reshaping existing UI. Gates by scope before designing: a light/surgical change (one component, one page section, extending an existing design system) gets inline design principles; a wide-sweeping or highly-detailed design (a new page, a new flow, a visual identity, an ambiguous "make it look better") gets a paste-ready goal/layout/content/audience brief to build in Claude Design at claude.ai/design instead of being designed blind in a terminal. Do NOT use for backend/API/data-model work, copy-only edits with no visual change, or a design the user has already fully specified (exact tokens/brand guide supplied) — apply those directly. Do NOT use when the user wants a visual mockup, wireframe, canvas, or artboard to tweak by hand rather than code they will ship — that is the built-in `design` skill. This skill applies design decisions to real code in the repo.'
 ---
 
 # Frontend Design
@@ -56,20 +56,36 @@ Before calling it done, check the result against the trap of templated defaults:
 
 ## Heavy path: hand off to Claude Design in the browser
 
-Do not design a wide-sweeping or highly-detailed surface blind, inline, in a back-and-forth text loop — visual work like this is genuinely better iterated where it can be seen and steered live. **If the `claude-design` skill is installed, use it** for the best-in-class brief (Anthropic's official goal/layout/content/audience framework) and the option to drive Claude Design from Claude Code (`/design`, `/design-sync`); otherwise hand the brief below. Tell the user directly, then hand them a brief they can paste straight in:
+Do not design a wide-sweeping or highly-detailed surface blind, inline, in a back-and-forth text loop — visual work like this is genuinely better iterated where it can be seen and steered live.
 
-> This reads as a wide-sweeping / highly-detailed design rather than a surgical tweak — better iterated visually in **Claude Design** (claude.ai, in the browser) than designed blind here. Here's a paste-ready brief to carry the context over:
+### Route it first
+
+Two destinations, and the difference is what the user walks away with:
+
+- **A mockup they will tweak by hand** — a wireframe, a screen flow, a poster, a layout nobody is about to ship as code. That is the **built-in `design` skill**, which draws artboards on a canvas the user edits directly. Hand off and stop.
+- **A real surface that becomes code** — a new page, a new flow, a product identity, anything anchored to a live codebase or design system. That is **Claude Design** at `claude.ai/design`: iterate on the canvas, then bring the result back here to build. Give them the brief below.
+
+### The brief
+
+Tell the user directly, then hand them a brief they can paste straight in:
+
+> This reads as a wide-sweeping / highly-detailed design rather than a surgical tweak — better iterated visually in **Claude Design** (claude.ai/design, in the browser) than designed blind here. Here's a paste-ready brief to carry the context over:
 
 Fill in every field you can from what's already known (the codebase, the conversation, an existing design system); leave the rest as an explicit placeholder rather than inventing detail that wasn't given. Emit exactly this shape:
 
 ```markdown
-# Design brief: <feature>
-**Goal / job-to-be-done:** …
-**Users & context:** …
-**Constraints:** (brand, platform, a11y, perf) …
-**Screens / components:** …
-**Existing patterns to match:** …
-**References / inspiration:** …
+# Design brief: <what you're building>
+**Goal** — the surface + the one job it does: …
+**Audience** — who uses it, where, and what they care about most: …
+**Layout / screens** — named screens or sections, how they're arranged, key flows and states (empty / loading / error / success): …
+**Content** — the real copy, data, and labels to show (not lorem); for data views, the fields, metrics, and chart types: …
+**Visual direction** — mood + brand ("calm, premium, dark"), the existing patterns and tokens to match, or "match <attached asset / our codebase>": …
+**Constraints** — responsive targets, accessibility (contrast, keyboard), and what to leave OUT: …
+**Assets to attach** — codebase / design system / screenshots / competitor refs / an existing deck: …
 ```
+
+Keep the first prompt specific but not exhaustive — hit goal, layout, content, and audience, attach the assets, and add complexity through iteration rather than one giant prompt. Anthropic's own guidance: *start simple, then layer in complexity.*
+
+**Attach the design system, don't describe it.** Claude Design self-checks its output against a real style/font/component set, and reads a linked codebase to build from your actual components — prose about them buys none of that. From Claude Code, `/design-sync` pulls the design system in (also the fix for a large repo, where linking the whole thing lags). `/design-sync` is not built in — it arrives once the Claude Design MCP server is connected: `claude mcp add --scope user --transport http claude-design https://api.anthropic.com/v1/design/mcp`, then `/design-login`.
 
 Stop there on this path — don't also produce inline mockups or code for the same surface; that duplicates the work Claude Design is about to do and drifts out of sync with whatever the user actually lands on in the browser.

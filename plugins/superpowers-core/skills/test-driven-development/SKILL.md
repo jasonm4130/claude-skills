@@ -75,7 +75,7 @@ paragraph.)
 Before writing the first test, name the **seams** you'll test through — the public, testable boundaries of the change (a function signature, a module interface, an HTTP endpoint, a CLI). Enumerate them and agree them with whoever owns the intent: the user in an interactive session, or the driving spec/plan/ADR when one exists. When neither is available — just a terse one-line ask — that ask is the seam artifact: name the seams from it, and record anything it doesn't resolve (rounding, edge cases, error behaviour) as **explicit stated assumptions**, don't decide them silently.
 
 - **One seam, one slice at a time.** Don't write every test up front (horizontal slicing) — pick a seam, drive it red→green, then move to the next.
-- **Test through the seam, not past it.** Assert on behaviour observable at the boundary, not on private internals. Wanting to reach past the seam usually means the seam is in the wrong place — see `codebase-design` for placing it.
+- **Test through the seam, not past it.** Assert on behaviour observable at the boundary, not on private internals. Wanting to reach past the seam usually means the seam is in the wrong place.
 - **Don't test at an unconfirmed seam.** If it's unclear what the public boundary is, resolve that first — a test bolted to the wrong boundary locks in the wrong shape.
 
 ## Red-Green-Refactor

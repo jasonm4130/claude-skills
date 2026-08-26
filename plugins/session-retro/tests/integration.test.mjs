@@ -25,8 +25,9 @@ const SCRIPTS = path.join(here, "..", "scripts");
 
 /**
  * Threshold env vars are read from the ambient environment, so a developer with
- * RETRO_BATCH_* set in their Claude settings would otherwise flip tests that
- * assert the documented defaults. Strip them; a test that cares sets its own.
+ * RETRO_BATCH_* / RETRO_EOD_HOUR / RETRO_NOW set in their Claude settings would
+ * otherwise flip tests that assert the documented defaults. Strip them; a test
+ * that cares sets its own.
  * @returns {Record<string, string | undefined>}
  */
 function baseEnv() {
@@ -34,8 +35,16 @@ function baseEnv() {
   delete e.RETRO_BATCH_MIN_SESSIONS;
   delete e.RETRO_BATCH_MIN_DAYS;
   delete e.RETRO_BATCH_MAX_SESSIONS;
+  delete e.RETRO_EOD_HOUR;
+  delete e.RETRO_NOW;
   return e;
 }
+
+// The end-of-day offer is gated on local time, so any run that expects it to
+// fire injects the clock rather than hoping the suite runs after 16:00. The
+// date is far-future on purpose: the other scripts in these pipelines stamp
+// files with the real clock, and the injected "now" must be after those.
+const EVENING = { TZ: "UTC", RETRO_NOW: "2099-06-15T18:00:00Z" };
 
 /**
  * @param {string} script  absolute path to .mjs
@@ -166,7 +175,7 @@ test("interleaving: a worthy session appended during the interview survives clea
   const chk = await run(
     path.join(SCRIPTS, "check-retro-flag.mjs"),
     JSON.stringify({ session_id: "cur" }),
-    { ...env, RETRO_BATCH_MIN_SESSIONS: "1", RETRO_BATCH_MIN_DAYS: "0" },
+    { ...env, ...EVENING, RETRO_BATCH_MIN_SESSIONS: "1", RETRO_BATCH_MIN_DAYS: "0" },
   );
   assert.equal(chk.code, 0);
   assert.match(
@@ -176,7 +185,7 @@ test("interleaving: a worthy session appended during the interview survives clea
   );
 });
 
-test("end-to-end: PreCompact path bypasses thresholds", async (t) => {
+test("end-to-end: PreCompact marks the session worthy without interrupting", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "test-session-retro-int-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -192,13 +201,18 @@ test("end-to-end: PreCompact path bypasses thresholds", async (t) => {
   assert.equal(pc.code, 0);
   assert.ok(existsSync(path.join(tmp, `retro-nudge-${sid}.flag`)));
 
-  // Check-retro-flag should pick it up and surface "compact imminent"
+  // Check-retro-flag absorbs it silently: one worthy line, no nudge. A single
+  // session is below the batch threshold even at the end of the day.
   const chk = await run(
     path.join(SCRIPTS, "check-retro-flag.mjs"),
     JSON.stringify({ session_id: sid }),
-    env,
+    { ...env, ...EVENING },
   );
   assert.equal(chk.code, 0);
-  const parsed = JSON.parse(chk.stdout);
-  assert.match(parsed.hookSpecificOutput.additionalContext, /compact imminent/);
+  assert.equal(chk.stdout, "", "compaction must not interrupt the session");
+  const worthyLines = readFileSync(path.join(tmp, "retro-worthy.jsonl"), "utf8")
+    .split("\n")
+    .filter((l) => l);
+  assert.equal(worthyLines.length, 1);
+  assert.match(worthyLines[0], /compact imminent/);
 });

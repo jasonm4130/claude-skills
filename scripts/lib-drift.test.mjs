@@ -2,13 +2,20 @@
 // Repo invariant: the shared primitives duplicated across every plugin's
 // `scripts/lib.mjs` must stay byte-identical.
 //
-// Claude Code plugins cannot share files across plugin boundaries, so six plugins
-// each carry their own `lib.mjs` copy of the same handful of helpers. That
-// duplication is deliberate and unavoidable — but it has a failure mode that is
-// silent and expensive: a bug gets fixed in one copy and left in the other five.
-// That is not hypothetical. `handoff`'s statusLine↔hook data-dir split (0.10.0)
-// was a bug in exactly this shape, and `docs-sync-guard` had independently hit
-// the same class and solved it a different way.
+// Claude Code plugins cannot share files across plugin boundaries, so five plugins
+// (gates, domain-modeling, handoff, session-retro, ship-gate) each carry their own
+// `lib.mjs` copy of the same handful of helpers. That duplication is deliberate and
+// unavoidable — but it has a failure mode that is silent and expensive: a bug gets
+// fixed in one copy and left in the other four. That is not hypothetical.
+// `handoff`'s statusLine↔hook data-dir split (0.10.0) was a bug in exactly this
+// shape, and the docs-sync gate had independently hit the same class and solved it
+// a different way.
+//
+// The count moves. Folding design-gate-guard, docs-sync-guard and
+// workflow-model-guard into `gates` retired two copies at once: their hook-I/O
+// helpers were already byte-identical, so one `lib.mjs` now serves all four gates.
+// Nothing below is keyed to the number — the plugin set and the helper names are
+// both derived from the tree, so a merge or a split is picked up with no edit here.
 //
 // This test does not try to prove the copies are *semantically* equivalent —
 // that is undecidable in general and overkill here. It asserts something
@@ -21,8 +28,8 @@
 // it is covered automatically, with no edit here.
 //
 // Scope note: `export function` / `export async function` only. `export const`
-// declarations in these files are all plugin-specific (docs-sync-guard's
-// RECORD_REL, DEFAULT_CONSOLIDATE_THRESHOLD) and never duplicated, so extracting
+// declarations in these files are all plugin-specific (gates' RECORD_REL,
+// DEFAULT_CONSOLIDATE_THRESHOLD) and never duplicated, so extracting
 // them would add parsing complexity for no coverage.
 
 import test from "node:test";

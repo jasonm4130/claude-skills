@@ -117,7 +117,6 @@ test("the scan finds the known cached-path resolvers", () => {
   const files = filesWithRefs.map((f) => f.file);
   for (const expected of [
     "plugins/adr/skills/adr/SKILL.md",
-    "plugins/deep-dive/skills/deep-dive/SKILL.md",
     "plugins/subagent-driven-development/skills/subagent-driven-development/SKILL.md",
   ]) {
     assert.ok(

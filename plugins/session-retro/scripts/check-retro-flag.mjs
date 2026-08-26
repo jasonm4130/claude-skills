@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 // @ts-check
-// UserPromptSubmit hook. Consumes a per-session retro-nudge flag:
-//   - PreCompact flags ("compact imminent") emit an immediate agent-directed
-//     nudge — context loss is a hard event.
-//   - Stop-origin flags are absorbed silently into a cross-session worthy log
-//     (retro-worthy.jsonl), one line per session (dedup by sid).
-// Then evaluates the batch condition: once >=RETRO_BATCH_MIN_SESSIONS worthy
-// sessions have accrued since the last retro AND >=RETRO_BATCH_MIN_DAYS have
-// passed, emit a single agent-directed nudge — at most once per 24h.
+// UserPromptSubmit hook. Consumes a per-session retro-nudge flag (Stop- or
+// PreCompact-origin) silently into the cross-session worthy log
+// (retro-worthy.jsonl), one line per session (dedup by sid). Nothing about a
+// single session ever interrupts the user.
+//
+// Then evaluates the END-OF-DAY offer: past RETRO_EOD_HOUR local time (default
+// 16), at most once per calendar day (eod-offer-<local date>.txt is claimed
+// exclusively by the day's winner), and only once >=RETRO_BATCH_MIN_SESSIONS worthy sessions
+// have accrued since the last retro AND >=RETRO_BATCH_MIN_DAYS have passed.
 
 import {
   existsSync,
   readFileSync,
+  readdirSync,
   unlinkSync,
   appendFileSync,
   writeFileSync,
@@ -33,6 +35,35 @@ import {
  * @property {string} [session_id]
  */
 
+const DEFAULT_EOD_HOUR = 16;
+
+/**
+ * "Now", injectable. RETRO_NOW (ISO-8601, or epoch millis) replaces the wall
+ * clock so the day/hour gates are testable without sleeping or waiting for
+ * 16:00. Unparseable values fall back to the real clock.
+ * @returns {Date}
+ */
+function resolveNow() {
+  const raw = process.env.RETRO_NOW;
+  if (typeof raw === "string" && raw.length > 0) {
+    const ms = /^\d+$/.test(raw) ? Number(raw) : Date.parse(raw);
+    if (Number.isFinite(ms)) return new Date(ms);
+  }
+  return new Date();
+}
+
+/**
+ * Local (not UTC) calendar date as YYYY-MM-DD — the identity of "today" for the
+ * once-per-day gate. toISOString() would be wrong here: it would roll the day
+ * over at local 17:00 for a UTC+7 user.
+ * @param {Date} d
+ * @returns {string}
+ */
+function localDate(d) {
+  const pad = (/** @type {number} */ n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 const raw = await readStdin();
 const payload = /** @type {UserPromptSubmitInput | null} */ (safeJsonParse(raw));
 const sessionId = resolveSessionId(payload);
@@ -41,10 +72,17 @@ const dataDir = resolveDataDir("session-retro-data");
 const nudgeFlag = path.join(dataDir, `retro-nudge-${sessionId}.flag`);
 const worthyLog = path.join(dataDir, "retro-worthy.jsonl");
 const lastRetroFile = path.join(dataDir, "last-retro.txt");
-const lastBatchFile = path.join(dataDir, "last-batch-nudge.txt");
+// Per-day claim marker: the date in the NAME (not the content) is what makes
+// the once-per-day guarantee atomic — `wx` on a path unique to the day has
+// exactly one winner, with no read-modify-write to race on.
+const eodOfferFileFor = (localDay) =>
+  path.join(dataDir, `eod-offer-${localDay}.txt`);
+// Pre-0.8.1 marker; read-only legacy check so an upgrade mid-day doesn't re-offer.
+const legacyEodOfferFile = path.join(dataDir, "last-eod-offer.txt");
 
-// 1. Consume any per-session flag. PreCompact keeps immediate emission;
-//    Stop-origin reasons are absorbed silently into the worthy log.
+// 1. Consume any per-session flag into the worthy log. Both origins are silent:
+//    a compaction marks the session worthy (its reason is "compact imminent")
+//    and waits for the day's offer like everything else.
 if (existsSync(nudgeFlag)) {
   let reasons = "";
   try {
@@ -56,13 +94,6 @@ if (existsSync(nudgeFlag)) {
     unlinkSync(nudgeFlag);
   } catch {
     // best-effort
-  }
-  if (reasons.includes("compact imminent")) {
-    emitAdditionalContext(
-      "UserPromptSubmit",
-      `[session-retro] This session: ${reasons}. Run the session-retro:retro skill now to capture decisions/learnings before compaction, unless the user objects.`,
-    );
-    process.exit(0);
   }
   // Dedup: one worthy line per session.
   let seen = false;
@@ -85,12 +116,34 @@ if (existsSync(nudgeFlag)) {
   }
 }
 
-// 2. Batch decision.
+// 2. End-of-day gates, cheapest first.
+const now = resolveNow();
+
+const eodHourEnv = Number.parseInt(process.env.RETRO_EOD_HOUR ?? "", 10);
+// A garbage value must not silence the offer forever: NaN >= n is always false,
+// and an out-of-range hour (24, 99) can never be < getHours(), so both fall back.
+const eodHour =
+  Number.isFinite(eodHourEnv) && eodHourEnv >= 0 && eodHourEnv <= 23
+    ? eodHourEnv
+    : DEFAULT_EOD_HOUR;
+if (now.getHours() < eodHour) process.exit(0);
+
+const today = localDate(now);
+if (existsSync(eodOfferFileFor(today))) process.exit(0);
+if (existsSync(legacyEodOfferFile)) {
+  try {
+    if (readFileSync(legacyEodOfferFile, "utf8").trim() === today) process.exit(0);
+  } catch {
+    // unreadable → treat as no offer today
+  }
+}
+
+// 3. Batch decision (unchanged RETRO_BATCH_* contract).
 const minSessions = Number.parseInt(
   process.env.RETRO_BATCH_MIN_SESSIONS ?? "3",
   10,
 );
-const minDays = Number.parseInt(process.env.RETRO_BATCH_MIN_DAYS ?? "7", 10);
+const minDays = Number.parseInt(process.env.RETRO_BATCH_MIN_DAYS ?? "1", 10);
 
 let lastRetroMs = 0;
 if (existsSync(lastRetroFile)) {
@@ -101,7 +154,7 @@ if (existsSync(lastRetroFile)) {
     lastRetroMs = 0;
   }
 }
-const daysSince = (Date.now() - lastRetroMs) / 86400000;
+const daysSince = (now.getTime() - lastRetroMs) / 86400000;
 
 // Worthy count = unprocessed worthy sessions, by identity set-difference
 // (retro-worthy.jsonl minus retro-processed.jsonl). The one-time upgrade
@@ -110,19 +163,33 @@ const daysSince = (Date.now() - lastRetroMs) / 86400000;
 // ledger (mark-retro-done.mjs), not by pruning this file.
 const worthyCount = unprocessedWorthySessions(dataDir).length;
 
-let batchNudgedRecently = false;
-if (existsSync(lastBatchFile)) {
+if (worthyCount >= minSessions && daysSince >= minDays) {
+  // Claim today's offer atomically before emitting: exclusive-create on the
+  // per-day path has exactly one winner — a concurrent session's create throws
+  // EEXIST and forfeits silently. No stale-marker rotation exists to race on;
+  // yesterday's file is simply a different path.
   try {
-    const t = Date.parse(readFileSync(lastBatchFile, "utf8").trim());
-    batchNudgedRecently = Number.isFinite(t) && Date.now() - t < 86400000;
+    writeFileSync(eodOfferFileFor(today), now.toISOString() + "\n", {
+      flag: "wx",
+    });
   } catch {
-    batchNudgedRecently = false;
+    process.exit(0);
   }
-}
-
-if (worthyCount >= minSessions && daysSince >= minDays && !batchNudgedRecently) {
+  // Winner sweeps STRICTLY OLDER day markers (and the legacy one), best-effort.
+  // Older-only, not "not mine": a cross-midnight straggler (RETRO_EOD_HOUR=0 —
+  // claim yesterday's marker at 23:59, sweep at 00:01) must not delete the new
+  // day's freshly-claimed marker. YYYY-MM-DD compares lexicographically.
   try {
-    writeFileSync(lastBatchFile, nowIso());
+    for (const f of readdirSync(dataDir)) {
+      const m = /^eod-offer-(\d{4}-\d{2}-\d{2})\.txt$/.exec(f);
+      if ((m && m[1] < today) || f === "last-eod-offer.txt") {
+        try {
+          unlinkSync(path.join(dataDir, f));
+        } catch {
+          // best-effort
+        }
+      }
+    }
   } catch {
     // best-effort
   }
@@ -134,7 +201,7 @@ if (worthyCount >= minSessions && daysSince >= minDays && !batchNudgedRecently) 
       : `${Math.floor(daysSince)}+ days since the last retro`;
   emitAdditionalContext(
     "UserPromptSubmit",
-    `[session-retro] ${worthyCount} retro-worthy sessions accrued (${cadence}). Run the session-retro:retro skill now to batch-capture learnings, unless the user objects.`,
+    `[session-retro] End of day: ${worthyCount} retro-worthy sessions accrued (${cadence}). Run the session-retro:retro skill now to batch-capture the learnings, unless the user objects.`,
   );
 }
 process.exit(0);

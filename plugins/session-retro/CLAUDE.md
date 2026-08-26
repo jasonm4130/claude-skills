@@ -7,11 +7,11 @@ end of a substantial session by walking the user through an interview and
 writing structured native memory entries.
 
 Five hooks log activity into a per-session JSONL event log and evaluate
-retro-worthy thresholds at `Stop`. As of v0.6.0 the per-session Stop nudge is
-**ambient and batched**: a retro-worthy `Stop` is absorbed silently into a
-cross-session worthy log, and `UserPromptSubmit` injects `additionalContext`
-only when enough worthy sessions have accrued since the last retro. `PreCompact`
-keeps its immediate per-session nudge, since context loss is a hard event.
+retro-worthy thresholds at `Stop`. As of v0.8.0 there is **no per-session nudge
+at all**: every flag — `Stop`-origin and `PreCompact`-origin alike — is absorbed
+silently into a cross-session worthy log, and `UserPromptSubmit` injects
+`additionalContext` only as an **end-of-day offer**: past `RETRO_EOD_HOUR` local
+time, at most once per calendar day, and only when the batch thresholds are met.
 
 As of **v0.7.0** the `/retro` interview is **batch-scoped**: because a batched
 nudge only fires after several worthy sessions accrue, the interview now spans
@@ -37,7 +37,7 @@ session-retro/
 │   ├── posttooluse-append-event.mjs     — PostToolUse: appends one JSONL event per Edit/Write/Bash
 │   ├── stop-write-retro-flag.mjs        — Stop: aggregates events; writes retro-nudge-{sid}.flag if thresholds met
 │   ├── precompact-write-retro-flag.mjs  — PreCompact: always writes retro-nudge-{sid}.flag
-│   ├── check-retro-flag.mjs             — UserPromptSubmit: consumes flag → worthy log (silent) or batched nudge
+│   ├── check-retro-flag.mjs             — UserPromptSubmit: consumes flag → worthy log (silent); fires the end-of-day offer
 │   ├── collect-batch-sessions.mjs       — /retro Step 1: resolves the unprocessed-worthy batch → retro-batch-{sid}.json
 │   └── mark-retro-done.mjs              — /retro cleanup: appends processedSids to retro-processed.jsonl + fired flag + last-retro.txt
 ├── skills/
@@ -62,7 +62,11 @@ Data files under `${CLAUDE_PLUGIN_DATA}` (all append-only except the last two):
 worthy session, **never rewritten**), `retro-processed.jsonl` (append-only ledger
 of retro'd sids — the reset mechanism), `retro-batch-{sid}.json` (the Step-1
 snapshot, consumed at cleanup), `last-retro.txt` (days-cadence hint),
-`last-batch-nudge.txt` (24h nudge de-dupe).
+`eod-offer-<YYYY-MM-DD>.txt` (the once-per-calendar-day gate: the local date is
+in the *name* so the claim is an atomic exclusive-create; the day's winner sweeps
+older markers). The pre-0.8.1 `last-eod-offer.txt` is still honored read-only for
+one upgrade day, then swept; the pre-0.8.0 `last-batch-nudge.txt` is no longer
+read or written and is left on disk (never delete user data beyond these markers).
 
 ## How it works
 
@@ -146,25 +150,28 @@ the Stop hook exits silently.
 so the flag is always written with the reason `"compact imminent"`.
 
 `UserPromptSubmit` (`check-retro-flag.mjs`) reads the flag content and deletes
-the flag (fire-once), then branches:
+the flag (fire-once), then appends it silently to the cross-session worthy log
+`retro-worthy.jsonl` (one line per session: `{"ts","sid","reasons"}`, deduped by
+`sid`). Both origins take this path — a `PreCompact` flag lands as a worthy
+session whose reason is `"compact imminent"`, not as an interruption.
 
-- **PreCompact flag** (`"compact imminent"`) → emits a `hookSpecificOutput`
-  envelope immediately, instructing the agent to run the retro skill now.
-- **Stop-origin flag** (any other content) → appended silently to the
-  cross-session worthy log `retro-worthy.jsonl` (one line per session:
-  `{"ts","sid","reasons"}`, deduped by `sid`). No immediate nudge.
-
-After consuming the flag, the hook evaluates the **batch condition**. `worthy_count`
-is the number of **unprocessed worthy sessions** — distinct sids in
+After consuming the flag, the hook evaluates the **end-of-day offer**.
+`worthy_count` is the number of **unprocessed worthy sessions** — distinct sids in
 `retro-worthy.jsonl` minus sids in `retro-processed.jsonl` (identity set-difference,
 shared helper `unprocessedWorthySessions` in `lib.mjs`; no timestamp compare). A
-single agent-directed nudge fires when all of these hold:
+single agent-directed offer fires when all of these hold:
 
+- local hour `≥ RETRO_EOD_HOUR` (default 16; a non-integer value falls back to
+  the default, because `NaN >= n` would otherwise silence the offer forever)
+- no offer already claimed today — `eod-offer-<today>.txt` absent, using the **local** date
+  (local, not UTC: `toISOString()` would roll the day over at 17:00 for a UTC+7 user)
 - `worthy_count ≥ RETRO_BATCH_MIN_SESSIONS` (default 3)
-- `days_since_last_retro ≥ RETRO_BATCH_MIN_DAYS` (default 7, from `last-retro.txt`)
-- no batch nudge already fired in the last 24h (tracked by `last-batch-nudge.txt`)
+- `days_since_last_retro ≥ RETRO_BATCH_MIN_DAYS` (default 1, from `last-retro.txt`)
 
-Both thresholds are env-overridable. The reset is by **identity, append-only**: the
+All three thresholds are env-overridable. "Now" comes from `resolveNow()`, which
+reads `RETRO_NOW` (ISO-8601 or epoch millis) before falling back to the wall
+clock — the seam the hour and day-boundary tests drive, so no test sleeps or
+depends on when the suite runs. The reset is by **identity, append-only**: the
 `/retro` cleanup (`mark-retro-done.mjs`) appends the interviewed sids to
 `retro-processed.jsonl`, so those sessions drop out of the set-difference and
 `worthy_count` falls — `retro-worthy.jsonl` is never rewritten. It also writes
@@ -185,8 +192,12 @@ clobber each other's writes. Batch ownership is at-least-once, not exactly-once:
 
 **Design rationale:** the old per-session `"Consider running /retro"` fired ~60
 times over 21 days and produced 3 actual retros — dead UX, while auto-memory
-already captures ambient facts. Batching replaces 60 low-signal nudges with an
-occasional high-signal one the agent acts on directly.
+already captures ambient facts. Batching replaced 60 low-signal nudges with an
+occasional high-signal one the agent acts on directly; the end-of-day gate then
+put that one offer where a retro is actually cheap to accept — when the day's
+work is done, not in the middle of it. The compaction exception went with it: a
+mid-session interrupt is the thing being removed, and compacting a session still
+marks it worthy, so nothing is lost but the interruption.
 
 ## Dependencies
 

@@ -24,16 +24,16 @@ not a multi-file apparatus. For exploratory "not sure what I want yet" work use
 ## Phase 1 — Ground (scaled)
 
 Read the real code and current external practice the change touches.
-**Default inline; escalate to a `deep-dive` fan-out only when the change is novel,
-cross-cutting, or the user asks** — a deep-dive on a one-line change is the
-ceremony to avoid.
+**Default inline; escalate to a `/deep-research` fan-out only when the change is
+novel, cross-cutting, or the user asks** — a research fan-out on a one-line
+change is the ceremony to avoid.
 
 - **State grounding:** LSP (symbols/types/refs), `git` history, an `Explore`
   agent for breadth.
 - **Research grounding:** `context7` for library docs, the cloudflare MCP for CF,
-  a `deep-dive` fan-out for novel/cross-cutting work or on request — current
+  a `/deep-research` fan-out for novel/cross-cutting work or on request — current
   external knowledge, not ~1-year-stale training.
-- **Record which mode was used** (inline vs deep-dive fan-out) in the ADR.
+- **Record which mode was used** (inline vs research fan-out) in the ADR.
 
 **Output:** a grounding brief — every claim already cited — that feeds the ADR.
 
@@ -117,8 +117,8 @@ git rev-parse HEAD         # this is branchTip
 Resolve the loop and invoke it:
 
 ```bash
-P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.10.3/workflows/sdd.mjs"
-[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.10.3 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills, or /plugin install subagent-driven-development@jasonm4130-claude-skills if it was never installed"
+P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.12.0/workflows/sdd.mjs"
+[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.12.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills, or /plugin install subagent-driven-development@jasonm4130-claude-skills if it was never installed"
 ```
 
 If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not

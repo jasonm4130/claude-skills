@@ -61,4 +61,4 @@ When a term is resolved, update `CONTEXT.md` right there — don't batch these u
 
 - **Decisions, not terms → `adr`.** A load-bearing, hard-to-reverse trade-off is an ADR, not a glossary entry.
 - **Exploring intent → `brainstorming`.** A grilling/brainstorming session is where terms surface; this skill is what captures them.
-- **Naming design structure → `codebase-design`.** That skill's vocabulary (module, interface, seam) is architecture language; `CONTEXT.md` is domain language. Keep them distinct.
+- **Not architecture vocabulary.** Module, interface, and seam are architecture language; `CONTEXT.md` is domain language. Keep them distinct.
