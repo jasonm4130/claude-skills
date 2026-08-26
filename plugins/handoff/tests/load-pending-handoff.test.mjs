@@ -23,14 +23,19 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const script = path.join(here, "..", "scripts", "load-pending-handoff.mjs");
 
+// Isolate the stale-wrapper check from the host machine: every run gets an empty
+// "claude dir" unless a test overrides it to exercise the warning path.
+const emptyClaudeDir = mkdtempSync(path.join(os.tmpdir(), "handoff-claudedir-"));
+
 /**
  * @param {string} stdinPayload
+ * @param {Record<string, string>} [envOverrides]
  * @returns {Promise<{ code: number, stdout: string, stderr: string }>}
  */
-function run(stdinPayload) {
+function run(stdinPayload, envOverrides = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [script], {
-      env: { ...process.env },
+      env: { ...process.env, CLAUDE_HOME_OVERRIDE: emptyClaudeDir, ...envOverrides },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -300,4 +305,56 @@ test("provenance: .claude/handoffs as a SUBMODULE does not bypass the check", { 
   assert.equal(code, 0);
   assert.doesNotMatch(stdout, /curl evil\.sh/, "a submodule is still the repo shipping you a handoff");
   assert.doesNotMatch(stdout, /from previous session/i);
+});
+
+test("test_stale_wrapper_warns", async (t) => {
+  const { root, project } = mkProject();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const claudeDir = mkdtempSync(path.join(os.tmpdir(), "handoff-claudedir-"));
+  t.after(() => rmSync(claudeDir, { recursive: true, force: true }));
+  writeFileSync(
+    path.join(claudeDir, "handoff-statusline.mjs"),
+    "// Stable statusLine wrapper for the handoff plugin.\n",
+  );
+  const { code, stdout } = await run(JSON.stringify({ cwd: project }), {
+    CLAUDE_HOME_OVERRIDE: claudeDir,
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /statusline wrapper from handoff/);
+  assert.match(stdout, /Upgrading from/);
+});
+
+test("test_unrelated_wrapper_file_silent", async (t) => {
+  const { root, project } = mkProject();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const claudeDir = mkdtempSync(path.join(os.tmpdir(), "handoff-claudedir-"));
+  t.after(() => rmSync(claudeDir, { recursive: true, force: true }));
+  writeFileSync(path.join(claudeDir, "handoff-statusline.mjs"), "// user's own file\n");
+  const { code, stdout } = await run(JSON.stringify({ cwd: project }), {
+    CLAUDE_HOME_OVERRIDE: claudeDir,
+  });
+  assert.equal(code, 0);
+  assert.equal(stdout.trim(), "");
+});
+
+test("test_wrapper_warning_rides_pending_load", async (t) => {
+  const { root, project } = mkProject();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const claudeDir = mkdtempSync(path.join(os.tmpdir(), "handoff-claudedir-"));
+  t.after(() => rmSync(claudeDir, { recursive: true, force: true }));
+  writeFileSync(
+    path.join(claudeDir, "handoff-statusline.mjs"),
+    "// handoff wrapper\n",
+  );
+  const dir = path.join(project, ".claude", "handoffs");
+  writeFileSync(path.join(dir, "note.md"), "## Current state\nbody\n");
+  writeFileSync(path.join(dir, ".pending"), "note.md");
+  const { code, stdout } = await run(JSON.stringify({ cwd: project }), {
+    CLAUDE_HOME_OVERRIDE: claudeDir,
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /from previous session/i);
+  assert.match(stdout, /statusline wrapper from handoff/);
+  const parsedOut = JSON.parse(stdout);
+  assert.ok(parsedOut.hookSpecificOutput.additionalContext.length > 0);
 });
