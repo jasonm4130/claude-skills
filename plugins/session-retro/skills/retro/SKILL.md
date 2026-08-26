@@ -5,8 +5,8 @@ description: >
   (maintained by the PostToolUse hook) and uses git diff/status/log as
   memory primer, then walks through specific moments via adaptive questions
   driven by what changed, and writes structured native memory entries.
-  Suggest this when a Stop or PreCompact hook has injected a /retro
-  suggestion, or when the user explicitly asks for one.
+  Suggest this when the end-of-day hook has injected a /retro suggestion,
+  or when the user explicitly asks for one.
   Triggers: "retro", "session summary", "what did we learn", "lessons learned",
   "session retrospective".
 ---
@@ -193,9 +193,8 @@ This **appends** the interviewed sids (the snapshot's `processedSids`) to the
 append-only `retro-processed.jsonl` ledger — the batch is cleared by *identity*, so
 `retro-worthy.jsonl` and any session that became worthy during the interview are left
 untouched. It also writes the per-session fired flag (suppressing further Stop-hook
-suggestions this session) and the `last-retro.txt` days-cadence hint, so no batched
-nudge fires until enough *new* worthy sessions accrue. PreCompact still suggests
-regardless, since context loss is a hard event.
+suggestions this session) and the `last-retro.txt` days-cadence hint, so no
+end-of-day offer fires until enough *new* worthy sessions accrue.
 
 ## Guidelines
 
