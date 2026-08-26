@@ -86,6 +86,6 @@ Fill in every field you can from what's already known (the codebase, the convers
 
 Keep the first prompt specific but not exhaustive — hit goal, layout, content, and audience, attach the assets, and add complexity through iteration rather than one giant prompt. Anthropic's own guidance: *start simple, then layer in complexity.*
 
-**Attach the design system, don't describe it.** Claude Design self-checks its output against a real style/font/component set, and reads a linked codebase to build from your actual components — prose about them buys none of that. From Claude Code, `/design-sync` pulls the design system in (also the fix for a large repo, where linking the whole thing lags).
+**Attach the design system, don't describe it.** Claude Design self-checks its output against a real style/font/component set, and reads a linked codebase to build from your actual components — prose about them buys none of that. From Claude Code, `/design-sync` pulls the design system in (also the fix for a large repo, where linking the whole thing lags). `/design-sync` is not built in — it arrives once the Claude Design MCP server is connected: `claude mcp add --scope user --transport http claude-design https://api.anthropic.com/v1/design/mcp`, then `/design-login`.
 
 Stop there on this path — don't also produce inline mockups or code for the same surface; that duplicates the work Claude Design is about to do and drifts out of sync with whatever the user actually lands on in the browser.

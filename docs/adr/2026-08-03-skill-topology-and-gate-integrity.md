@@ -1,6 +1,7 @@
 # Retire dead skills, fix broken plumbing, move the artefact trigger to end-of-work
 
 **Status:** Accepted   **Date:** 2026-08-03
+**2026-08-26:** decision 5's review fired — `codebase-design` deleted (still at zero invocations); `domain-modeling` kept. See the repo README's "Renamed and removed plugins" table.
 
 ## Context
 

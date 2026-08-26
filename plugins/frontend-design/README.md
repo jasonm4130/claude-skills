@@ -38,5 +38,5 @@ need) before doing any design work — any single "heavy" signal routes heavy.
   (`claude.ai/design`, in the browser), where the skill emits a paste-ready `# Design brief:`
   template on Anthropic's official **goal / layout / content / audience** framework (extended with
   visual direction, constraints, and the assets to attach), tells you to attach the real design
-  system rather than describe it (`/design-sync` from Claude Code), and stops there — no duplicate
+  system rather than describe it (`/design-sync` from Claude Code, available once the Claude Design MCP server is connected), and stops there — no duplicate
   inline mockups for the same surface.

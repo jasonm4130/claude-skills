@@ -44,6 +44,11 @@ it wrote under `~/.claude/plugins/data/<name>/` stays on disk. Nothing in this r
 deletes that data — uninstall with `/plugin uninstall <name>@jasonm4130-claude-skills`
 and remove the data directory by hand if you want it gone.
 
+The marketplace `renames` field is deliberately not used for the three-guards →
+`gates` consolidation: it maps one name to one name, and auto-installing the full
+`gates` bundle for someone who had only one of the guards would widen what they
+opted into. The migration stays manual — the table below says what to run.
+
 | Removed | Date | Replaced by | What to do |
 |---|---|---|---|
 | `deep-dive` (and its earlier name `deep-research`) | 2026-08-26 | Claude Code's built-in `/deep-research` | Uninstall. The built-in now inherits the session model instead of pinning Opus, and votes on claims adversarially — the two things this plugin existed to add (verified 2026-08-26). |

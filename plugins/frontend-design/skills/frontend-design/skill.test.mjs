@@ -38,9 +38,15 @@ test("documents the light/heavy scope gate and the light-path loop", () => {
 });
 
 // The claude-design plugin was folded in here; a pointer to it is now a dangling
-// reference to a skill nobody has installed.
+// reference to a skill nobody has installed. The one legitimate survivor is the
+// MCP server name in the `claude mcp add … claude-design <url>` connect command —
+// that names the server, not the retired plugin.
 test("no dangling reference to the retired claude-design skill", () => {
-  assert.doesNotMatch(s, /claude-design/);
+  const outsideMcpCommand = s.replaceAll(
+    /claude mcp add [^\n]*claude-design[^\n]*/g,
+    "",
+  );
+  assert.doesNotMatch(outsideMcpCommand, /claude-design/);
 });
 
 test("heavy path routes both destinations: the built-in canvas and the browser", () => {

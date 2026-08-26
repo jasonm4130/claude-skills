@@ -1,6 +1,6 @@
 # ccguard — compiled PreToolUse guards
 
-One Rust binary implementing three of the `gates` plugin's four hooks, committed
+One Rust binary implementing three of the `gates` plugin's four PreToolUse guards, committed
 into that plugin. A **pilot**, deliberately scoped: the docs-sync gate and every
 other plugin's hooks remain `.mjs` and are not affected.
 
