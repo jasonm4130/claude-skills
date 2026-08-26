@@ -21,4 +21,9 @@ if [ ${#files[@]} -eq 0 ]; then
 fi
 
 echo "Running ${#files[@]} node test files on $(node --version)…"
+# Isolate spawned git from the host's global/system config: tests create temp
+# repos, and a host with commit.gpgsign=true (e.g. 1Password op-ssh-sign) makes
+# every test commit block on signing authorization — an environment hang that
+# reads as a red suite.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 node --test "${files[@]}"
