@@ -30,6 +30,20 @@ machines, or clearing before a new line of work. Compaction carries an ordinary 
 forward on its own; what a handoff adds is the "what we tried" record no summary
 reproduces.
 
+## Upgrading from ≤ 0.10.x
+
+If you ever ran the old `setup.mjs`, your `~/.claude/settings.json` `statusLine`
+points at a generated wrapper (`~/.claude/handoff-statusline.mjs`) that resolves a
+statusline script this plugin no longer ships. After upgrading, that wrapper finds
+nothing and your status line degrades to a bare directory name and `?`. Fix it once:
+
+1. Remove (or repoint) the `statusLine` block in `~/.claude/settings.json`.
+2. Delete the wrapper: `rm ~/.claude/handoff-statusline.mjs`.
+3. If you set them, remove the `HANDOFF_THRESHOLD_PCT` / `HANDOFF_EFFECTIVE_MAX_TOKENS`
+   env entries — nothing reads them anymore.
+
+The `/handoff` skill itself needs none of this and keeps working unchanged.
+
 ## Prerequisites
 
 - **Node.js 18+** on `PATH`. The Claude Code installer does not bring Node — install
