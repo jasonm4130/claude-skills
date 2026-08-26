@@ -169,6 +169,30 @@ because the implementer's job is to make the planned tests pass, a test edited t
 pass trivially (a weakened assertion, one that asserts nothing or cannot fail) is
 a `Critical` finding — reviewers read test-file changes more carefully than code.
 
+## Where built-in `/batch` ends and SDD begins
+
+Claude Code's built-in `/batch` also fans work out to subagents, and for its shape
+of work it is the cheaper tool: **independent units, each landing as its own PR** —
+a lint sweep across repos, the same mechanical fix applied in twenty places, tasks
+that never need to see each other's output. If the tasks don't depend on each other
+and don't have to land together, use `/batch` and skip everything below.
+
+SDD exists for what `/batch` doesn't do:
+
+- **A review/fix loop per task** — spec review, quality review, and a bounded
+  ponytail pass, with fix rounds capped instead of open-ended.
+- **Model tiering** — implementers, reviewers, and escalation each at a declared
+  tier, not everything on the session model.
+- **Dependency waves with merge gates** — task 8 can require task 7's landed code;
+  each wave merges (with bounded repair) before the next starts.
+- **Deterministic failure handling** — BLOCKED escalation, oscillation halt, and a
+  halt record instead of a subagent quietly giving up.
+- **Single-branch landing** — the whole plan lands as one reviewed branch, ending
+  in an Opus whole-branch final review, not N disconnected PRs.
+
+Rule of thumb: if the plan is a list, reach for `/batch`; if the plan is a graph —
+or the result must hold together as one change — reach for SDD.
+
 ## Requirements
 
 - The plan must use `# Task N` / `## Task N` headings (parsed by
