@@ -4,7 +4,7 @@
 //   test_load_pending_missing_file.sh
 //   test_load_pending_stale.sh
 
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import {
   mkdtempSync,
@@ -26,6 +26,7 @@ const script = path.join(here, "..", "scripts", "load-pending-handoff.mjs");
 // Isolate the stale-wrapper check from the host machine: every run gets an empty
 // "claude dir" unless a test overrides it to exercise the warning path.
 const emptyClaudeDir = mkdtempSync(path.join(os.tmpdir(), "handoff-claudedir-"));
+after(() => rmSync(emptyClaudeDir, { recursive: true, force: true }));
 
 /**
  * @param {string} stdinPayload
