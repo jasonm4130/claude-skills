@@ -305,14 +305,14 @@ test("EOD silent: only 2 worthy entries", async (t) => {
   assert.equal(stdout, "", "below min-sessions threshold");
 });
 
-test("EOD silent: last retro 3 days ago (< 7-day gate)", async (t) => {
+test("EOD silent: last retro earlier today (< 1-day gate)", async (t) => {
   const tmp = mkTmp();
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
-  // 3 worthy entries all newer than last-retro, but the 7-day cadence gate has
-  // not elapsed since the last retro.
+  // 3 worthy entries all newer than last-retro, but the default 1-day cadence
+  // gate has not elapsed since the last retro (which ran earlier today).
   writeThreeWorthy(tmp);
-  writeFileSync(path.join(tmp, "last-retro.txt"), isoDaysAgo(3));
+  writeFileSync(path.join(tmp, "last-retro.txt"), isoDaysAgo(0));
 
   const { code, stdout } = await run(
     JSON.stringify({ session_id: "test-batch-days" }),

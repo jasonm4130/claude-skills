@@ -164,7 +164,7 @@ single agent-directed offer fires when all of these hold:
 - no offer already made today — `last-eod-offer.txt` ≠ today's **local** date
   (local, not UTC: `toISOString()` would roll the day over at 17:00 for a UTC+7 user)
 - `worthy_count ≥ RETRO_BATCH_MIN_SESSIONS` (default 3)
-- `days_since_last_retro ≥ RETRO_BATCH_MIN_DAYS` (default 7, from `last-retro.txt`)
+- `days_since_last_retro ≥ RETRO_BATCH_MIN_DAYS` (default 1, from `last-retro.txt`)
 
 All three thresholds are env-overridable. "Now" comes from `resolveNow()`, which
 reads `RETRO_NOW` (ISO-8601 or epoch millis) before falling back to the wall

@@ -131,7 +131,7 @@ const minSessions = Number.parseInt(
   process.env.RETRO_BATCH_MIN_SESSIONS ?? "3",
   10,
 );
-const minDays = Number.parseInt(process.env.RETRO_BATCH_MIN_DAYS ?? "7", 10);
+const minDays = Number.parseInt(process.env.RETRO_BATCH_MIN_DAYS ?? "1", 10);
 
 let lastRetroMs = 0;
 if (existsSync(lastRetroFile)) {

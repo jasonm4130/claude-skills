@@ -19,8 +19,8 @@ write structured memory entries useful in future sessions.
 
 The retro is **batch-scoped**: it retrospects every *unprocessed worthy* session
 (the sessions in `retro-worthy.jsonl` not yet in `retro-processed.jsonl`) **plus the
-current session**, not just the current one — because a batched nudge fires only after
-several worthy sessions have accrued, and each of those deserves capture. It reads two
+current session**, not just the current one — because the end-of-day offer arrives at most once a day,
+by which point several worthy sessions may have accrued, and each deserves capture. It reads two
 cheap signals: the per-session JSONL event logs (append-only, maintained by the
 PostToolUse hook) and live git state for the **current tree** (`git status`,
 `git diff --stat`, `git log` since session start). It does NOT parse the raw session
