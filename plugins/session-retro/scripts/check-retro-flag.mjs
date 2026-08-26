@@ -113,8 +113,12 @@ if (existsSync(nudgeFlag)) {
 const now = resolveNow();
 
 const eodHourEnv = Number.parseInt(process.env.RETRO_EOD_HOUR ?? "", 10);
-// A garbage value must not silence the offer forever (NaN >= n is always false).
-const eodHour = Number.isFinite(eodHourEnv) ? eodHourEnv : DEFAULT_EOD_HOUR;
+// A garbage value must not silence the offer forever: NaN >= n is always false,
+// and an out-of-range hour (24, 99) can never be < getHours(), so both fall back.
+const eodHour =
+  Number.isFinite(eodHourEnv) && eodHourEnv >= 0 && eodHourEnv <= 23
+    ? eodHourEnv
+    : DEFAULT_EOD_HOUR;
 if (now.getHours() < eodHour) process.exit(0);
 
 const today = localDate(now);
@@ -152,10 +156,30 @@ const daysSince = (now.getTime() - lastRetroMs) / 86400000;
 const worthyCount = unprocessedWorthySessions(dataDir).length;
 
 if (worthyCount >= minSessions && daysSince >= minDays) {
+  // Claim today's offer atomically before emitting: `wx` fails if the marker
+  // exists, closing the check-then-write gap where two concurrent sessions both
+  // pass the existence check above and both nudge. On failure re-read: today's
+  // date means another session claimed it (forfeit silently); a stale date is
+  // rotated away and the claim retried once, again forfeiting on loss. A
+  // microsecond unlink/create interleaving can still double-offer, but the
+  // window shrinks from the whole gate evaluation to a single syscall pair,
+  // and the cost is a duplicate nudge, not lost state.
   try {
-    writeFileSync(eodOfferFile, today + "\n");
+    writeFileSync(eodOfferFile, today + "\n", { flag: "wx" });
   } catch {
-    // best-effort
+    let prev = "";
+    try {
+      prev = readFileSync(eodOfferFile, "utf8").trim();
+    } catch {
+      // unreadable → treat as claimable
+    }
+    if (prev === today) process.exit(0);
+    try {
+      unlinkSync(eodOfferFile);
+      writeFileSync(eodOfferFile, today + "\n", { flag: "wx" });
+    } catch {
+      process.exit(0);
+    }
   }
   // With no last-retro.txt, daysSince is days-since-epoch — a garbage figure;
   // say "no retro recorded yet" instead of interpolating it.

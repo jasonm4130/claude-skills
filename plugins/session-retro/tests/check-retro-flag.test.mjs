@@ -444,3 +444,22 @@ test("RETRO_EOD_HOUR garbage falls back to the 16:00 default", async (t) => {
     /3 retro-worthy sessions/,
   );
 });
+
+// An out-of-range hour is finite but can never be < getHours(), so it too
+// must fall back rather than silence the offer permanently.
+test("RETRO_EOD_HOUR=24 (out of range) falls back to the 16:00 default", async (t) => {
+  const tmp = mkTmp();
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeThreeWorthy(tmp);
+
+  const { code, stdout } = await run(
+    JSON.stringify({ session_id: "test-eod-range" }),
+    env(tmp, { RETRO_EOD_HOUR: "24" }),
+  );
+  assert.equal(code, 0);
+  assert.match(
+    JSON.parse(stdout).hookSpecificOutput.additionalContext,
+    /3 retro-worthy sessions/,
+  );
+});
