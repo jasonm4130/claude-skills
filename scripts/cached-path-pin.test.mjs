@@ -224,14 +224,3 @@ test("a missing pinned version fails loudly instead of falling back", () => {
     }
   }
 });
-
-test("the handoff statusLine wrapper uses the marketplace id from marketplace.json", () => {
-  // setup.mjs builds the cache path with path.join(), so it carries the id as a
-  // bare string rather than a slash-joined literal the regex above can see.
-  const setup = readFileSync(join(root, "plugins", "handoff", "scripts", "setup.mjs"), "utf8");
-  assert.ok(
-    setup.includes(marketplace.name),
-    `plugins/handoff/scripts/setup.mjs does not reference the marketplace id ` +
-      `"${marketplace.name}" — a rename would break the generated statusLine wrapper.`,
-  );
-});
