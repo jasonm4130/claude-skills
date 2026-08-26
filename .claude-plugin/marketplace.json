@@ -7,15 +7,12 @@
     "description": "Jason Matthew's personal Claude Code skills marketplace.",
     "pluginRoot": "./plugins"
   },
-  "renames": {
-    "deep-research": "deep-dive"
-  },
   "plugins": [
     {
       "name": "adr",
       "source": "./plugins/adr",
       "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to the subagent-driven-development loop. Front-end for adr → sdd.",
-      "version": "0.3.6",
+      "version": "0.4.0",
       "author": {
         "name": "Jason Matthew"
       },
@@ -82,25 +79,6 @@
         "plan-review",
         "design-review",
         "adversarial-review",
-        "claude-code"
-      ],
-      "category": "productivity"
-    },
-    {
-      "name": "deep-dive",
-      "source": "./plugins/deep-dive",
-      "description": "Model-tiered, adversarially-verified multi-source research via parallel sub-agents and synthesis with citations. Cheaper alternative to the built-in all-Opus deep-research.",
-      "version": "0.7.0",
-      "author": {
-        "name": "Jason Matthew"
-      },
-      "license": "MIT",
-      "keywords": [
-        "deep-dive",
-        "deep-research",
-        "research",
-        "multi-agent",
-        "synthesis",
         "claude-code"
       ],
       "category": "productivity"
@@ -271,7 +249,7 @@
       "name": "workflow-model-guard",
       "source": "./plugins/workflow-model-guard",
       "description": "PreToolUse hooks that keep sub-model choices deliberate — denies high-fan-out Workflow scripts with no per-agent model: override, asks before all-Opus built-in named workflows (e.g. deep-research), and denies ad-hoc Agent dispatches that omit model unless the agent type pins one in frontmatter.",
-      "version": "0.4.3",
+      "version": "0.5.0",
       "author": {
         "name": "Jason Matthew"
       },

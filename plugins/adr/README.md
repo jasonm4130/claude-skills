@@ -20,8 +20,8 @@ SDD `sdd.mjs` workflow, not in this prose.
 
 1. **Ground (scaled).** Read the real code and current external practice the
    change touches — LSP, `git`, `context7`, the cloudflare MCP. Inline by
-   default; escalate to a `deep-dive` fan-out only when novel, cross-cutting,
-   or asked.
+   default; escalate to a `/deep-research` fan-out only when novel,
+   cross-cutting, or asked.
 2. **Author the ADR.** Write `docs/adr/YYYY-MM-DD-<slug>.md` — Context, Decisions,
    checkable Success criteria, Consequences, Grounding sources, and a thin
    `### Task N` Decomposition last. Every codebase claim cites a file/symbol,

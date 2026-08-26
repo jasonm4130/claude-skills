@@ -17,7 +17,6 @@ Add the marketplace once, then install the plugins you want.
 | `claude-design` | Paste-ready Claude Design brief + the Claude Code driving path (`/design`, `/design-sync`) | – | `/plugin install claude-design@jasonm4130-claude-skills` |
 | `codebase-design` | Deep-module design vocabulary — interface/seam/depth, the deletion test, tiered design-it-twice | – | `/plugin install codebase-design@jasonm4130-claude-skills` |
 | `codex-review` | Cross-provider plan/design review via OpenAI Codex (Terra) | Node 18+ · [Codex CLI](https://github.com/openai/codex) | `/plugin install codex-review@jasonm4130-claude-skills` |
-| `deep-dive` | Model-tiered, adversarially-verified multi-source research | – | `/plugin install deep-dive@jasonm4130-claude-skills` |
 | `design-gate-guard` | PreToolUse gate asking before a new-project scaffold runs ahead of an approved design | – on arm64 macOS · Node 18+ elsewhere | `/plugin install design-gate-guard@jasonm4130-claude-skills` |
 | `docs-sync-guard` | Blocking git-commit gate against docs drift, plus a non-blocking consolidation audit triggered by accumulated commits | Node 18+ | `/plugin install docs-sync-guard@jasonm4130-claude-skills` |
 | `domain-modeling` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms; offers one once per repo that lacks it | Node 18+ | `/plugin install domain-modeling@jasonm4130-claude-skills` |
@@ -40,6 +39,18 @@ Full details per plugin: see `plugins/<name>/README.md`.
 > the Codex CLI, authenticated. The `engines` field some `plugin.json` manifests carry is
 > informational only — `claude plugin validate` confirms Claude Code does not read or
 > enforce it, so it is not a substitute for this table.
+
+## Renamed and removed plugins
+
+A plugin that leaves the marketplace stops receiving updates but stays installed:
+its `<name>@jasonm4130-claude-skills` key remains in `enabledPlugins`, and anything
+it wrote under `~/.claude/plugins/data/<name>/` stays on disk. Nothing in this repo
+deletes that data — uninstall with `/plugin uninstall <name>@jasonm4130-claude-skills`
+and remove the data directory by hand if you want it gone.
+
+| Removed | Date | Replaced by | What to do |
+|---|---|---|---|
+| `deep-dive` (and its earlier name `deep-research`) | 2026-08-26 | Claude Code's built-in `/deep-research` | Uninstall. The built-in now inherits the session model instead of pinning Opus, and votes on claims adversarially — the two things this plugin existed to add (verified 2026-08-26). |
 
 ## Repo layout
 

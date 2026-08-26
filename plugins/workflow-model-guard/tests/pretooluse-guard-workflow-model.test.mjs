@@ -164,14 +164,6 @@ test("allows a scriptPath workflow that sets a model override", () => {
   }
 });
 
-test("allows the shipped deep-dive fanout.mjs by scriptPath (already tiered)", () => {
-  const fanout = fileURLToPath(
-    new URL("../../deep-dive/workflows/fanout.mjs", import.meta.url),
-  );
-  const { stdout } = run({ tool_name: "Workflow", tool_input: { scriptPath: fanout } });
-  assert.equal(stdout.trim(), "");
-});
-
 test("allows when scriptPath points to a missing/unreadable file", () => {
   const { stdout } = run({
     tool_name: "Workflow",
