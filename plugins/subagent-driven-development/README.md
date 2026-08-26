@@ -110,7 +110,7 @@ transcript.
 One table, one home: **`skills/subagent-driven-development/SKILL.md` § "Model tiering at a glance"**.
 This file used to carry a second copy, and the two disagreed in both directions. All that belongs
 here is the invariant: `model:` is set on **every** `agent()` call, so none inherit the
-orchestrator and the `workflow-model-guard` hook passes.
+orchestrator and the `gates` workflow-model hook passes.
 
 ### Deterministic failure handling
 

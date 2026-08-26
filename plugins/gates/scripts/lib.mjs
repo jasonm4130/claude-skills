@@ -1,7 +1,10 @@
 // @ts-check
-// Shared helpers for docs-sync-guard plugin scripts. Stdlib only.
-// Duplicated surface mirrors plugins/session-retro/scripts/lib.mjs — CC plugins can't
-// share files across plugin boundaries, so the duplication is intentional.
+// Shared helpers for the gates plugin's scripts. Stdlib only.
+// The hook-I/O surface (readStdin, safeJsonParse, emitPermissionDecision,
+// emitAdditionalContext) is duplicated in the other plugins' lib.mjs — CC plugins
+// can't share files across plugin boundaries, so the duplication is intentional and
+// `scripts/lib-drift.test.mjs` keeps every copy byte-identical. Everything below the
+// consolidation-trigger banner is this plugin's alone.
 
 import { existsSync, mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";

@@ -3,7 +3,7 @@ name: docs-consolidate
 description: >
   Audit a repo's documentation for internal contradictions, stale claims, orphans
   and bloat after it has accumulated commits, then report findings for the user to
-  disposition. Use when the docs-sync-guard nudge fires, or when the user asks to
+  disposition. Use when the consolidation nudge fires, or when the user asks to
   consolidate, audit, or spring-clean the docs.
   Triggers: "/docs-consolidate", "consolidate the docs", "docs audit",
   "have the docs drifted", "check the docs against each other".

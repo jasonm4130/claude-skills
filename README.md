@@ -15,16 +15,14 @@ Add the marketplace once, then install the plugins you want.
 |---|---|---|---|
 | `adr` | Intent → grounded, cited, build-ready ADR, handed to the SDD loop | – | `/plugin install adr@jasonm4130-claude-skills` |
 | `codex-review` | Cross-provider plan/design review via OpenAI Codex (Terra) | Node 18+ · [Codex CLI](https://github.com/openai/codex) | `/plugin install codex-review@jasonm4130-claude-skills` |
-| `design-gate-guard` | PreToolUse gate asking before a new-project scaffold runs ahead of an approved design | – on arm64 macOS · Node 18+ elsewhere | `/plugin install design-gate-guard@jasonm4130-claude-skills` |
-| `docs-sync-guard` | Blocking git-commit gate against docs drift, plus a non-blocking consolidation audit triggered by accumulated commits | Node 18+ | `/plugin install docs-sync-guard@jasonm4130-claude-skills` |
 | `domain-modeling` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms; offers one once per repo that lacks it | Node 18+ | `/plugin install domain-modeling@jasonm4130-claude-skills` |
 | `frontend-design` | Light-inline design guidance, or a paste-ready browser brief for wide/detailed work | – | `/plugin install frontend-design@jasonm4130-claude-skills` |
+| `gates` | Four PreToolUse gates — docs-drift commit gate, scaffold-before-design gate, Workflow and Agent model tiering — plus a non-blocking docs-consolidation nudge | Node 18+ | `/plugin install gates@jasonm4130-claude-skills` |
 | `handoff` | On-demand `/handoff` resume doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
 | `session-retro` | Session retrospectives that capture learnings to memory | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
 | `subagent-driven-development` | Deterministic workflow-driven implement/review/fix loop | – | `/plugin install subagent-driven-development@jasonm4130-claude-skills` |
 | `superpowers-core` | Owned fork of the superpowers process skills (brainstorming, writing-plans, TDD, systematic-debugging, writing-skills) | – | `/plugin install superpowers-core@jasonm4130-claude-skills` |
-| `workflow-model-guard` | PreToolUse guard nudging model tiering in high-fan-out Workflows | – on arm64 macOS · Node 18+ elsewhere | `/plugin install workflow-model-guard@jasonm4130-claude-skills` |
 | `writing-artifacts` | Positive writing system for durable artifacts (READMEs, ADRs, docs, runbooks) | – | `/plugin install writing-artifacts@jasonm4130-claude-skills` |
 
 Full details per plugin: see `plugins/<name>/README.md`.
@@ -52,6 +50,9 @@ and remove the data directory by hand if you want it gone.
 | `claude-design` | 2026-08-26 | `frontend-design` | Uninstall, and install `frontend-design` if you don't already have it. Its heavy path now carries the goal/layout/content/audience brief and the `/design-sync` design-system route directly — one skill instead of two that had to agree with each other. |
 | `superpowers-core`'s `using-skills` skill and its `SessionStart` hook | 2026-08-26 | Your own global `CLAUDE.md` | Keep `superpowers-core` installed — the five method skills are unchanged. The dispatcher kernel it used to inject every session now belongs in `~/.claude/CLAUDE.md`, which already loads at every session start; injecting it as well stated the same rule twice. Copy the rules you want there. Claude Code will stop prompting for the plugin's hook. |
 | `codebase-design` | 2026-08-26 | Nothing | Uninstall. The 2026-08-03 ADR kept it on the condition that an imperative hand-off from `brainstorming` produce invocations by 2026-08-24; it was still at zero, so the review clause fired. The design vocabulary it carried is native to Claude — `brainstorming` and `test-driven-development` now make their boundary and seam points directly. |
+| `docs-sync-guard` | 2026-08-26 | `gates` | Uninstall, then `/plugin install gates@jasonm4130-claude-skills`. Both mechanisms moved across unchanged: the commit gate (still `docs-sync:ack`) and the consolidation trigger, whose `/docs-consolidate` skill is now `gates:docs-consolidate`. The `.docs-sync` record and the `.git/docs-sync-defer` marker are per-repo and keep working as they are. |
+| `design-gate-guard` | 2026-08-26 | `gates` | Uninstall, then install `gates`. The scaffold gate moved across unchanged, `design-gate:ack` included. |
+| `workflow-model-guard` | 2026-08-26 | `gates` | Uninstall, then install `gates`. Both hooks moved across unchanged, `model-guard:ack` included. |
 
 ## Repo layout
 
@@ -62,9 +63,9 @@ plugins/<name>/
   skills/<skill>/SKILL.md         # skill definition + frontmatter
   hooks/hooks.json                # hook registrations (where applicable)
   scripts/ tests/                 # stdlib-only .mjs + node:test suites
-  bin/ccguard                     # committed Rust guard binary (compiled plugins only;
+  bin/ccguard                     # committed Rust guard binary (plugins/gates only;
                                   #   the .mjs stays as fallback AND reference impl)
-rust/                             # source for bin/ccguard, shared across those plugins
+rust/                             # source for bin/ccguard
 docs/superpowers/{specs,plans}/   # design specs and implementation plans
 docs/research/                    # dated research + triage records
 RESEARCH_*.md                     # standalone research write-ups

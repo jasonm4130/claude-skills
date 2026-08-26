@@ -1,0 +1,63 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-docs-sync.mjs\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ccguard\" design-gate \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-design-gate.mjs\" || node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-design-gate.mjs\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Workflow",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ccguard\" workflow-model \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs\" || node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ccguard\" agent-model \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs\" || node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/stop-check-consolidation-drift.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/check-consolidation-flag.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

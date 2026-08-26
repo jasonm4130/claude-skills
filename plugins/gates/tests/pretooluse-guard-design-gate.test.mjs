@@ -1,5 +1,5 @@
 // @ts-check
-// Tests for the design-gate-guard PreToolUse hook. Spawns the hook as a child
+// Tests for the design-gate PreToolUse hook. Spawns the hook as a child
 // process with synthetic stdin and asserts on stdout/exit code — the same contract
 // Claude Code uses at runtime.
 

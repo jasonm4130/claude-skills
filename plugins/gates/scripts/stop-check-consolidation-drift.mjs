@@ -63,7 +63,7 @@ const head = git(["rev-parse", "HEAD"], repoRoot);
 if (head === null) process.exit(0);
 
 const sessionId = resolveSessionId(payload);
-const dataDir = resolveDataDir("docs-sync-guard-data");
+const dataDir = resolveDataDir("gates-data");
 const rh = repoHash(repoRoot);
 
 // The defer marker lives in `.git/`, not in the plugin data dir: it is written by

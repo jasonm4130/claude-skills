@@ -117,8 +117,8 @@ literal path, pinned to **this** skill's version — the `args` contract moves
 between versions (in local dev, use the repo path directly):
 
 ```bash
-P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.10.3/workflows/sdd.mjs"
-[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.10.3 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
+P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.11.0/workflows/sdd.mjs"
+[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.11.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills"
 ```
 
 If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not
@@ -168,7 +168,7 @@ or inferred from implementer reports), with one bounded repair attempt.
 Linear plans (every task depending on the previous) run exactly as before.
 
 Every agent the workflow dispatches gets an explicit `model:` (satisfies
-`workflow-model-guard`); none inherit your Opus session.
+`gates`' workflow-model gate); none inherit your Opus session.
 
 ### 6a. ADR-driven dispatch (optional)
 

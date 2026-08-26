@@ -38,16 +38,16 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
  */
 const IMPLS = {
   "design-gate": [
-    join(root, "plugins/design-gate-guard/bin/ccguard"),
-    join(root, "plugins/design-gate-guard/scripts/pretooluse-guard-design-gate.mjs"),
+    join(root, "plugins/gates/bin/ccguard"),
+    join(root, "plugins/gates/scripts/pretooluse-guard-design-gate.mjs"),
   ],
   "agent-model": [
-    join(root, "plugins/workflow-model-guard/bin/ccguard"),
-    join(root, "plugins/workflow-model-guard/scripts/pretooluse-guard-agent-model.mjs"),
+    join(root, "plugins/gates/bin/ccguard"),
+    join(root, "plugins/gates/scripts/pretooluse-guard-agent-model.mjs"),
   ],
   "workflow-model": [
-    join(root, "plugins/workflow-model-guard/bin/ccguard"),
-    join(root, "plugins/workflow-model-guard/scripts/pretooluse-guard-workflow-model.mjs"),
+    join(root, "plugins/gates/bin/ccguard"),
+    join(root, "plugins/gates/scripts/pretooluse-guard-workflow-model.mjs"),
   ],
 };
 
@@ -308,7 +308,7 @@ const skipMsg =
   "(the committed binary is arm64 macOS only). Build with `cargo build --release` in rust/ " +
   "and copy it into plugins/*/bin/ to run these.";
 
-test("committed binaries are not stale relative to rust/src", { skip: haveDesignGate ? false : skipMsg }, () => {
+test("the committed binary is not stale relative to rust/src", { skip: haveDesignGate ? false : skipMsg }, () => {
   // The binary is a build artifact in git, so "I edited the source" and "the
   // shipped guard changed" are two different events. build.rs bakes a fingerprint
   // of rust/src/*.rs into the binary; this recomputes it the same way and
@@ -341,7 +341,7 @@ test("committed binaries are not stale relative to rust/src", { skip: haveDesign
         `Rebuild and re-copy:\n    cargo build --release --manifest-path rust/Cargo.toml\n` +
         `    cp "$(cargo metadata --format-version 1 --no-deps --manifest-path rust/Cargo.toml | ` +
         `node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).target_directory))')/release/ccguard" ` +
-        `plugins/design-gate-guard/bin/ccguard`,
+        `plugins/gates/bin/ccguard`,
     );
   }
 });

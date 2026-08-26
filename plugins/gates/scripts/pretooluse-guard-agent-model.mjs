@@ -16,9 +16,10 @@
 //     Claude Code's own resolution will apply that pinned tier.
 //   - otherwise → deny with the tier calculus; Claude re-dispatches with a model.
 //
-// Verified on Claude Code 2.1.206 (probes, 2026-07-11): PreToolUse fires on Agent
-// dispatch, tool_input carries subagent_type/model, and deny is enforced. See
-// RESEARCH_delegation_model_tiering.md at the repo root.
+// Verified on Claude Code 2.1.246 (probes re-run 2026-08-26; first run on 2.1.206,
+// 2026-07-11): PreToolUse fires on Agent dispatch, tool_input carries
+// subagent_type/model, and deny is enforced. See RESEARCH_delegation_model_tiering.md
+// at the repo root.
 
 import process from "node:process";
 import os from "node:os";

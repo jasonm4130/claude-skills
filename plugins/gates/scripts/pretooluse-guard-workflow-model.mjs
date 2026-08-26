@@ -10,7 +10,7 @@
 //   - inline `script`  → inspect it; deny if it fans out untiered (Claude revises + re-runs).
 //   - `scriptPath`     → read the file and inspect the same way (Claude edits the file + re-runs).
 //   - `name`           → can't read or rewrite a built-in/saved workflow. If it's a known
-//                        all-Opus one (NAME_DENYLIST), ASK the user (deny-to-Claude can't be
+//                        high-fan-out one (NAME_DENYLIST), ASK the user (deny-to-Claude can't be
 //                        resolved — Claude can't edit a built-in, so it would dead-end).
 // Scale-gated: small/cheap inline/scriptPath workflows pass silently so the hook doesn't
 // fight the tool's own "omit model by default" guidance.
@@ -19,9 +19,11 @@ import process from "node:process";
 import { readFileSync } from "node:fs";
 import { readStdin, safeJsonParse, emitPermissionDecision } from "./lib.mjs";
 
-// Named workflows known to spawn every agent on the session model (no per-agent
-// model: override) that Claude cannot edit — e.g. the built-in `deep-research`
-// harness. We can't rewrite these, so we ASK the user rather than deny-to-Claude.
+// Named workflows that fan out widely, inherit the session model for every spawned
+// agent (no per-agent model: override), and that Claude cannot edit — e.g. the built-in
+// `deep-research` harness. Inheriting is not the same as pinning a tier: on a Sonnet
+// session these are cheap, and the `ask` is a per-run cost speed-bump, not a claim
+// about which model they run. We can't rewrite them, so we ASK rather than deny.
 const NAME_DENYLIST = ["deep-research"];
 
 /**
@@ -51,7 +53,7 @@ if (!script && typeof input.scriptPath === "string" && input.scriptPath.length) 
 }
 
 // No inspectable script (a `name:` invocation). Ask the user only for known
-// all-Opus named workflows; leave every other named/saved workflow alone.
+// high-fan-out named workflows; leave every other named/saved workflow alone.
 if (!script) {
   const name = typeof input.name === "string" ? input.name : "";
   if (name && NAME_DENYLIST.includes(name)) {
@@ -68,7 +70,7 @@ if (!script) {
 }
 
 // Bypass 1: any `model:` means Claude already weighed tiers (even one override counts).
-// Bypass 2: explicit ack that all-Opus is intended — prevents an infinite deny loop.
+// Bypass 2: explicit ack that the inherited tier is intended — prevents an infinite deny loop.
 if (/\bmodel\s*:/.test(script) || script.includes("model-guard:ack")) process.exit(0);
 
 // Static fan-out signals. agentCount is a lower bound — loops and .map() over items

@@ -1,5 +1,5 @@
 // @ts-check
-// Tests for the workflow-model-guard PreToolUse hook. Spawns the hook as a child
+// Tests for the workflow-model PreToolUse hook. Spawns the hook as a child
 // process with synthetic stdin and asserts on stdout/exit code — the same contract
 // Claude Code uses at runtime.
 
@@ -174,7 +174,7 @@ test("allows when scriptPath points to a missing/unreadable file", () => {
 
 // ---- name: denylist (un-editable built-ins) → ask the user ----
 
-test("asks the user before the all-Opus built-in name:deep-research", () => {
+test("asks the user before the un-editable high-fan-out built-in name:deep-research", () => {
   const { status, stdout } = run({
     tool_name: "Workflow",
     tool_input: { name: "deep-research", args: "some question" },

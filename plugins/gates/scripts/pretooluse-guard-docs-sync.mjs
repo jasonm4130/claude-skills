@@ -73,7 +73,7 @@ function git(cwd, args) {
  * real while writing tests for the quoting fix below — the test file's own
  * fixture strings tripped the gate that the tests exercise.
  *
- * Deliberately simpler than design-gate-guard's full tokenizer: that one needs to
+ * Deliberately simpler than the design-gate guard's full tokenizer: that one needs to
  * know which command *starts* a segment, so it must track quotes to find segment
  * boundaries. Here we only need the bodies gone, and a heredoc body always runs
  * from the line after the introducer to a line equal to the delimiter.

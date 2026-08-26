@@ -35,7 +35,7 @@
 // ---------------------------------------------------------------------------
 // ccguard (2026-08-03): the compiled guards do NOT change the above.
 //
-// `design-gate-guard` and `workflow-model-guard` now run a committed Rust binary
+// Three of the `gates` plugin's four PreToolUse guards run a committed Rust binary
 // (`bin/ccguard <subcommand>`) with `|| node "…/scripts/….mjs"` as fallback. That
 // is still shell form — the shell is what evaluates the `||` — so every argument
 // above continues to apply unchanged.

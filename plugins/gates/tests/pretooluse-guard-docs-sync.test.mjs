@@ -1,5 +1,5 @@
 // @ts-check
-// Tests for the docs-sync-guard PreToolUse hook (matcher: Bash, git-commit gate).
+// Tests for the docs-sync PreToolUse hook (matcher: Bash, git-commit gate).
 // Each test builds a real throwaway git repo with a plugins/ monorepo layout, stages
 // files, and runs the hook as a child process with a synthetic payload — the same
 // contract Claude Code uses at runtime.
@@ -470,7 +470,7 @@ test("docs-sync: `--file=-` and `--file -` heredoc acks are honoured too", () =>
 });
 
 // The bypass this must NOT open: a heredoc that merely documents the marker.
-// The docs-sync-guard's own README necessarily contains the literal token.
+// This plugin's own README necessarily contains the literal token.
 test("docs-sync: ack in a non-message heredoc does NOT bypass the gate", () => {
   const r = repo({ "plugins/p/scripts/a.mjs": "x", "plugins/p/README.md": "d" }, [
     "plugins/p/scripts/a.mjs",

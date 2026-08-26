@@ -1,7 +1,7 @@
 {
   "name": "subagent-driven-development",
   "description": "Deterministic, workflow-driven subagent development loop: plan -> confirm -> background Workflow runs per-task implement/review/fix with tiered models in deps-driven parallel waves (per-task worktrees + per-wave merge gate), ponytail anti-over-engineering discipline, deterministic BLOCKED escalation and oscillation halt, then an Opus whole-branch final review. Replaces the model-driven superpowers post-plan suite.",
-  "version": "0.10.3",
+  "version": "0.11.0",
   "author": {
     "name": "Jason Matthew",
     "email": "jasonm4130@gmail.com"

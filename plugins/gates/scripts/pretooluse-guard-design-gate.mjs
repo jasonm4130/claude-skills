@@ -10,12 +10,12 @@
 //
 // A PreToolUse hook cannot see the conversation, so it cannot know whether a design
 // was approved (the session model / "approval" is NOT in stdin or env — same
-// constraint the workflow-model-guard documents). So this hook does NOT try to gate
+// constraint the workflow-model guard documents). So this hook does NOT try to gate
 // arbitrary edits on hidden state. It gates the ONE action that is both high-signal
 // and rare — a new-project *scaffold* command — and emits `ask`, routing the
 // checkpoint to the human, who CAN see whether a design happened. Stateless,
-// fail-open, no flag files: the same philosophy as the sibling guard plugins, and
-// `ask` (not `deny`) for the same reason workflow-model-guard asks on un-editable
+// fail-open, no flag files: the same philosophy as the sibling gates, and
+// `ask` (not `deny`) for the same reason the workflow-model guard asks on un-editable
 // named workflows — a deny the model can't resolve from hidden state would dead-end.
 //
 // Escape hatch: `design-gate:ack` anywhere in the command bypasses (self-documents

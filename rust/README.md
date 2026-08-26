@@ -1,15 +1,15 @@
 # ccguard — compiled PreToolUse guards
 
-One Rust binary implementing three hooks, committed into the plugins that use it.
-A **pilot**, deliberately scoped: `design-gate-guard` and `workflow-model-guard`
-only. Every other plugin's hooks remain `.mjs` and are not affected.
+One Rust binary implementing three of the `gates` plugin's four hooks, committed
+into that plugin. A **pilot**, deliberately scoped: the docs-sync gate and every
+other plugin's hooks remain `.mjs` and are not affected.
 
 ```
 ccguard <subcommand> [fallback.mjs]
 
-ccguard design-gate      # design-gate-guard  — PreToolUse, matcher Bash
-ccguard agent-model      # workflow-model-guard — PreToolUse, matcher Agent
-ccguard workflow-model   # workflow-model-guard — PreToolUse, matcher Workflow
+ccguard design-gate      # gates — PreToolUse, matcher Bash
+ccguard agent-model      # gates — PreToolUse, matcher Agent
+ccguard workflow-model   # gates — PreToolUse, matcher Workflow
 ```
 
 The optional second argument is the `.mjs` guard to hand a payload to when the
@@ -27,12 +27,12 @@ Measured on an M-series Mac, median of 20 runs, real payloads:
 | `agent-model` | 35.7ms | **3.1ms** |
 
 A `node -e ""` cold start alone is 24.9ms, so ~78% of what the JS guards cost was
-paying for the interpreter, not doing the work. These two plugins were chosen
+paying for the interpreter, not doing the work. These three guards were chosen
 because they are the *lowest-churn* scripts in the repo (12 commits across 2.5
 months) and the *highest fire-rate* hooks — `design-gate` runs on every Bash call,
-`agent-model` on every Agent dispatch — and because neither shells out to git.
-`docs-sync-guard` was excluded for the opposite reason: git subprocesses dominate
-its 61ms, so compiling it would buy a third of what it buys here. `handoff` was
+`agent-model` on every Agent dispatch — and because neither shells out to git. The
+docs-sync gate was excluded for the opposite reason: git subprocesses dominate its
+61ms, so compiling it would buy a third of what it buys here. `handoff` was
 excluded because 25 of the repo's 58 script-touching commits are its, and every
 one of those would mean rebuilding and re-committing a binary.
 
@@ -52,10 +52,12 @@ lives in git.
 
 Two consequences worth being explicit about:
 
-- **It is committed once per consuming plugin** (`plugins/*/bin/ccguard`), because
-  plugins cannot share files — the same constraint that forces one duplicated
-  `lib.mjs` copy per plugin. At 377KB that is cheap, but it is why binary size, not compile
-  ergonomics, drove the language and dependency choices.
+- **It is committed once per consuming plugin** — today exactly one,
+  `plugins/gates/bin/ccguard`. Plugins cannot share files (the same constraint that
+  forces one duplicated `lib.mjs` copy per plugin), so a second consumer would mean a
+  second 377KB copy. Consolidating the three guard plugins into `gates` removed the
+  one duplicate that existed. Size, not compile ergonomics, drove the language and
+  dependency choices for exactly that reason.
 - **Delivery via `git clone` means no `com.apple.quarantine` xattr**, so Gatekeeper's
   unidentified-developer path is not involved. The toolchain ad-hoc-signs the
   binary (arm64 macOS requires at least that) and the signature is embedded in the
@@ -79,13 +81,11 @@ locally, and the `rust-guards` CI job builds fresh and compares.
 cargo build --release --manifest-path rust/Cargo.toml
 TARGET=$(cargo metadata --format-version 1 --no-deps --manifest-path rust/Cargo.toml \
   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).target_directory))')
-for p in design-gate-guard workflow-model-guard; do
-  cp "$TARGET/release/ccguard" "plugins/$p/bin/ccguard"
-  chmod +x "plugins/$p/bin/ccguard"
-done
+cp "$TARGET/release/ccguard" plugins/gates/bin/ccguard
+chmod +x plugins/gates/bin/ccguard
 ```
 
-Then bump both plugins (`node scripts/bump-plugin.mjs <plugin> patch`) — `bin/` is
+Then bump the plugin (`node scripts/bump-plugin.mjs gates patch`) — `bin/` is
 shipped payload, so the version-bump gate requires it.
 
 ## Equivalence with the `.mjs` guards
@@ -100,7 +100,7 @@ and each mechanism handles exactly one of them.
 
 The `||` covers a binary that never executes (127 missing, 126 wrong
 architecture). Stdin is untouched in that case, so node reads the payload and the
-guard works normally — this is what keeps the plugins working on Linux and Intel
+guard works normally — this is what keeps the plugin working on Linux and Intel
 Macs. Still shell form, so every argument in
 `scripts/hook-runtime-guard.test.mjs` continues to apply.
 
