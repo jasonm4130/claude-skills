@@ -151,6 +151,10 @@ serializer key ordering.
   `aarch64-apple-darwin`. Elsewhere the `||` fallback runs node, so nothing breaks
   — it is just not faster. A universal binary would double the committed size;
   worth revisiting only if someone actually needs it.
+- **Does not grow to cover the remaining `.mjs` hooks.** Every hook entrypoint in the
+  repo was benchmarked on 2026-08-26 ([results](../docs/research/2026-08-26-hook-latency-benchmark.md))
+  and none is both on a PreToolUse/PostToolUse hot path and above ~40ms — the only two
+  hooks past 40ms are git-bound Stop hooks a port would barely speed up.
 - **Does not touch `sdd.mjs` or `fanout.mjs`.** Those run inside Claude Code's
   embedded JS sandbox against an injected `agent()` global. They can never be
   compiled without Claude Code itself growing a second runtime.
