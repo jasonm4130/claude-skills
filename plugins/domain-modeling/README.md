@@ -56,8 +56,8 @@ data directory (each claim names its repo in the file body, so
 ## Boundaries
 
 - **Not `adr`** — decisions and trade-offs are ADRs, not glossary terms.
-- **Not `codebase-design`** — that skill's vocabulary (module, interface, seam) is
-  *architecture* language; `CONTEXT.md` is *domain* language.
+- **Not architecture** — module, interface, and seam are *architecture* language;
+  `CONTEXT.md` is *domain* language.
 - **Not a spec** — no implementation details in `CONTEXT.md`.
 
 ## Files

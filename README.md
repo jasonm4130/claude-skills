@@ -15,7 +15,6 @@ Add the marketplace once, then install the plugins you want.
 |---|---|---|---|
 | `adr` | Intent → grounded, cited, build-ready ADR, handed to the SDD loop | – | `/plugin install adr@jasonm4130-claude-skills` |
 | `claude-design` | Paste-ready Claude Design brief + the Claude Code driving path (`/design`, `/design-sync`) | – | `/plugin install claude-design@jasonm4130-claude-skills` |
-| `codebase-design` | Deep-module design vocabulary — interface/seam/depth, the deletion test, tiered design-it-twice | – | `/plugin install codebase-design@jasonm4130-claude-skills` |
 | `codex-review` | Cross-provider plan/design review via OpenAI Codex (Terra) | Node 18+ · [Codex CLI](https://github.com/openai/codex) | `/plugin install codex-review@jasonm4130-claude-skills` |
 | `design-gate-guard` | PreToolUse gate asking before a new-project scaffold runs ahead of an approved design | – on arm64 macOS · Node 18+ elsewhere | `/plugin install design-gate-guard@jasonm4130-claude-skills` |
 | `docs-sync-guard` | Blocking git-commit gate against docs drift, plus a non-blocking consolidation audit triggered by accumulated commits | Node 18+ | `/plugin install docs-sync-guard@jasonm4130-claude-skills` |
@@ -51,6 +50,7 @@ and remove the data directory by hand if you want it gone.
 | Removed | Date | Replaced by | What to do |
 |---|---|---|---|
 | `deep-dive` (and its earlier name `deep-research`) | 2026-08-26 | Claude Code's built-in `/deep-research` | Uninstall. The built-in now inherits the session model instead of pinning Opus, and votes on claims adversarially — the two things this plugin existed to add (verified 2026-08-26). |
+| `codebase-design` | 2026-08-26 | Nothing | Uninstall. The 2026-08-03 ADR kept it on the condition that an imperative hand-off from `brainstorming` produce invocations by 2026-08-24; it was still at zero, so the review clause fired. The design vocabulary it carried is native to Claude — `brainstorming` and `test-driven-development` now make their boundary and seam points directly. |
 
 ## Repo layout
 
@@ -138,6 +138,6 @@ MIT — see `LICENSE`.
 
 ## Acknowledgements
 
-`codebase-design` is adapted from Matt Pocock's [`skills`](https://github.com/mattpocock/skills) (MIT); the full notice is in that plugin's own README and SKILL.md.
+The retired `codebase-design` plugin (removed 2026-08-26, see the table above) was adapted from Matt Pocock's [`skills`](https://github.com/mattpocock/skills) (MIT).
 
 The retired `adversarial-agents` plugin (removed 2026-08-03 after zero invocations in ten weeks — `codex-review` occupies the same niche cross-family) was prompted by Matt Pocock's [`grill-me`](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me), and drew its panel-of-personas + severity-promotion pattern from Alireza Rezvani's [adversarial-reviewer](https://github.com/alirezarezvani/claude-skills) and zscole's [adversarial-spec](https://github.com/zscole/adversarial-spec).

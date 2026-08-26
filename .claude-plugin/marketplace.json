@@ -46,25 +46,6 @@
       "category": "productivity"
     },
     {
-      "name": "codebase-design",
-      "source": "./plugins/codebase-design",
-      "description": "Shared vocabulary and discipline for designing deep modules — a lot of behaviour behind a small interface at a clean seam, testable through that interface. Glossary, the deletion test, seam discipline, and model-tiered design-it-twice. Adapted from mattpocock/skills (MIT).",
-      "version": "0.2.0",
-      "author": {
-        "name": "Jason Matthew"
-      },
-      "license": "MIT",
-      "keywords": [
-        "codebase-design",
-        "deep-modules",
-        "interface-design",
-        "seam",
-        "testability",
-        "claude-code"
-      ],
-      "category": "productivity"
-    },
-    {
       "name": "codex-review",
       "source": "./plugins/codex-review",
       "description": "Cross-provider adversarial plan/design-doc review via OpenAI Codex (GPT-5.6 Terra): verdict-loop protocol, atomic chain guard, cross-repo decision-gate log.",
@@ -125,7 +106,7 @@
       "name": "domain-modeling",
       "source": "./plugins/domain-modeling",
       "description": "Actively build and sharpen a project's ubiquitous language — an opinionated CONTEXT.md glossary — by challenging terms, disambiguating overloaded words, and stress-testing domain relationships. Cross-references adr for decision records. Adapted from mattpocock/skills (MIT).",
-      "version": "0.2.2",
+      "version": "0.3.0",
       "author": {
         "name": "Jason Matthew"
       },
@@ -231,7 +212,7 @@
       "name": "superpowers-core",
       "source": "./plugins/superpowers-core",
       "description": "Owned fork of the superpowers process skills (brainstorming, systematic-debugging, writing-plans, writing-skills, test-driven-development) plus the using-skills dispatcher.",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "author": {
         "name": "Jason Matthew"
       },
