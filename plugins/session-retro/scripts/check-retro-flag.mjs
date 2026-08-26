@@ -175,13 +175,14 @@ if (worthyCount >= minSessions && daysSince >= minDays) {
   } catch {
     process.exit(0);
   }
-  // Winner sweeps previous days' markers (and the legacy one), best-effort.
+  // Winner sweeps STRICTLY OLDER day markers (and the legacy one), best-effort.
+  // Older-only, not "not mine": a cross-midnight straggler (RETRO_EOD_HOUR=0 —
+  // claim yesterday's marker at 23:59, sweep at 00:01) must not delete the new
+  // day's freshly-claimed marker. YYYY-MM-DD compares lexicographically.
   try {
     for (const f of readdirSync(dataDir)) {
-      if (
-        (f.startsWith("eod-offer-") && f !== `eod-offer-${today}.txt`) ||
-        f === "last-eod-offer.txt"
-      ) {
+      const m = /^eod-offer-(\d{4}-\d{2}-\d{2})\.txt$/.exec(f);
+      if ((m && m[1] < today) || f === "last-eod-offer.txt") {
         try {
           unlinkSync(path.join(dataDir, f));
         } catch {

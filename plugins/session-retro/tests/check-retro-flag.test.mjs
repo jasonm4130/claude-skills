@@ -308,6 +308,31 @@ test("EOD fires: yesterday's offer does not suppress today's (calendar day, not 
   );
 });
 
+// The sweep is older-only: a cross-midnight straggler (RETRO_EOD_HOUR=0) that
+// claimed yesterday must not delete the new day's freshly-claimed marker.
+test("EOD sweep never deletes a newer day's marker", async (t) => {
+  const tmp = mkTmp();
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeThreeWorthy(tmp);
+  writeFileSync(path.join(tmp, "eod-offer-2026-08-27.txt"), "");
+
+  const { code, stdout } = await run(
+    JSON.stringify({ session_id: "test-eod-newer" }),
+    env(tmp),
+  );
+  assert.equal(code, 0);
+  assert.match(
+    JSON.parse(stdout).hookSpecificOutput.additionalContext,
+    /3 retro-worthy sessions/,
+    "tomorrow's marker does not suppress today",
+  );
+  assert.ok(
+    existsSync(path.join(tmp, "eod-offer-2026-08-27.txt")),
+    "a newer day's claim survives the sweep",
+  );
+});
+
 test("EOD silent: only 2 worthy entries", async (t) => {
   const tmp = mkTmp();
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
