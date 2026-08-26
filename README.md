@@ -22,7 +22,7 @@ Add the marketplace once, then install the plugins you want.
 | `docs-sync-guard` | Blocking git-commit gate against docs drift, plus a non-blocking consolidation audit triggered by accumulated commits | Node 18+ | `/plugin install docs-sync-guard@jasonm4130-claude-skills` |
 | `domain-modeling` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms; offers one once per repo that lacks it | Node 18+ | `/plugin install domain-modeling@jasonm4130-claude-skills` |
 | `frontend-design` | Light-inline design guidance, or a paste-ready browser brief for wide/detailed work | – | `/plugin install frontend-design@jasonm4130-claude-skills` |
-| `handoff` | Context-fill-triggered handoff doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
+| `handoff` | On-demand `/handoff` resume doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
 | `session-retro` | Session retrospectives that capture learnings to memory | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
 | `subagent-driven-development` | Deterministic workflow-driven implement/review/fix loop | – | `/plugin install subagent-driven-development@jasonm4130-claude-skills` |
@@ -40,13 +40,6 @@ Full details per plugin: see `plugins/<name>/README.md`.
 > the Codex CLI, authenticated. The `engines` field some `plugin.json` manifests carry is
 > informational only — `claude plugin validate` confirms Claude Code does not read or
 > enforce it, so it is not a substitute for this table.
->
-> The handoff plugin also needs a one-time `statusLine` wire-up:
-> `node "$(ls -d ~/.claude/plugins/cache/jasonm4130-claude-skills/handoff/*/scripts/setup.mjs | sort -V | tail -1)"`
-> (the setup script installs a version-agnostic wrapper that resolves the active,
-> non-orphaned version at runtime, so upgrades and rollbacks don't break it; whichever
-> cached `setup.mjs` this picks writes the same wrapper). Skip this step and the next
-> session prints the same command once, as a reminder.
 
 ## Repo layout
 

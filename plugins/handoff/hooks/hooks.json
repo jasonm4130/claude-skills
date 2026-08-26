@@ -1,16 +1,5 @@
 {
   "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/check-handoff-flag.mjs\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "hooks": [

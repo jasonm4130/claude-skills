@@ -1,45 +1,17 @@
 # handoff
 
-Context-fill-triggered handoff skill — writes a structured resume document
-when your context window fills up, and auto-loads it in the next session.
+A `/handoff` skill that writes a structured resume document for the current session,
+plus a SessionStart hook that auto-loads it in the next one.
 
 ## What it does
 
-1. **Monitors context fill** via a statusLine command that renders a color-coded,
-   adaptive status line and detects when context crosses a configurable threshold
-   (default 70%).
-
-   The line composes up to four segments — identity/branch/dirty, context bar, model,
-   and rate-limits — and reads context from the transcript first (stable, once-per-turn)
-   rather than the volatile per-request stdin frame; stdin's `current_usage` is the
-   fallback. It stays calm by default: dirty count, rate-limit windows, and the
-   token-count suffix appear only when actually noteworthy (dirty > 0, a window ≥50%
-   used, tokens when the bar is red). The whole line best-effort fits the terminal width
-   (via `COLUMNS`, populated from CC 2.1.153+; a 120-column budget otherwise) by
-   progressively dropping rate-limits, then dirty, then shortening the model name, then
-   clamping identity/branch — the context % is never dropped. Git branch + dirty come
-   from a `spawnSync` shell-out that degrades to omitting the whole git segment on any
-   failure, so it never takes the bar down.
-
-   Each nudge is **idempotent per band**: an atomic exclusive-create marker (not a lock)
-   guarantees a band fires at most once no matter how many invocations race. A band also
-   resets on a real decrease in context, not just on dropping below the threshold, so a
-   `/compact` landing above the threshold still lets the next climb re-nudge. Overlapping
-   invocations replay the previous render — but that guard is a **performance guard**,
-   not a mutex: it never breaks a lock on age alone or one whose holder is alive, and
-   correctness does not depend on it (statusLine has no documented timeout).
-2. **Nudges escalate with context** — a nudge fires on every 10%-point band
-   entered at or above the threshold (e.g. 70%, then again at 80%, then again
-   at 90%), not just once. Marathon sessions that sail past the first nudge
-   still get re-nudged as they climb. Each nudge is delivered as an
-   agent-directed `additionalContext` injection on the next user prompt, with
-   wording that gets more urgent near the top of the window (see below).
-3. **`/handoff` skill** — the agent writes a structured `.claude/handoffs/<ts>-<slug>.md`
-   document covering current state, failed approaches, key decisions, modified files,
-   blockers, and the next concrete runnable step.
-4. **Auto-loads on next session** — after `/handoff`, a `.pending` marker is written.
-   The SessionStart hook reads it and injects the handoff as context so the next
-   session resumes seamlessly. The marker expires after 24 hours.
+1. **`/handoff` skill (manual, on demand)** — you run it. The agent writes
+   `.claude/handoffs/<ISO-timestamp>-<slug>.md` covering current state, failed
+   approaches, key decisions, modified files, blockers, and the next concrete
+   runnable step, then writes a `.pending` marker naming that file.
+2. **Auto-loads on next session** — the SessionStart hook reads `.pending` and injects
+   the handoff as context, so a `/clear` or a fresh session resumes where you stopped.
+   The marker expires after 24 hours.
 
    The marker may only name a **bare filename** inside `.claude/handoffs/`, and the
    file is opened with `O_NOFOLLOW | O_NONBLOCK` — so a marker naming `../../.env`, a
@@ -48,6 +20,15 @@ when your context window fills up, and auto-loads it in the next session.
    verify who *wrote* a handoff: a repo that commits its own handoff file can still get
    that text into your context, so treat handoffs in an untrusted checkout with the same
    suspicion as any other file in it.
+
+There is **no automatic trigger**. Earlier versions shipped a statusLine script that
+watched context fill and nudged the agent to hand off at a threshold. That path only
+ever fired through a user-configured `statusLine`, it never ran end-to-end in practice,
+and it was removed in 0.11.0 along with its setup helper. Run `/handoff` when you want
+one — typically when you are deliberately stopping: ending for the day, switching
+machines, or clearing before a new line of work. Compaction carries an ordinary session
+forward on its own; what a handoff adds is the "what we tried" record no summary
+reproduces.
 
 ## Prerequisites
 
@@ -62,127 +43,19 @@ when your context window fills up, and auto-loads it in the next session.
 /plugin install handoff@jasonm4130-claude-skills
 ```
 
-After install, run the one-time `setup.mjs` helper to wire the context-fill bar into
-your user-level `statusLine`:
-
-```bash
-node "$(ls -d ~/.claude/plugins/cache/jasonm4130-claude-skills/handoff/*/scripts/setup.mjs | sort -V | tail -1)"
-```
-
-Whichever cached `setup.mjs` this glob picks is fine: every version writes the same
-version-agnostic wrapper, and the wrapper resolves the active, non-orphaned plugin version
-at runtime — so a rollback is honored even if the glob points at a newer, orphaned `setup.mjs`.
-
-If you skip this step, the SessionStart hook detects it and prints this same command as a
-one-time reminder — see "Setup reminder" below.
-
-The setup script:
-
-1. Reads (or creates) `~/.claude/settings.json`.
-2. Backs the current file up to `~/.claude/settings.json.pre-handoff.bak`.
-3. Writes a stable wrapper at `~/.claude/handoff-statusline.mjs` that
-   auto-resolves the highest installed plugin version at run time.
-4. Writes a `statusLine` entry pointing at that stable wrapper.
-5. Tells you to restart Claude Code.
-
-Because the statusLine now points at the stable wrapper rather than a
-version-specific path, **plugin upgrades no longer require re-running setup**.
-The wrapper picks up the new version automatically on the next Claude Code restart.
-
-If you already have a custom `statusLine` configured, setup will refuse to overwrite
-it. Re-run with `--force` if you want to replace it, or merge manually — see "Existing
-statusLine" below.
-
-### Existing statusLine
-
-If you already have a `statusLine` configured (e.g., a custom HUD), you will need
-to merge the outputs. Composable statusLine (running multiple commands and combining
-output) is not yet supported by Claude Code. For now, the options are:
-
-- Replace your existing statusLine with this plugin's script, or
-- Run your existing script from inside `status-and-flag.mjs` and append its output.
-
-Composable statusLine support is tracked as a follow-up.
-
-### Setup reminder
-
-The context-fill nudge only ever fires through the `statusLine`, so a session where it isn't
-wired up looks installed but silently never nudges. The `SessionStart` hook
-(`load-pending-handoff.mjs`) checks `~/.claude/settings.json` for a handoff `statusLine` —
-either the stable wrapper or a pre-wrapper versioned path both count as configured — and, if
-neither is present, prints the setup one-liner once as an `additionalContext` reminder.
-
-- **One-time, not periodic:** a marker at `~/.claude/.handoff-setup-hinted` records that the
-  reminder fired; it is not re-shown on later sessions. Delete that file (or re-install into
-  a fresh `~/.claude`) to see the reminder again.
-- **Fails open:** if `settings.json` is absent, unreadable, or not valid JSON, the hook never
-  blocks or errors the session — an absent file is treated as "not configured" (so the
-  reminder fires); an unreadable/unparseable file is treated as indeterminate and stays
-  silent, rather than risk a false-positive nag.
-- **Never fires on a refused or poisoned `.pending` marker.** That silence is a security
-  property, not an oversight — see "Why a handoff must never be committed" below.
-- The hook never writes to `settings.json` itself; only `setup.mjs` does that.
-
-## Configuration
-
-| Env var | Default | Description |
-|---|---|---|
-| `HANDOFF_THRESHOLD_PCT` | `70` | Context % at which to fire the nudge |
-| `HANDOFF_EFFECTIVE_MAX_TOKENS` | _(unset)_ | Token ceiling to compute pct against — mirror your `autoCompactWindow` setting. When set, a JSONL transcript fallback is used if `current_usage` is absent or all-zero in stdin. |
-| `CLAUDE_PLUGIN_DATA` | `<os.tmpdir>/handoff-data` | Where flag and last-pct state files are stored |
-
-Set env vars in `~/.claude/settings.json` under `"env"`:
-
-```json
-{
-  "env": {
-    "HANDOFF_THRESHOLD_PCT": "65",
-    "HANDOFF_EFFECTIVE_MAX_TOKENS": "400000"
-  }
-}
-```
-
-### Why `HANDOFF_EFFECTIVE_MAX_TOKENS`?
-
-Claude Code's statusLine stdin reports `used_percentage` against the model's
-**full context window** (e.g. 1M tokens for extended-context Sonnet), not
-against your `autoCompactWindow` setting. If you have
-`"autoCompactWindow": 400000` and you're 96% through your effective window,
-the bar would otherwise show ~35% and the nudge would fire far too late
-(or never).
-
-Setting `HANDOFF_EFFECTIVE_MAX_TOKENS` to match your `autoCompactWindow`
-makes the plugin compute pct from the input-only token fields in stdin's
-`context_window.current_usage` against your effective ceiling. The bar and
-nudge then track CC's native "% until auto-compact" indicator.
-
-When unset (or 0 / non-numeric / negative), the plugin falls back to the raw
-`used_percentage` field — same behavior as v0.2.0.
-
-This is a workaround for upstream
-[anthropics/claude-code#62210](https://github.com/anthropics/claude-code/issues/62210)
-(stdin doesn't expose `autoCompactWindow` or a pre-computed
-"% until auto-compact"). Tracked locally as
-[issue #4](https://github.com/jasonm4130/claude-skills/issues/4).
+No setup step. The skill and the SessionStart hook are live as soon as the plugin is
+installed and Claude Code has restarted.
 
 ## Example flow
 
-1. You work through a session. Context climbs.
-2. At 70%, the status bar turns red: `claude-skills ⎇main · ███████░░░ 71% · Sonnet 5`.
-   On your next prompt,
-   the agent gets an instruction to wrap the current step and run `/handoff`,
-   and suggest `/clear` to you.
-3. You keep going — a long session sails past 70%. At 80% and again at 90%
-   the nudge re-fires (once per 10%-point band), so it isn't a one-shot that
-   gets missed in a marathon session. Past 85%, the wording escalates: the
-   agent is told to run the handoff skill **now**, stop starting new work, and
-   tell you to `/clear`.
-4. You run `/handoff auth-token-bug`.
-5. The agent writes `.claude/handoffs/2026-05-25T14-32-00-auth-token-bug.md`.
-6. You run `/clear`.
-7. Next session starts — the SessionStart hook auto-loads the handoff:
+1. You work through a session and decide to stop.
+2. You run `/handoff auth-token-bug`.
+3. The agent writes `.claude/handoffs/2026-05-25T14-32-00-auth-token-bug.md` and a
+   `.pending` marker naming it.
+4. You run `/clear`, or come back tomorrow.
+5. The SessionStart hook auto-loads the handoff:
    > "[handoff] Loading pending handoff from previous session: ..."
-8. The agent resumes in context.
+6. The agent resumes in context.
 
 ### Why a handoff must never be committed (and what happens if one is)
 
@@ -207,94 +80,14 @@ The consequence, stated plainly: **if you commit your own handoffs, they will st
 That is the intended trade — the loader cannot distinguish your committed handoff from a hostile one,
 and guessing wrong in that direction is the whole vulnerability.
 
-### Nudge wording tiers
-
-| Context % | Wording |
-|---|---|
-| threshold – 84% | `[handoff] Context at <pct>% (past threshold). Compaction handles this automatically — keep working. Mention the handoff:handoff skill only if the user is winding the session down.` |
-| ≥ 85% | `[handoff] Context at <pct>%. Compaction will carry this session forward on its own — a handoff is NOT needed to survive it, so do not interrupt the current task. If the user is deliberately stopping here or switching machines, offer the handoff:handoff skill (and /clear afterwards).` |
-
-Both tiers are offers, not stop-work orders. Earlier versions told the agent to
-run the handoff immediately and start nothing new, which suited a harness where
-auto-compact ended the useful session. Current Claude Code carries the compaction
-summary plus the remaining unsummarized context into the next window, so the
-cliff those tiers guarded against is gone and interrupting a task to write a
-handoff costs more than it saves. What survives is the deliberate stop — ending
-for the day, switching machines — where the skill's "What we tried" section still
-records what a compaction summary does not reproduce.
-
-To turn the automatic nudge off entirely while keeping the status line and the
-on-demand `/handoff` skill, set `HANDOFF_THRESHOLD_PCT` to a value the bar cannot
-reach (e.g. `999`).
-
-### Band-crossing semantics
-
-The flag fires on every 10%-point band entered at or above the threshold —
-e.g. with the default 70% threshold: 70, 80, 90. Moving within a band (72% →
-75%) does not re-fire; entering a new band (75% → 81%) does, even if a
-previous band's nudge was already consumed. Below the threshold, no nudge
-fires regardless of band movement.
-
-Bands are computed relative to the configured threshold, not absolute
-deciles — so a non-decile `HANDOFF_THRESHOLD_PCT` (e.g. 75) still fires its
-first nudge as soon as context crosses 75%, then again at 85%, 95%, etc.,
-rather than waiting for the next absolute 10%-boundary.
-
-### Concurrency and caching
-
-- **Nudges are idempotent per band.** An atomic exclusive-create marker
-  (`handoff-fired-<sid>-t<thr>-b<N>`) — not a lock — is what guarantees a band fires at
-  most once, no matter how many statusline invocations race to claim it. Dropping below
-  the threshold (a fresh session, or a `/compact`) clears the marker ladder, so a
-  compact-then-refill still escalates again.
-- **The transcript JSONL fallback is cached** on the transcript's path + mtime + size, so
-  the expensive full-file parse only runs when the transcript has actually changed since
-  the last invocation.
-- **The overlap guard is a performance guard** (don't pile up; replay the cached render
-  instead of recomputing), not a mutex. It never breaks a lock on age alone and never
-  breaks one whose holder is alive — but it is explicitly not race-free, and nudge
-  correctness does not depend on it.
-- **No timeout claim.** statusLine is not a hook and has no documented invocation timeout;
-  nothing here rests on Claude Code killing a slow run.
-
 ## Troubleshooting
 
-**No nudge firing even though context is high:**
-- Check that `status-and-flag.mjs` is being called (verify statusLine wiring;
-  re-run `setup.mjs` if unsure).
-- Check the last-pct file is updating: `cat $TMPDIR/handoff-data/last-context-pct-<session-id>.txt`
-  (or wherever `CLAUDE_PLUGIN_DATA` points).
-- **Writer and reader resolve different directories, by design of the host.** The
-  statusLine script is a top-level `settings.json` command, not a plugin hook, so
-  it never receives `CLAUDE_PLUGIN_DATA` and lands on the `os.tmpdir()` fallback;
-  `check-handoff-flag.mjs` is a genuine `UserPromptSubmit` hook and does receive
-  it. From install (2026-05-25) until 0.10.0 the flag was therefore written to one
-  directory and looked for in another, and the nudge never fired once — 7 orphaned
-  `handoff-nudge-*.flag` files in tmpdir against an empty plugin data dir. Readers
-  now check every candidate (`dataDirCandidates` in `lib.mjs`). If you are
-  debugging a missed nudge, look in **both** places before concluding it wasn't
-  written.
-- Make sure the threshold env var is not set higher than the current context %.
-- If the bar shows a much lower % than CC's native "% until auto-compact",
-  set `HANDOFF_EFFECTIVE_MAX_TOKENS` to match your `autoCompactWindow` — see
-  Configuration above.
-- If `current_usage` is missing from stdin (can happen early in a session),
-  the bar will fall back to reading the transcript JSONL for the last assistant
-  turn's token count. If both are unavailable (no assistant turns yet), the bar
-  renders `?`.
-
-**Nudge fires repeatedly on every prompt:**
-- The `UserPromptSubmit` hook (`check-handoff-flag.mjs`) should delete the flag after consuming it.
-- Check for errors in the hook: run `check-handoff-flag.mjs` manually with test input.
-- If `CLAUDE_PLUGIN_DATA` is unset and the tmpdir fallback is not writable, the flag may
-  not be created or deleted correctly.
-- Note: re-firing at each new 10%-point band (70/80/90) is expected
-  behavior, not a bug — see "Band-crossing semantics" above.
-
-**Handoff not auto-loading in new session:**
+**Handoff not auto-loading in a new session:**
 - Confirm `.claude/handoffs/.pending` was written (check after running `/handoff`).
 - If more than 24 hours have passed since the handoff was written, `.pending` is
   deleted as stale. The handoff file itself still exists — `cat` it manually.
+- If the handoff or the `.pending` marker is committed to git, the loader refuses it by
+  design — see above.
 - The new session's events log starts empty. `/retro` will quick-skip (correct behavior).
 
 **Note:** After a resumed session, the `session-retro` plugin's `/retro` quick-skip
@@ -305,13 +98,5 @@ gives you context, but the retro waits until you've actually done work in the ne
 
 | File | Location | Description |
 |---|---|---|
-| `handoff-statusline.mjs` | `~/.claude/` | Stable wrapper script that auto-resolves the latest installed plugin version (written by setup.mjs) |
-| `.handoff-setup-hinted` | `~/.claude/` | One-time marker: the "run setup.mjs" reminder has already fired (written by load-pending-handoff.mjs) |
-| `last-context-pct-<sid>.txt` | `$CLAUDE_PLUGIN_DATA` | Tracks last seen context % for band-crossing detection |
-| `handoff-nudge-<sid>.flag` | `$CLAUDE_PLUGIN_DATA` | Nudge flag, consumed by UserPromptSubmit; re-written on each new 10%-point band |
-| `handoff-fired-<sid>-t<thr>-b<N>` | `$CLAUDE_PLUGIN_DATA` | Per-band claim marker — the atomic arbiter that makes a nudge fire at most once per band, however many invocations race. Cleared when context drops below the threshold. |
-| `transcript-usage-<sid>.json` | `$CLAUDE_PLUGIN_DATA` | Cached transcript parse, keyed on the transcript's path + mtime + size |
-| `statusline-inflight-<sid>.lock` | `$CLAUDE_PLUGIN_DATA` | In-flight marker for the (best-effort) overlap guard; breakable once past its lease AND its holder is provably gone — age alone never breaks it |
-| `last-render-<sid>.txt` | `$CLAUDE_PLUGIN_DATA` | Last rendered statusline output, replayed verbatim by overlapping invocations |
 | `<ts>-<slug>.md` | `$PROJECT_ROOT/.claude/handoffs/` | The handoff document (agent-authored) |
 | `.pending` | `$PROJECT_ROOT/.claude/handoffs/` | Auto-load marker for next session (24h TTL) |

@@ -2,38 +2,19 @@
 
 ## What this is
 
-A Claude Code plugin that watches context fill via a `statusLine` command and
-triggers a handoff suggestion at a configurable threshold, re-firing on every
-10%-point band crossed at or above it (70 → 80 → 90) with severity-tiered,
-agent-directed wording. Each band-nudge is idempotent under concurrency via an
-atomic claim marker. When triggered, the `/handoff` skill (agent-authored) writes
-a structured resume document to `$PROJECT_ROOT/.claude/handoffs/`. The next
-session's `SessionStart` hook auto-loads the document via `additionalContext`
-injection.
+A Claude Code plugin with one skill and one hook. The `/handoff` skill (agent-authored)
+writes a structured resume document to `$PROJECT_ROOT/.claude/handoffs/` and drops a
+`.pending` marker naming it; the next session's `SessionStart` hook auto-loads that
+document via `additionalContext` injection, subject to containment and provenance
+checks.
 
-The statusLine reads context from the transcript first (stable, once-per-turn)
-instead of the volatile per-request stdin frame — the fix for a bar that filled and
-emptied erratically mid-turn — and composes an adaptive line from up to four segments
-(identity/branch/dirty, context bar, model, rate-limits), calm by default and
-best-effort width-fit to the terminal.
-
-`setup.mjs` wires `statusLine` into `~/.claude/settings.json` and writes a stable
-wrapper at `~/.claude/handoff-statusline.mjs` that resolves the plugin version at
-run time, so plugin upgrades don't break the statusLine. Its contract: **the
-highest cached version that is not marked `.orphaned_at`.** Resolution stays
-dynamic because `settings.json` points at the wrapper by absolute path, but cache
-presence is not activation state — superseded and rolled-back versions stay on
-disk, so an unfiltered max would silently undo a rollback. All versions orphaned
-(i.e. uninstalled) renders `?`.
-
-The wrapper runs the resolved script **in-process** (`await import()`) rather than
-spawning a child. Spawning cost a second Node cold start on every render —
-measured 74.2ms → 40.1ms for byte-identical output, on the most frequently invoked
-script in the plugin, with Node startup ~30ms of the total. The resolved script
-reads stdin and writes stdout itself, so this is behaviourally equivalent to
-`stdio: "inherit"`; the import is awaited inside a `try/catch` that still renders
-`?`, and the path is converted with `pathToFileURL` because a bare absolute path is
-not a valid import specifier on Windows.
+Nothing here fires on its own. Through 0.10.3 the plugin also shipped a statusLine
+script (`status-and-flag.mjs`), a `UserPromptSubmit` nudge hook
+(`check-handoff-flag.mjs`), and a `setup.mjs` that wired the statusLine into
+`~/.claude/settings.json`. That trigger could only ever fire through a user-configured
+statusLine, and it never ran end-to-end. It was removed in 0.11.0. If a context-fill
+trigger is ever wanted again, it needs a mechanism that does not depend on the user's
+statusLine.
 
 ## Plugin structure
 
@@ -42,51 +23,25 @@ handoff/
 ├── .claude-plugin/
 │   └── plugin.json           — name, version, author, engines
 ├── hooks/
-│   └── hooks.json            — UserPromptSubmit + SessionStart
+│   └── hooks.json            — SessionStart only
 ├── scripts/
-│   ├── lib.mjs               — shared stdin/env/flag helpers; concurrency primitives (claimBand/resetBands, acquireInflightLock, cachedTranscriptUsage); adaptive-render helpers (pickContextTokens, shouldResetBands, gitBranchDirty, modelColor/selectRateLimits/tokensSuffix, visibleWidth/truncateEnd/assembleStatusLine)
-│   ├── status-and-flag.mjs   — statusLine: renders the adaptive line via assembleStatusLine and writes the nudge flag at threshold; nudges are idempotent per band (atomic claim marker, not a lock) and the ladder resets on a real decrease in context, not just on dropping below threshold; the overlap guard replays the last render when another invocation is in flight — a performance guard, not a mutex
-│   ├── check-handoff-flag.mjs— UserPromptSubmit: consumes flag → additionalContext. Resolves the flag across EVERY candidate data dir (`dataDirCandidates`), because the statusLine writer and this hook do not agree on one — see below
-│   ├── load-pending-handoff.mjs — SessionStart: loads .pending handoff → additionalContext
-│   └── setup.mjs             — one-time helper that wires statusLine into ~/.claude/settings.json
+│   ├── lib.mjs               — stdin/JSON/additionalContext helpers plus the containment
+│   │                           and provenance primitives (readContainedFile, dirContainedIn,
+│   │                           gitTracksFile)
+│   └── load-pending-handoff.mjs — SessionStart: loads .pending handoff → additionalContext
 ├── skills/
 │   └── handoff/
 │       └── SKILL.md          — /handoff skill definition
 ├── tests/
 │   ├── lib.test.mjs
-│   ├── status-and-flag.test.mjs
-│   ├── check-handoff-flag.test.mjs
-│   ├── load-pending-handoff.test.mjs
-│   ├── setup.test.mjs
-│   └── integration.test.mjs
+│   └── load-pending-handoff.test.mjs
 ├── README.md
 └── CLAUDE.md                 — this file
 ```
 
-## The data-dir split (0.10.0)
-
-`status-and-flag.mjs` runs as a top-level `statusLine` command through the
-`~/.claude/handoff-statusline.mjs` wrapper — **not** through the plugin hook
-runtime — so `CLAUDE_PLUGIN_DATA` is never set for it and `resolveDataDir` returns
-the `os.tmpdir()` fallback. `check-handoff-flag.mjs` is a real `UserPromptSubmit`
-hook and does get the env var. Two processes, two directories: the nudge flag was
-written to one and looked for in the other, and the plugin's core feature was
-silently dark from install (2026-05-25) until 0.10.0.
-
-The fix is on the reader: `dataDirCandidates()` returns the ordered candidate dirs
-and `check-handoff-flag.mjs` takes the flag from whichever has it. Writer-internal
-state (band markers, render cache, transcript-usage cache) keeps using
-`resolveDataDir` — it only needs to be self-consistent, never shared.
-
-**Anything new that crosses the statusLine↔hook boundary must use
-`dataDirCandidates`, not `resolveDataDir`.** `docs-sync-guard` hit the same class
-of bug and solved it differently (its defer marker lives in `.git/`); either
-approach works, but a bare `resolveDataDir` on both sides does not.
-
-Nudge text names the skill **plugin-qualified** (`handoff:handoff`). An
-unqualified name is one the model has to guess and it guesses wrong —
-`Skill(handoff)` returns `Unknown skill: handoff`. Enforced repo-wide by
-`scripts/repo-consistency.test.mjs`.
+Nudge text names a skill **plugin-qualified** (`handoff:handoff`). An unqualified name
+is one the model has to guess and it guesses wrong — `Skill(handoff)` returns
+`Unknown skill: handoff`. Enforced repo-wide by `scripts/repo-consistency.test.mjs`.
 
 ## Dependencies
 
@@ -102,25 +57,11 @@ Test scripts:
 bash scripts/run-node-tests.sh
 
 # Run a single test file
-node --test plugins/handoff/tests/status-and-flag.test.mjs
+node --test plugins/handoff/tests/load-pending-handoff.test.mjs
 
-# Manual statusLine smoke test
-echo '{"session_id":"dev","context_window":{"used_percentage":75}}' \
-  | node plugins/handoff/scripts/status-and-flag.mjs
-
-# Manual check-flag smoke test
-CLAUDE_PLUGIN_DATA=/tmp/test-handoff \
-  echo '{"session_id":"dev"}' | node plugins/handoff/scripts/check-handoff-flag.mjs
+# Manual loader smoke test (writes nothing unless .pending exists in <project>)
+echo '{"cwd":"/path/to/project"}' | node plugins/handoff/scripts/load-pending-handoff.mjs
 ```
-
-## Configuration env vars
-
-- `HANDOFF_THRESHOLD_PCT` — context % at which to fire the nudge (default `70`).
-- `HANDOFF_EFFECTIVE_MAX_TOKENS` — when set to a positive number, pct is
-  computed from `context_window.current_usage` input-token fields against
-  this ceiling instead of using stdin's `used_percentage`. Workaround for
-  upstream CC issue #62210 (stdin doesn't expose `autoCompactWindow`). See
-  README for details.
 
 ## Conventions
 
@@ -132,30 +73,15 @@ CLAUDE_PLUGIN_DATA=/tmp/test-handoff \
 - **`// @ts-check` at the top of every file**, with JSDoc `@typedef` for stdin
   payload shapes. Editors get IntelliSense without a build step.
 - Graceful degradation: any JSON parse error or missing input → `process.exit(0)`
-  silently (or `?` to stdout for the statusLine script).
-- Flag files are plain text, not JSON; the on-disk format is wire-compatible
-  with v0.1.0 bash scripts.
+  silently.
 - `additionalContext` output uses the full `hookSpecificOutput` envelope
   (Claude Code issue #53682 safe form).
 - Use `path.join`, never string concatenation, for cross-platform path
   correctness. Use `os.tmpdir()`, never `/tmp`.
-- No external services. Transcript JSONL parsing is permitted as a fallback for
-  context-bar derivation (`lib.mjs: lastAssistantUsageFromTranscript`, cached via
-  `cachedTranscriptUsage` on the transcript's path + mtime + size) —
-  stdlib only, no network.
-- **Nudge concurrency:** correctness rests on `claimBand()` — an atomic
-  exclusive-create marker per band, not a lock — so a band fires at most once no matter
-  how many statusline invocations race. The in-flight overlap guard (`acquireInflightLock`)
-  is a separate, explicitly best-effort **performance** guard (don't pile up; replay the
-  cached render); it is never a mutex, never breaks a lock on age alone, and statusLine has
-  no documented invocation timeout to lean on.
-- **Adaptive render:** context is read transcript-primary
-  (`pickContextTokens`) — the transcript's cached token sum when positive, else stdin's
-  `current_usage`, else the render bails to `?`. Git branch/dirty is a `spawnSync`
-  shell-out (`gitBranchDirty`, `GIT_TIMEOUT_MS`) that returns `null` on any failure (non-git
-  dir, missing git, timeout), and the caller omits the whole git segment rather than let it
-  take the bar down. Every segment — identity, model, rate-limits, dirty — degrades by
-  omission, never by rendering an empty/dangling separator. Width fitting is best-effort:
-  `COLUMNS` is only populated from Claude Code 2.1.153+, so an unset value falls back to a
-  120-column budget; `assembleStatusLine` then drops rate-limits, then dirty, then shortens
-  the model name, then clamps identity/branch — the context bar and `%` are never dropped.
+- No external services and no network.
+- **Loader safety is two independent checks, and both must stay.** `readContainedFile` /
+  `dirContainedIn` stop a marker reading files outside `.claude/handoffs/`;
+  `gitTracksFile` refuses anything the repo itself shipped, because a committed handoff
+  would otherwise be announced as the user's own prior session. The provenance check
+  resolves git from the handoffs directory, never from the project root — a hostile
+  parent can ship `.claude/handoffs/` as a submodule.
