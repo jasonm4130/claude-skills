@@ -1,12 +1,9 @@
 {
   "name": "superpowers-core",
-  "description": "Owned fork of the superpowers process skills (brainstorming, systematic-debugging, writing-plans, writing-skills, test-driven-development) plus the using-skills dispatcher.",
-  "version": "0.6.0",
+  "description": "Owned fork of the superpowers process skills: brainstorming, systematic-debugging, writing-plans, writing-skills, test-driven-development.",
+  "version": "0.7.0",
   "author": { "name": "Jason Matthew" },
   "contributors": [{ "name": "Jesse Vincent", "email": "jesse@fsck.com" }],
   "license": "MIT",
-  "keywords": ["skills", "process", "brainstorming", "tdd", "claude-code"],
-  "engines": {
-    "claude-code": ">=2.1.110"
-  }
+  "keywords": ["skills", "process", "brainstorming", "tdd", "claude-code"]
 }

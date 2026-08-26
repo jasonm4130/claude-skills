@@ -23,7 +23,7 @@ Add the marketplace once, then install the plugins you want.
 | `session-retro` | Session retrospectives that capture learnings to memory | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
 | `subagent-driven-development` | Deterministic workflow-driven implement/review/fix loop | – | `/plugin install subagent-driven-development@jasonm4130-claude-skills` |
-| `superpowers-core` | Owned fork of the superpowers process skills + the `using-skills` dispatcher | Node 18+ | `/plugin install superpowers-core@jasonm4130-claude-skills` |
+| `superpowers-core` | Owned fork of the superpowers process skills (brainstorming, writing-plans, TDD, systematic-debugging, writing-skills) | – | `/plugin install superpowers-core@jasonm4130-claude-skills` |
 | `workflow-model-guard` | PreToolUse guard nudging model tiering in high-fan-out Workflows | – on arm64 macOS · Node 18+ elsewhere | `/plugin install workflow-model-guard@jasonm4130-claude-skills` |
 | `writing-artifacts` | Positive writing system for durable artifacts (READMEs, ADRs, docs, runbooks) | – | `/plugin install writing-artifacts@jasonm4130-claude-skills` |
 
@@ -50,6 +50,7 @@ and remove the data directory by hand if you want it gone.
 |---|---|---|---|
 | `deep-dive` (and its earlier name `deep-research`) | 2026-08-26 | Claude Code's built-in `/deep-research` | Uninstall. The built-in now inherits the session model instead of pinning Opus, and votes on claims adversarially — the two things this plugin existed to add (verified 2026-08-26). |
 | `claude-design` | 2026-08-26 | `frontend-design` | Uninstall, and install `frontend-design` if you don't already have it. Its heavy path now carries the goal/layout/content/audience brief and the `/design-sync` design-system route directly — one skill instead of two that had to agree with each other. |
+| `superpowers-core`'s `using-skills` skill and its `SessionStart` hook | 2026-08-26 | Your own global `CLAUDE.md` | Keep `superpowers-core` installed — the five method skills are unchanged. The dispatcher kernel it used to inject every session now belongs in `~/.claude/CLAUDE.md`, which already loads at every session start; injecting it as well stated the same rule twice. Copy the rules you want there. Claude Code will stop prompting for the plugin's hook. |
 | `codebase-design` | 2026-08-26 | Nothing | Uninstall. The 2026-08-03 ADR kept it on the condition that an imperative hand-off from `brainstorming` produce invocations by 2026-08-24; it was still at zero, so the review clause fired. The design vocabulary it carried is native to Claude — `brainstorming` and `test-driven-development` now make their boundary and seam points directly. |
 
 ## Repo layout
