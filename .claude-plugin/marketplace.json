@@ -27,25 +27,6 @@
       "category": "productivity"
     },
     {
-      "name": "claude-design",
-      "source": "./plugins/claude-design",
-      "description": "Write great prompts/specs for Claude Design (claude.ai/design): a paste-ready design brief on the official goal/layout/content/audience framework, plus the Claude Code driving path (/design, /design-sync, the Claude Design MCP server, and the build handoff).",
-      "version": "0.1.0",
-      "author": {
-        "name": "Jason Matthew"
-      },
-      "license": "MIT",
-      "keywords": [
-        "claude-design",
-        "claude-ai-design",
-        "design-brief",
-        "design-sync",
-        "prototype",
-        "claude-code"
-      ],
-      "category": "productivity"
-    },
-    {
       "name": "codex-review",
       "source": "./plugins/codex-review",
       "description": "Cross-provider adversarial plan/design-doc review via OpenAI Codex (GPT-5.6 Terra): verdict-loop protocol, atomic chain guard, cross-repo decision-gate log.",
@@ -125,7 +106,7 @@
       "name": "frontend-design",
       "source": "./plugins/frontend-design",
       "description": "Frontend/UI design guidance, gated by scope: a light or surgical change gets inline principles; a wide-sweeping or highly-detailed design gets routed to Claude Design in the browser with a paste-ready design brief.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": {
         "name": "Jason Matthew"
       },

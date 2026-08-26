@@ -14,6 +14,18 @@ test("frontmatter names the frontend-design skill with a trigger-rich, negativel
   assert.match(s, /backend\/API\/data-model/);
 });
 
+// The built-in `design` skill builds a canvas of artboards the user tweaks by hand;
+// this skill puts design decisions into shipped code. Without the boundary in the
+// description, the two match the same "make me a landing page" phrasing.
+test("description disclaims the built-in design skill and names the browser route", () => {
+  const description = /description: '([\s\S]*?)'\n/.exec(s)?.[1].replace(/''/g, "'");
+  assert.ok(description, "description must be a single-quoted frontmatter scalar");
+  assert.match(description, /Do NOT use when the user wants a visual mockup, wireframe, canvas, or artboard/);
+  assert.match(description, /built-in `design` skill/);
+  assert.match(description, /applies design decisions to real code in the repo/);
+  assert.match(description, /claude\.ai\/design/);
+});
+
 test("documents the light/heavy scope gate and the light-path loop", () => {
   assert.match(s, /Light — design inline/);
   assert.match(s, /Heavy — hand off to the browser/);
@@ -25,19 +37,34 @@ test("documents the light/heavy scope gate and the light-path loop", () => {
   assert.match(s, /Work this loop:.*cut the AI tells.*self-critique/);
 });
 
-test("heavy path points to the dedicated claude-design skill for the best-in-class brief", () => {
-  assert.match(s, /claude-design/); // the sibling skill name (lowercase-hyphen), not just the product name
+// The claude-design plugin was folded in here; a pointer to it is now a dangling
+// reference to a skill nobody has installed.
+test("no dangling reference to the retired claude-design skill", () => {
+  assert.doesNotMatch(s, /claude-design/);
 });
 
-test("heavy path routes to Claude Design and emits the exact paste-ready brief template", () => {
+test("heavy path routes both destinations: the built-in canvas and the browser", () => {
   assert.match(s, /Claude Design/);
-  assert.match(s, /# Design brief: <feature>/);
-  assert.match(s, /\*\*Goal \/ job-to-be-done:\*\*/);
-  assert.match(s, /\*\*Users & context:\*\*/);
-  assert.match(s, /\*\*Constraints:\*\*/);
-  assert.match(s, /\*\*Screens \/ components:\*\*/);
-  assert.match(s, /\*\*Existing patterns to match:\*\*/);
-  assert.match(s, /\*\*References \/ inspiration:\*\*/);
+  assert.match(s, /claude\.ai\/design/);
+  assert.match(s, /built-in `design` skill/);
+});
+
+test("heavy path emits the paste-ready brief on the goal/layout/content/audience framework", () => {
+  assert.match(s, /# Design brief: <what you're building>/);
+  assert.match(s, /\*\*Goal\*\*/);
+  assert.match(s, /\*\*Audience\*\*/);
+  assert.match(s, /\*\*Layout \/ screens\*\*/);
+  assert.match(s, /\*\*Content\*\*/);
+  assert.match(s, /\*\*Visual direction\*\*/);
+  assert.match(s, /\*\*Constraints\*\*/);
+  assert.match(s, /\*\*Assets to attach\*\*/);
+  assert.match(s, /start simple, then layer in complexity/);
+});
+
+// The one Claude Design mechanic worth carrying over: a real design system beats
+// prose about one, and /design-sync is how a large repo hands its own components in.
+test("heavy path keeps the /design-sync design-system route", () => {
+  assert.match(s, /`\/design-sync`/);
 });
 
 test("light path carries a concrete anti-tell floor covering every named rule", () => {

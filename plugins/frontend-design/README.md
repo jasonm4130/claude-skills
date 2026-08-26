@@ -32,8 +32,11 @@ need) before doing any design work — any single "heavy" signal routes heavy.
   rhythm, hero discipline, grids that fit their content, one coherent theme per surface), explore 2–3
   concrete directions, then self-critique against templated defaults and the accessibility floor
   (responsive, visible focus, contrast).
-- **Heavy path** — hand off to **Claude Design** (claude.ai, in the browser) rather than iterate
-  wide-sweeping or highly-detailed visual work blind in a text loop. The skill emits a paste-ready
-  `# Design brief: <feature>` template (goal, users & context, constraints, screens/components,
-  existing patterns, references) filled from what's already known, and stops there — no duplicate
+- **Heavy path** — route it out of the terminal rather than iterate wide-sweeping or highly-detailed
+  visual work blind in a text loop. A mockup the user will tweak by hand goes to Claude Code's
+  built-in `design` skill; a surface that becomes code goes to **Claude Design**
+  (`claude.ai/design`, in the browser), where the skill emits a paste-ready `# Design brief:`
+  template on Anthropic's official **goal / layout / content / audience** framework (extended with
+  visual direction, constraints, and the assets to attach), tells you to attach the real design
+  system rather than describe it (`/design-sync` from Claude Code), and stops there — no duplicate
   inline mockups for the same surface.

@@ -14,7 +14,6 @@ Add the marketplace once, then install the plugins you want.
 | Plugin | Description | Requirements | Install command |
 |---|---|---|---|
 | `adr` | Intent → grounded, cited, build-ready ADR, handed to the SDD loop | – | `/plugin install adr@jasonm4130-claude-skills` |
-| `claude-design` | Paste-ready Claude Design brief + the Claude Code driving path (`/design`, `/design-sync`) | – | `/plugin install claude-design@jasonm4130-claude-skills` |
 | `codex-review` | Cross-provider plan/design review via OpenAI Codex (Terra) | Node 18+ · [Codex CLI](https://github.com/openai/codex) | `/plugin install codex-review@jasonm4130-claude-skills` |
 | `design-gate-guard` | PreToolUse gate asking before a new-project scaffold runs ahead of an approved design | – on arm64 macOS · Node 18+ elsewhere | `/plugin install design-gate-guard@jasonm4130-claude-skills` |
 | `docs-sync-guard` | Blocking git-commit gate against docs drift, plus a non-blocking consolidation audit triggered by accumulated commits | Node 18+ | `/plugin install docs-sync-guard@jasonm4130-claude-skills` |
@@ -50,6 +49,7 @@ and remove the data directory by hand if you want it gone.
 | Removed | Date | Replaced by | What to do |
 |---|---|---|---|
 | `deep-dive` (and its earlier name `deep-research`) | 2026-08-26 | Claude Code's built-in `/deep-research` | Uninstall. The built-in now inherits the session model instead of pinning Opus, and votes on claims adversarially — the two things this plugin existed to add (verified 2026-08-26). |
+| `claude-design` | 2026-08-26 | `frontend-design` | Uninstall, and install `frontend-design` if you don't already have it. Its heavy path now carries the goal/layout/content/audience brief and the `/design-sync` design-system route directly — one skill instead of two that had to agree with each other. |
 | `codebase-design` | 2026-08-26 | Nothing | Uninstall. The 2026-08-03 ADR kept it on the condition that an imperative hand-off from `brainstorming` produce invocations by 2026-08-24; it was still at zero, so the review clause fired. The design vocabulary it carried is native to Claude — `brainstorming` and `test-driven-development` now make their boundary and seam points directly. |
 
 ## Repo layout
