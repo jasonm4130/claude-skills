@@ -206,10 +206,9 @@ test("EOD offer fires: past RETRO_EOD_HOUR, 3 worthy, no offer today", async (t)
     /\d{3,}\+ days/,
     "no epoch-derived day count on the first-ever offer",
   );
-  assert.equal(
-    readFileSync(path.join(tmp, "last-eod-offer.txt"), "utf8").trim(),
-    TODAY,
-    "the offer records today's local date",
+  assert.ok(
+    existsSync(path.join(tmp, `eod-offer-${TODAY}.txt`)),
+    "the offer claims today's per-day marker",
   );
 });
 
@@ -227,7 +226,7 @@ test("EOD silent: before RETRO_EOD_HOUR", async (t) => {
   assert.equal(code, 0);
   assert.equal(stdout, "", "09:00 is before the default 16:00 gate");
   assert.ok(
-    !existsSync(path.join(tmp, "last-eod-offer.txt")),
+    !existsSync(path.join(tmp, `eod-offer-${TODAY}.txt`)),
     "a suppressed offer must not burn the day",
   );
 });
@@ -249,12 +248,12 @@ test("EOD env override: RETRO_EOD_HOUR=8 fires at 09:00", async (t) => {
   );
 });
 
-test("EOD silent: an offer was already made today", async (t) => {
+test("EOD silent: an offer was already claimed today", async (t) => {
   const tmp = mkTmp();
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
   writeThreeWorthy(tmp);
-  writeFileSync(path.join(tmp, "last-eod-offer.txt"), TODAY + "\n");
+  writeFileSync(path.join(tmp, `eod-offer-${TODAY}.txt`), "");
 
   const { code, stdout } = await run(
     JSON.stringify({ session_id: "test-eod-once" }),
@@ -264,6 +263,23 @@ test("EOD silent: an offer was already made today", async (t) => {
   assert.equal(stdout, "", "at most one offer per calendar day");
 });
 
+// Upgrade day: a pre-0.8.1 last-eod-offer.txt holding today's date still
+// suppresses, so upgrading mid-day cannot re-offer.
+test("EOD silent: legacy last-eod-offer.txt from today suppresses", async (t) => {
+  const tmp = mkTmp();
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeThreeWorthy(tmp);
+  writeFileSync(path.join(tmp, "last-eod-offer.txt"), TODAY + "\n");
+
+  const { code, stdout } = await run(
+    JSON.stringify({ session_id: "test-eod-legacy" }),
+    env(tmp),
+  );
+  assert.equal(code, 0);
+  assert.equal(stdout, "", "legacy same-day marker honored across upgrade");
+});
+
 // Calendar day, not a rolling 24h window: yesterday's 18:00 offer does not
 // suppress today's 17:00 one, 23 hours later.
 test("EOD fires: yesterday's offer does not suppress today's (calendar day, not 24h)", async (t) => {
@@ -271,7 +287,7 @@ test("EOD fires: yesterday's offer does not suppress today's (calendar day, not 
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
   writeThreeWorthy(tmp);
-  writeFileSync(path.join(tmp, "last-eod-offer.txt"), "2026-08-25\n");
+  writeFileSync(path.join(tmp, "eod-offer-2026-08-25.txt"), "");
 
   const { code, stdout } = await run(
     JSON.stringify({ session_id: "test-eod-newday" }),
@@ -282,9 +298,13 @@ test("EOD fires: yesterday's offer does not suppress today's (calendar day, not 
     JSON.parse(stdout).hookSpecificOutput.additionalContext,
     /3 retro-worthy sessions/,
   );
-  assert.equal(
-    readFileSync(path.join(tmp, "last-eod-offer.txt"), "utf8").trim(),
-    TODAY,
+  assert.ok(
+    existsSync(path.join(tmp, `eod-offer-${TODAY}.txt`)),
+    "today's marker claimed",
+  );
+  assert.ok(
+    !existsSync(path.join(tmp, "eod-offer-2026-08-25.txt")),
+    "the winner sweeps stale day markers",
   );
 });
 

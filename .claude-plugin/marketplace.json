@@ -68,7 +68,7 @@
       "name": "frontend-design",
       "source": "./plugins/frontend-design",
       "description": "Frontend/UI design guidance, gated by scope: a light or surgical change gets inline principles; a wide-sweeping or highly-detailed design gets routed to Claude Design in the browser with a paste-ready design brief.",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "author": {
         "name": "Jason Matthew"
       },
@@ -122,7 +122,7 @@
       "name": "session-retro",
       "source": "./plugins/session-retro",
       "description": "Interactive session retrospectives — deterministic activity triggers, one end-of-day offer, batch-scoped diff- and event-log-driven interview, native memory entries. No external services.",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "author": {
         "name": "Jason Matthew"
       },

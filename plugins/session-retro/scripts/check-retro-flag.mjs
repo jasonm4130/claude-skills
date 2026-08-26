@@ -6,13 +6,14 @@
 // single session ever interrupts the user.
 //
 // Then evaluates the END-OF-DAY offer: past RETRO_EOD_HOUR local time (default
-// 16), at most once per calendar day (last-eod-offer.txt holds the local date
-// of the last offer), and only once >=RETRO_BATCH_MIN_SESSIONS worthy sessions
+// 16), at most once per calendar day (eod-offer-<local date>.txt is claimed
+// exclusively by the day's winner), and only once >=RETRO_BATCH_MIN_SESSIONS worthy sessions
 // have accrued since the last retro AND >=RETRO_BATCH_MIN_DAYS have passed.
 
 import {
   existsSync,
   readFileSync,
+  readdirSync,
   unlinkSync,
   appendFileSync,
   writeFileSync,
@@ -71,7 +72,13 @@ const dataDir = resolveDataDir("session-retro-data");
 const nudgeFlag = path.join(dataDir, `retro-nudge-${sessionId}.flag`);
 const worthyLog = path.join(dataDir, "retro-worthy.jsonl");
 const lastRetroFile = path.join(dataDir, "last-retro.txt");
-const eodOfferFile = path.join(dataDir, "last-eod-offer.txt");
+// Per-day claim marker: the date in the NAME (not the content) is what makes
+// the once-per-day guarantee atomic — `wx` on a path unique to the day has
+// exactly one winner, with no read-modify-write to race on.
+const eodOfferFileFor = (localDay) =>
+  path.join(dataDir, `eod-offer-${localDay}.txt`);
+// Pre-0.8.1 marker; read-only legacy check so an upgrade mid-day doesn't re-offer.
+const legacyEodOfferFile = path.join(dataDir, "last-eod-offer.txt");
 
 // 1. Consume any per-session flag into the worthy log. Both origins are silent:
 //    a compaction marks the session worthy (its reason is "compact imminent")
@@ -122,9 +129,10 @@ const eodHour =
 if (now.getHours() < eodHour) process.exit(0);
 
 const today = localDate(now);
-if (existsSync(eodOfferFile)) {
+if (existsSync(eodOfferFileFor(today))) process.exit(0);
+if (existsSync(legacyEodOfferFile)) {
   try {
-    if (readFileSync(eodOfferFile, "utf8").trim() === today) process.exit(0);
+    if (readFileSync(legacyEodOfferFile, "utf8").trim() === today) process.exit(0);
   } catch {
     // unreadable → treat as no offer today
   }
@@ -156,30 +164,33 @@ const daysSince = (now.getTime() - lastRetroMs) / 86400000;
 const worthyCount = unprocessedWorthySessions(dataDir).length;
 
 if (worthyCount >= minSessions && daysSince >= minDays) {
-  // Claim today's offer atomically before emitting: `wx` fails if the marker
-  // exists, closing the check-then-write gap where two concurrent sessions both
-  // pass the existence check above and both nudge. On failure re-read: today's
-  // date means another session claimed it (forfeit silently); a stale date is
-  // rotated away and the claim retried once, again forfeiting on loss. A
-  // microsecond unlink/create interleaving can still double-offer, but the
-  // window shrinks from the whole gate evaluation to a single syscall pair,
-  // and the cost is a duplicate nudge, not lost state.
+  // Claim today's offer atomically before emitting: exclusive-create on the
+  // per-day path has exactly one winner — a concurrent session's create throws
+  // EEXIST and forfeits silently. No stale-marker rotation exists to race on;
+  // yesterday's file is simply a different path.
   try {
-    writeFileSync(eodOfferFile, today + "\n", { flag: "wx" });
+    writeFileSync(eodOfferFileFor(today), now.toISOString() + "\n", {
+      flag: "wx",
+    });
   } catch {
-    let prev = "";
-    try {
-      prev = readFileSync(eodOfferFile, "utf8").trim();
-    } catch {
-      // unreadable → treat as claimable
+    process.exit(0);
+  }
+  // Winner sweeps previous days' markers (and the legacy one), best-effort.
+  try {
+    for (const f of readdirSync(dataDir)) {
+      if (
+        (f.startsWith("eod-offer-") && f !== `eod-offer-${today}.txt`) ||
+        f === "last-eod-offer.txt"
+      ) {
+        try {
+          unlinkSync(path.join(dataDir, f));
+        } catch {
+          // best-effort
+        }
+      }
     }
-    if (prev === today) process.exit(0);
-    try {
-      unlinkSync(eodOfferFile);
-      writeFileSync(eodOfferFile, today + "\n", { flag: "wx" });
-    } catch {
-      process.exit(0);
-    }
+  } catch {
+    // best-effort
   }
   // With no last-retro.txt, daysSince is days-since-epoch — a garbage figure;
   // say "no retro recorded yet" instead of interpolating it.

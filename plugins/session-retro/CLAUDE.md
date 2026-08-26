@@ -62,9 +62,11 @@ Data files under `${CLAUDE_PLUGIN_DATA}` (all append-only except the last two):
 worthy session, **never rewritten**), `retro-processed.jsonl` (append-only ledger
 of retro'd sids — the reset mechanism), `retro-batch-{sid}.json` (the Step-1
 snapshot, consumed at cleanup), `last-retro.txt` (days-cadence hint),
-`last-eod-offer.txt` (local `YYYY-MM-DD` of the last end-of-day offer — the
-once-per-calendar-day gate). The pre-0.8.0 `last-batch-nudge.txt` is no longer
-read or written; it is left on disk rather than deleted (never delete user data).
+`eod-offer-<YYYY-MM-DD>.txt` (the once-per-calendar-day gate: the local date is
+in the *name* so the claim is an atomic exclusive-create; the day's winner sweeps
+older markers). The pre-0.8.1 `last-eod-offer.txt` is still honored read-only for
+one upgrade day, then swept; the pre-0.8.0 `last-batch-nudge.txt` is no longer
+read or written and is left on disk (never delete user data beyond these markers).
 
 ## How it works
 
@@ -161,7 +163,7 @@ single agent-directed offer fires when all of these hold:
 
 - local hour `≥ RETRO_EOD_HOUR` (default 16; a non-integer value falls back to
   the default, because `NaN >= n` would otherwise silence the offer forever)
-- no offer already made today — `last-eod-offer.txt` ≠ today's **local** date
+- no offer already claimed today — `eod-offer-<today>.txt` absent, using the **local** date
   (local, not UTC: `toISOString()` would roll the day over at 17:00 for a UTC+7 user)
 - `worthy_count ≥ RETRO_BATCH_MIN_SESSIONS` (default 3)
 - `days_since_last_retro ≥ RETRO_BATCH_MIN_DAYS` (default 1, from `last-retro.txt`)
