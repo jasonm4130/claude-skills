@@ -7,9 +7,10 @@
 //!   * inline `script`  → inspect it; deny if it fans out untiered.
 //!   * `scriptPath`     → read the file and inspect the same way.
 //!   * `name`           → can't read or rewrite a built-in/saved workflow. If it
-//!                        is a known all-Opus one, ASK the user, because a
-//!                        deny-to-Claude cannot be resolved — Claude can't edit a
-//!                        built-in, so it would dead-end.
+//!                        is a known high-fan-out one that inherits the session
+//!                        model, ASK the user, because a deny-to-Claude cannot be
+//!                        resolved — Claude can't edit a built-in, so it would
+//!                        dead-end.
 //!
 //! Scale-gated: small/cheap inline/scriptPath workflows pass silently so the hook
 //! doesn't fight the Workflow tool's own "omit model by default" guidance.
@@ -18,8 +19,10 @@ use crate::hook;
 use regex_lite::Regex;
 use serde_json::Value;
 
-/// Named workflows known to spawn every agent on the session model that Claude
-/// cannot edit — e.g. the built-in `deep-research` harness.
+/// Named workflows known to spawn a high fan-out of agents on the session model,
+/// which Claude cannot edit — e.g. the built-in `deep-research` harness. The ask
+/// is a cost speed-bump on a frontier-tier session, not a claim about the
+/// workflow's own tiering.
 const NAME_DENYLIST: &[&str] = &["deep-research"];
 
 /// Static fan-out signals extracted from a script.
@@ -126,8 +129,8 @@ fn decide(payload: Option<Value>) {
         }
     };
 
-    // No inspectable script (a `name:` invocation). Ask the user only for known
-    // all-Opus named workflows; leave every other named/saved workflow alone.
+    // No inspectable script (a `name:` invocation). Ask the user only for the
+    // denylisted high-fan-out names; leave every other named/saved workflow alone.
     let Some(script) = script else {
         let name = hook::nested_str(&payload, "tool_input", "name").unwrap_or("");
         if !name.is_empty() && NAME_DENYLIST.contains(&name) {
@@ -144,8 +147,8 @@ editable script). Cheaper: switch this session to Sonnet \
     };
 
     // Bypass 1: any `model:` means Claude already weighed tiers (even one override
-    // counts). Bypass 2: explicit ack that all-Opus is intended — prevents an
-    // infinite deny loop.
+    // counts). Bypass 2: explicit ack that session-model fan-out is intended —
+    // prevents an infinite deny loop.
     let has_model =
         Regex::new(&format!(r"\bmodel{JS_WS}*:")).is_ok_and(|re| re.is_match(&script));
     if has_model || script.contains("model-guard:ack") {

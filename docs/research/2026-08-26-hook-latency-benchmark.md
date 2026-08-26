@@ -60,6 +60,13 @@ matcher covering tools Claude uses constantly (Bash, Edit, Write, Agent).
 | session-retro/check-retro-flag | UserPromptSubmit | no | 19.4 | 18.4 | 0.8 |
 | ship-gate/check-shipgate-flag | UserPromptSubmit | no | 19.4 | 18.2 | 0.8 |
 
+The three `pretooluse-guard-*` rows measure the **node fallback path only**. Those
+hooks already ship compiled: `hooks.json` invokes `bin/ccguard <subcommand>` first
+and falls back to the `.mjs` script if the binary can't run, so on the committed
+arm64 binary their real hot-path cost is the ~1.7ms in the reference table below,
+not the ~22ms above. They are counted here for the fallback's sake, not as porting
+candidates — they are already ported.
+
 Reference points measured the same way:
 
 | | Median |
