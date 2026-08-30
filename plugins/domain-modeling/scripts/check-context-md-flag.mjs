@@ -67,8 +67,9 @@ emitOffer(
   "UserPromptSubmit",
   `[domain-modeling] \`${repo}\` has a CLAUDE.md but no CONTEXT.md, and you edited source there this session. ` +
     `A glossary pins the domain's canonical names so future sessions spend fewer tokens reasoning about vocabulary. ` +
-    `Say the word and I'll run the domain-modeling skill; otherwise I'll leave it — this offer fires once per repo, ever.`,
-  `[domain-modeling] The user has just been shown a one-line offer to build a CONTEXT.md glossary for \`${repo}\`. ` +
+    `Say the word and I'll build one; otherwise I'll leave it — this offer fires once per repo, ever.`,
+  `[domain-modeling] The user has just been shown a one-line offer to build a CONTEXT.md glossary for \`${repo}\` ` +
+    `using the domain-modeling:domain-modeling skill. ` +
     `Do not start one unprompted and do not repeat the offer; act only if they take it up.`,
 );
 process.exit(0);
