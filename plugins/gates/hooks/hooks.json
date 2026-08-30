@@ -13,6 +13,11 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ccguard\" design-gate \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-design-gate.mjs\" || node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-design-gate.mjs\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ccguard\" lsp-first",
+            "timeout": 5
           }
         ]
       },
@@ -32,6 +37,18 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ccguard\" agent-model \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs\" || node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ccguard\" json-config-guard",
             "timeout": 5
           }
         ]

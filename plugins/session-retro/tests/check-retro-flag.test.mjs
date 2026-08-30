@@ -191,20 +191,25 @@ test("EOD offer fires: past RETRO_EOD_HOUR, 3 worthy, no offer today", async (t)
     env(tmp),
   );
   assert.equal(code, 0);
-  const ac = JSON.parse(stdout).hookSpecificOutput.additionalContext;
+  const { systemMessage, additionalContext } = JSON.parse(stdout).hookSpecificOutput;
   assert.match(
-    ac,
-    /\[session-retro\] .*3 retro-worthy sessions .* Run the session-retro:retro skill now/,
+    systemMessage,
+    /\[session-retro\].*3 retro-worthy sessions have accrued/,
   );
   assert.match(
-    ac,
+    systemMessage,
     /no retro recorded yet/,
     "first-ever offer explains there is no prior retro",
   );
   assert.doesNotMatch(
-    ac,
+    systemMessage,
     /\d{3,}\+ days/,
     "no epoch-derived day count on the first-ever offer",
+  );
+  assert.match(
+    additionalContext,
+    /Do not start it unprompted/,
+    "model-facing half tells the model not to act unprompted",
   );
   assert.ok(
     existsSync(path.join(tmp, `eod-offer-${TODAY}.txt`)),
@@ -242,10 +247,9 @@ test("EOD env override: RETRO_EOD_HOUR=8 fires at 09:00", async (t) => {
     env(tmp, { RETRO_NOW: MORNING, RETRO_EOD_HOUR: "8" }),
   );
   assert.equal(code, 0);
-  assert.match(
-    JSON.parse(stdout).hookSpecificOutput.additionalContext,
-    /3 retro-worthy sessions/,
-  );
+  const { systemMessage, additionalContext } = JSON.parse(stdout).hookSpecificOutput;
+  assert.match(systemMessage, /3 retro-worthy sessions/);
+  assert.match(additionalContext, /Do not start it unprompted/);
 });
 
 test("EOD silent: an offer was already claimed today", async (t) => {
@@ -294,10 +298,11 @@ test("EOD fires: yesterday's offer does not suppress today's (calendar day, not 
     env(tmp, { RETRO_NOW: "2026-08-26T17:00:00Z" }),
   );
   assert.equal(code, 0);
-  assert.match(
-    JSON.parse(stdout).hookSpecificOutput.additionalContext,
-    /3 retro-worthy sessions/,
-  );
+  {
+    const { systemMessage, additionalContext } = JSON.parse(stdout).hookSpecificOutput;
+    assert.match(systemMessage, /3 retro-worthy sessions/);
+    assert.match(additionalContext, /Do not start it unprompted/);
+  }
   assert.ok(
     existsSync(path.join(tmp, `eod-offer-${TODAY}.txt`)),
     "today's marker claimed",
@@ -322,11 +327,11 @@ test("EOD sweep never deletes a newer day's marker", async (t) => {
     env(tmp),
   );
   assert.equal(code, 0);
-  assert.match(
-    JSON.parse(stdout).hookSpecificOutput.additionalContext,
-    /3 retro-worthy sessions/,
-    "tomorrow's marker does not suppress today",
-  );
+  {
+    const { systemMessage, additionalContext } = JSON.parse(stdout).hookSpecificOutput;
+    assert.match(systemMessage, /3 retro-worthy sessions/, "tomorrow's marker does not suppress today");
+    assert.match(additionalContext, /Do not start it unprompted/);
+  }
   assert.ok(
     existsSync(path.join(tmp, "eod-offer-2026-08-27.txt")),
     "a newer day's claim survives the sweep",
@@ -419,7 +424,8 @@ test("processed sids are excluded from the count and the worthy log is not rewri
   assert.equal(code, 0);
   // Only todo1 is unprocessed → count 1.
   const parsed = JSON.parse(stdout);
-  assert.match(parsed.hookSpecificOutput.additionalContext, /1 retro-worthy session/);
+  assert.match(parsed.hookSpecificOutput.systemMessage, /1 retro-worthy session/);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /Do not start it unprompted/);
   // The worthy log is byte-for-byte unchanged (never rewritten).
   assert.equal(readFileSync(worthyPath, "utf8"), before, "worthy log must not be rewritten");
 });
@@ -466,10 +472,11 @@ test("env override: RETRO_BATCH_MIN_SESSIONS=2 fires with 2 worthy", async (t) =
     env(tmp, { RETRO_BATCH_MIN_SESSIONS: "2" }),
   );
   assert.equal(code, 0);
-  assert.match(
-    JSON.parse(stdout).hookSpecificOutput.additionalContext,
-    /2 retro-worthy sessions/,
-  );
+  {
+    const { systemMessage, additionalContext } = JSON.parse(stdout).hookSpecificOutput;
+    assert.match(systemMessage, /2 retro-worthy sessions/);
+    assert.match(additionalContext, /Do not start it unprompted/);
+  }
 });
 
 // A garbage hour must not silence the offer forever (NaN >= n is false).
@@ -484,10 +491,11 @@ test("RETRO_EOD_HOUR garbage falls back to the 16:00 default", async (t) => {
     env(tmp, { RETRO_EOD_HOUR: "not-an-hour" }),
   );
   assert.equal(code, 0);
-  assert.match(
-    JSON.parse(stdout).hookSpecificOutput.additionalContext,
-    /3 retro-worthy sessions/,
-  );
+  {
+    const { systemMessage, additionalContext } = JSON.parse(stdout).hookSpecificOutput;
+    assert.match(systemMessage, /3 retro-worthy sessions/);
+    assert.match(additionalContext, /Do not start it unprompted/);
+  }
 });
 
 // An out-of-range hour is finite but can never be < getHours(), so it too
@@ -503,8 +511,9 @@ test("RETRO_EOD_HOUR=24 (out of range) falls back to the 16:00 default", async (
     env(tmp, { RETRO_EOD_HOUR: "24" }),
   );
   assert.equal(code, 0);
-  assert.match(
-    JSON.parse(stdout).hookSpecificOutput.additionalContext,
-    /3 retro-worthy sessions/,
-  );
+  {
+    const { systemMessage, additionalContext } = JSON.parse(stdout).hookSpecificOutput;
+    assert.match(systemMessage, /3 retro-worthy sessions/);
+    assert.match(additionalContext, /Do not start it unprompted/);
+  }
 });

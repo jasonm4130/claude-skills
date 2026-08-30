@@ -107,8 +107,8 @@ test("hook-emitted skill references are plugin-qualified", () => {
   assert.ok(skillOwner.size > 0, "found no skills to check — the walk is broken");
 
   // Every source file that can EMIT hook text. Both the interpreted guards and
-  // the compiled ones (rust/src/*.rs, shipped as plugins/*/bin/ccguard) build
-  // their reason strings in source, so scanning only .mjs would leave the Rust
+  // the compiled ones (go/*.go, shipped as plugins/*/bin/ccguard) build their
+  // reason strings in source, so scanning only .mjs would leave the compiled
   // reasons unguarded — and those are the ones that actually run now.
   const sources = [];
   for (const d of dirs) {
@@ -122,14 +122,20 @@ test("hook-emitted skill references are plugin-qualified", () => {
     }
     for (const f of files) sources.push({ label: `${d}/scripts/${f}`, path: join(root, "plugins", d, "scripts", f) });
   }
-  try {
-    for (const e of readdirSync(join(root, "rust", "src"), { withFileTypes: true })) {
-      if (e.isFile() && e.name.endsWith(".rs")) {
-        sources.push({ label: `rust/src/${e.name}`, path: join(root, "rust", "src", e.name) });
-      }
-    }
-  } catch {
-    // no rust crate — fine, the .mjs guards are the whole surface.
+  // Deliberately NOT wrapped in a try/catch that shrugs off a missing directory.
+  // The previous version did, so when the crate moved the scan would simply have
+  // stopped covering the compiled guards — passing green while checking less. If
+  // go/ is gone or renamed, this must fail and be fixed, not quietly narrow.
+  const goSources = readdirSync(join(root, "go"), { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith(".go") && !e.name.endsWith("_test.go"))
+    .map((e) => e.name);
+  assert.ok(
+    goSources.length > 0,
+    "found no go/*.go sources to scan — the compiled guards emit hook text too, so this " +
+      "check must cover them; if the module moved, update this path rather than deleting it",
+  );
+  for (const name of goSources) {
+    sources.push({ label: `go/${name}`, path: join(root, "go", name) });
   }
 
   const offenders = [];

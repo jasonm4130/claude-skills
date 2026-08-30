@@ -1,7 +1,7 @@
 {
   "name": "handoff",
   "description": "Manual /handoff skill — writes a structured resume doc on demand, auto-loads it on next session.",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "author": {
     "name": "Jason Matthew"
   },

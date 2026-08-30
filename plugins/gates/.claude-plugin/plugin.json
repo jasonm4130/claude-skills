@@ -1,7 +1,7 @@
 {
   "name": "gates",
-  "description": "Four stateless PreToolUse gates plus a docs-consolidation trigger. Denies a git commit that changes code without staging its covering docs (per-plugin README/CLAUDE.md pairs, or the nearest README/CLAUDE/AGENTS walking up); asks before a new-project scaffold command (npm create vite, cargo new, rails new, …) runs ahead of an approved design; denies a high-fan-out Workflow script with no per-agent model: override and asks before a denylisted built-in named workflow; denies an ad-hoc Agent dispatch that omits model unless the agent type pins one in frontmatter. Separately, a never-blocking trigger counts commits since the .docs-sync record and nudges toward /docs-consolidate. Every gate has an ack marker.",
-  "version": "0.1.1",
+  "description": "Four stateless PreToolUse gates, a PostToolUse JSON-config guard, and a docs-consolidation trigger. Denies a git commit that changes code without staging its covering docs (per-plugin README/CLAUDE.md pairs, or the nearest README/CLAUDE/AGENTS walking up); asks before a new-project scaffold command (npm create vite, cargo new, rails new, \u2026) runs ahead of an approved design; denies a high-fan-out Workflow script with no per-agent model: override and asks before a denylisted built-in named workflow; denies an ad-hoc Agent dispatch that omits model unless the agent type pins one in frontmatter. Separately, a never-blocking trigger counts commits since the .docs-sync record and nudges toward /docs-consolidate. Every gate has an ack marker. Separately, a PostToolUse hook re-parses settings.json/.mcp.json after an edit and reports a syntax error, which Claude Code otherwise swallows by silently dropping the config it cannot parse.",
+  "version": "0.2.0",
   "author": {
     "name": "Jason Matthew",
     "email": "jasonm4130@gmail.com"

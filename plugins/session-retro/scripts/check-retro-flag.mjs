@@ -25,7 +25,7 @@ import {
   safeJsonParse,
   resolveSessionId,
   resolveDataDir,
-  emitAdditionalContext,
+  emitOffer,
   nowIso,
   unprocessedWorthySessions,
 } from "./lib.mjs";
@@ -199,9 +199,13 @@ if (worthyCount >= minSessions && daysSince >= minDays) {
     lastRetroMs === 0
       ? "no retro recorded yet"
       : `${Math.floor(daysSince)}+ days since the last retro`;
-  emitAdditionalContext(
+  emitOffer(
     "UserPromptSubmit",
-    `[session-retro] End of day: ${worthyCount} retro-worthy sessions accrued (${cadence}). Run the session-retro:retro skill now to batch-capture the learnings, unless the user objects.`,
+    `[session-retro] ${worthyCount} retro-worthy sessions have accrued (${cadence}). ` +
+      `Want me to run the retro now and batch-capture what they taught? It reads the recorded events, not the full transcripts, so it is quick. ` +
+      `Say no and I'll drop it until the next batch.`,
+    `[session-retro] The user has just been shown an end-of-day offer to run the session-retro:retro skill over ${worthyCount} accrued sessions. ` +
+      `Do not start it unprompted; run it only if they take it up.`,
   );
 }
 process.exit(0);

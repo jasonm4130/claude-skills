@@ -12,7 +12,7 @@ import {
   resolveSessionId,
   resolveDataDir,
   repoClaimPath,
-  emitAdditionalContext,
+  emitOffer,
 } from "./lib.mjs";
 
 const raw = await readStdin();
@@ -63,10 +63,13 @@ try {
   // it repeats in a later session.
 }
 
-emitAdditionalContext(
+emitOffer(
   "UserPromptSubmit",
-  `[domain-modeling] \`${repo}\` has a CLAUDE.md but no CONTEXT.md, and this session edited source there. ` +
-    `Offer the user — once, as a single line alongside the work, then keep going — to run the domain-modeling:domain-modeling skill ` +
-    `and pin down the project's domain terms. Do not start one unprompted and do not re-offer: this fires once per repo, ever.`,
+  `[domain-modeling] \`${repo}\` has a CLAUDE.md but no CONTEXT.md, and you edited source there this session. ` +
+    `A glossary pins the domain's canonical names so future sessions spend fewer tokens reasoning about vocabulary. ` +
+    `Say the word and I'll build one; otherwise I'll leave it — this offer fires once per repo, ever.`,
+  `[domain-modeling] The user has just been shown a one-line offer to build a CONTEXT.md glossary for \`${repo}\` ` +
+    `using the domain-modeling:domain-modeling skill. ` +
+    `Do not start one unprompted and do not repeat the offer; act only if they take it up.`,
 );
 process.exit(0);

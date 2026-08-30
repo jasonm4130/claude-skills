@@ -11,8 +11,8 @@
     {
       "name": "adr",
       "source": "./plugins/adr",
-      "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to the subagent-driven-development loop. Front-end for adr → sdd.",
-      "version": "0.5.0",
+      "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to the subagent-driven-development loop. Front-end for adr \u2192 sdd.",
+      "version": "0.5.1",
       "author": {
         "name": "Jason Matthew"
       },
@@ -48,8 +48,8 @@
     {
       "name": "domain-modeling",
       "source": "./plugins/domain-modeling",
-      "description": "Actively build and sharpen a project's ubiquitous language — an opinionated CONTEXT.md glossary — by challenging terms, disambiguating overloaded words, and stress-testing domain relationships. Cross-references adr for decision records. Adapted from mattpocock/skills (MIT).",
-      "version": "0.3.0",
+      "description": "Actively build and sharpen a project's ubiquitous language \u2014 an opinionated CONTEXT.md glossary \u2014 by challenging terms, disambiguating overloaded words, and stress-testing domain relationships. Cross-references adr for decision records. Adapted from mattpocock/skills (MIT).",
+      "version": "0.4.0",
       "author": {
         "name": "Jason Matthew"
       },
@@ -85,8 +85,8 @@
     {
       "name": "gates",
       "source": "./plugins/gates",
-      "description": "Four stateless PreToolUse gates plus a docs-consolidation trigger. Denies a git commit that changes code without staging its covering docs (per-plugin README/CLAUDE.md pairs, or the nearest README/CLAUDE/AGENTS walking up); asks before a new-project scaffold command runs ahead of an approved design; denies a high-fan-out Workflow script with no per-agent model: override, and asks before a denylisted built-in named workflow; denies an ad-hoc Agent dispatch that omits model unless the agent type pins one in frontmatter. A never-blocking trigger counts commits since the .docs-sync record and nudges toward /docs-consolidate. Every gate has an ack marker.",
-      "version": "0.1.1",
+      "description": "Five stateless PreToolUse gates, a PostToolUse JSON-config guard, and a docs-consolidation trigger. Denies a git commit that changes code without staging its covering docs (per-plugin README/CLAUDE.md pairs, or the nearest README/CLAUDE/AGENTS walking up); asks before a new-project scaffold command runs ahead of an approved design; denies a high-fan-out Workflow script with no per-agent model: override, and asks before a denylisted built-in named workflow; denies an ad-hoc Agent dispatch that omits model unless the agent type pins one in frontmatter; and redirects a shell or Grep search for a code symbol to the LSP tool, but only when the language server it names actually resolves on PATH. A never-blocking trigger counts commits since the .docs-sync record and nudges toward /docs-consolidate. Every gate has an ack marker. Separately, a PostToolUse hook re-parses settings.json/.mcp.json after an edit and reports a syntax error, which Claude Code otherwise swallows by silently dropping the config it cannot parse.",
+      "version": "0.2.0",
       "author": {
         "name": "Jason Matthew"
       },
@@ -104,8 +104,8 @@
     {
       "name": "handoff",
       "source": "./plugins/handoff",
-      "description": "Manual /handoff skill — writes a structured resume doc on demand, auto-loads it on next session.",
-      "version": "0.11.0",
+      "description": "Manual /handoff skill \u2014 writes a structured resume doc on demand, auto-loads it on next session.",
+      "version": "0.11.1",
       "author": {
         "name": "Jason Matthew"
       },
@@ -121,8 +121,8 @@
     {
       "name": "session-retro",
       "source": "./plugins/session-retro",
-      "description": "Interactive session retrospectives — deterministic activity triggers, one end-of-day offer, batch-scoped diff- and event-log-driven interview, native memory entries. No external services.",
-      "version": "0.8.1",
+      "description": "Interactive session retrospectives \u2014 deterministic activity triggers, one end-of-day offer, batch-scoped diff- and event-log-driven interview, native memory entries. No external services.",
+      "version": "0.9.0",
       "author": {
         "name": "Jason Matthew"
       },
@@ -155,7 +155,7 @@
     {
       "name": "subagent-driven-development",
       "source": "./plugins/subagent-driven-development",
-      "description": "Deterministic workflow-driven subagent development loop — plan/confirm in the controller, then a background Workflow enforces per-task implement/review/fix with tiered models and codified ponytail discipline.",
+      "description": "Deterministic workflow-driven subagent development loop \u2014 plan/confirm in the controller, then a background Workflow enforces per-task implement/review/fix with tiered models and codified ponytail discipline.",
       "version": "0.12.0",
       "author": {
         "name": "Jason Matthew"
@@ -174,7 +174,7 @@
       "name": "superpowers-core",
       "source": "./plugins/superpowers-core",
       "description": "Owned fork of the superpowers process skills: brainstorming, systematic-debugging, writing-plans, writing-skills, test-driven-development.",
-      "version": "0.7.0",
+      "version": "0.7.1",
       "author": {
         "name": "Jason Matthew"
       },
@@ -191,8 +191,8 @@
     {
       "name": "writing-artifacts",
       "source": "./plugins/writing-artifacts",
-      "description": "Positive writing system for durable written artifacts (READMEs, ADRs, PR descriptions, docs, runbooks): reader-expectation prose, Diátaxis document jobs, plain-language structure. Complements reply-style rules in global CLAUDE.md.",
-      "version": "0.1.0",
+      "description": "Positive writing system for durable written artifacts (READMEs, ADRs, PR descriptions, docs, runbooks): reader-expectation prose, Di\u00e1taxis document jobs, plain-language structure. Complements reply-style rules in global CLAUDE.md.",
+      "version": "0.1.1",
       "author": {
         "name": "Jason Matthew"
       },

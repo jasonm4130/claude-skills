@@ -26,6 +26,15 @@ they are one design:
   `model:` (≠ `inherit`). Any explicit `model` — including `fable` — passes: setting it
   IS the ack. Design rationale + probe evidence:
   [`RESEARCH_delegation_model_tiering.md`](https://github.com/jasonm4130/claude-skills/blob/main/RESEARCH_delegation_model_tiering.md).
+- **json-config-guard** (`PostToolUse`, matcher `Edit|Write|MultiEdit|Bash`) — re-parses
+  `settings.json` / `settings.local.json` / `.mcp.json` after a write and **exits 2 with
+  the parse error on stderr**. PostToolUse runs after the write, so it cannot deny; the
+  point is that Claude Code silently drops config it cannot parse, so a stray comma
+  disables every hook here with nothing to trace it back to. Matched by **basename**, so
+  it covers a project's `.claude/settings.json` too. `Bash` is in the matcher because a
+  `sed -i`, heredoc redirect or `tee` rewrites a config without the write tools ever
+  being involved. Adopted from jasonm4130/dotfiles, where it was machine-level; it guards
+  by basename rather than by absolute path, which is what makes it distributable.
 - **consolidation trigger** — `Stop` measures commits since the `.docs-sync` record's
   `audited=` SHA and arms a flag; `UserPromptSubmit` consumes it fire-once and suggests
   `gates:docs-consolidate`. Never blocks. See README.md for the user-facing contract.
@@ -305,7 +314,7 @@ carry its own. There is now exactly one committed binary in the repo.
 The `.mjs` path appears twice on purpose: the `||` covers a binary that never executes
 (127 missing, 126 wrong architecture), and the **argv** covers a binary that ran but
 hit a payload it cannot represent, where the `||` is useless because stdin is already
-drained. `rust/README.md` has the full argument.
+drained. `go/README.md` has the full argument.
 
 **The `.mjs` files are not dead code — do not delete them.** They are both the
 fallback and the reference implementation that `scripts/ccguard-differential.test.mjs`
@@ -319,7 +328,7 @@ winner reproducible.
 
 `bin/ccguard` is the one exception to "no build artifacts": the marketplace install
 path is `git clone` + copy with no build step anywhere, so a compiled hook has to ship
-pre-built. Source lives in `rust/`; see `rust/README.md` for the rebuild command and
+pre-built. Source lives in `go/`; see `go/README.md` for the rebuild command and
 the staleness fingerprint.
 
 ## Conventions
@@ -349,7 +358,7 @@ the staleness fingerprint.
 ```bash
 node --test plugins/gates/tests/*.test.mjs             # real temp git repos throughout
 node --test scripts/ccguard-differential.test.mjs      # binary vs .mjs equivalence
-cargo test --release --manifest-path rust/Cargo.toml   # the binary's own units
+(cd go && go test ./...)                               # the binary's own units
 ```
 
 Glob the files — Node 24 regressed bare-directory invocation (`node --test <dir>` →
@@ -359,5 +368,5 @@ The docs-sync boundary test builds 49 commits, so the suite takes ~1min. Filler 
 use `--allow-empty` — `rev-list --count` counts them identically and it avoids both the
 file I/O and a per-call filename counter that collides across calls.
 
-After editing `rust/src/`, rebuild and re-copy the binary (see `rust/README.md`) — the
-differential test fails on a stale one rather than letting it ship.
+After editing `go/`, rebuild and re-copy the binary (see `go/README.md`) — the
+differential test rebuilds and compares bytes, so a stale one cannot ship.

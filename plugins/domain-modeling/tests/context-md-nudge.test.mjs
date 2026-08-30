@@ -123,8 +123,9 @@ test("consumer emits context, records the repo as offered, and never re-asks", (
   const out = run(consumeScript, { session_id: "s7" }, dataDir);
   const parsed = JSON.parse(out);
   assert.equal(parsed.hookSpecificOutput.hookEventName, "UserPromptSubmit");
-  assert.match(parsed.hookSpecificOutput.additionalContext, /has a CLAUDE\.md but no CONTEXT\.md/);
-  assert.match(parsed.hookSpecificOutput.additionalContext, /once per repo, ever/);
+  assert.match(parsed.hookSpecificOutput.systemMessage, /has a CLAUDE\.md but no CONTEXT\.md/);
+  assert.match(parsed.hookSpecificOutput.systemMessage, /once per repo, ever/);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /Do not start one unprompted/);
   assert.ok(!existsSync(flag), "flag should be consumed");
 
   assert.equal(readFileSync(claimPath(dataDir, repo), "utf8").trim(), repo);
@@ -149,7 +150,9 @@ test("concurrent sessions in one repo: only one offer wins", (t) => {
 
   const spoke = [outA, outB].filter((o) => o.trim().length > 0);
   assert.equal(spoke.length, 1, "exactly one session may make the offer");
-  assert.match(JSON.parse(spoke[0]).hookSpecificOutput.additionalContext, /no CONTEXT\.md/);
+  const winner = JSON.parse(spoke[0]).hookSpecificOutput;
+  assert.match(winner.systemMessage, /no CONTEXT\.md/);
+  assert.match(winner.additionalContext, /Do not start one unprompted/);
 });
 
 test("a nudge that never reached the user does not burn the one ask", (t) => {

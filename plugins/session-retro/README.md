@@ -31,6 +31,8 @@ Five hooks + one skill. The hooks are Node `.mjs` scripts (stdlib only, no third
 
 The end-of-day offer fires when all four gates pass: local time is at or past `RETRO_EOD_HOUR` (default 16), no offer has been claimed today (`eod-offer-<local date>.txt` — the date lives in the filename so concurrent sessions race on an atomic exclusive-create, and exactly one wins), the **unprocessed** worthy count (distinct sids in `retro-worthy.jsonl` minus those in `retro-processed.jsonl`) is `≥ RETRO_BATCH_MIN_SESSIONS` (default 3), and `≥ RETRO_BATCH_MIN_DAYS` (default 1 — raise it to space retros out) have passed since the last retro. All three thresholds are env-overridable. Cleanup is append-only: a retro appends the interviewed sids to `retro-processed.jsonl` rather than rewriting the worthy log, so concurrent sessions can't lose writes.
 
+The offer itself is a **`systemMessage`**, which Claude Code shows in the transcript before processing your prompt, with `additionalContext` alongside instructing the model not to start a retro unprompted. It was `additionalContext` alone until 2026-08-30, which addressed the model and never you — 18 sessions were flagged retro-worthy over that period and no retro was ever run.
+
 No external services. No SQLite. No MCP server. No Python. Just Node 18+ and git.
 
 ## Install

@@ -1,6 +1,6 @@
 ---
 name: adr
-description: Use when the user knows what they want built and says "/adr", "write an ADR for X", "decide and build X", or "ADR-driven". Turns an intent into a grounded, cited, build-ready ADR at docs/adr/YYYY-MM-DD-<slug>.md — load-bearing decisions surfaced to the human — then hands off to the subagent-driven-development loop. For exploratory "not sure what I want yet" work use brainstorming first.
+description: Use when the user knows what they want built and says "/adr", "write an ADR for X", "decide and build X", or "ADR-driven". Turns an intent into a grounded, cited, build-ready ADR at docs/adr/YYYY-MM-DD-<slug>.md — load-bearing decisions surfaced to the human — then hands off to the subagent-driven-development loop. For exploratory "not sure what I want yet" work use brainstorming first. Do NOT use for domain vocabulary (use domain-modeling) or for prose mechanics on an existing document (use writing-artifacts).
 ---
 
 # ADR-Driven Development (front-end for `adr → sdd`)
