@@ -1,6 +1,6 @@
 ---
 name: writing-artifacts
-description: Use when writing or revising a durable written artifact — README, ADR, design doc, PR description, release notes, runbook, error message, user-facing docs. Gives a positive writing system (reader model, sentence positions, document jobs), not a ban-list. Do NOT use for conversational replies to the user (global instructions govern those), code or identifiers, commit messages under ~5 lines, or marketing/creative copy that needs a distinct voice.
+description: Use when writing or revising a durable written artifact — README, ADR, design doc, PR description, release notes, runbook, error message, user-facing docs. Gives a positive writing system (reader model, sentence positions, document jobs), not a ban-list. Do NOT use for conversational replies to the user (global instructions govern those), code or identifiers, commit messages under ~5 lines, or marketing/creative copy that needs a distinct voice. For an ADR specifically, the adr skill owns the format and workflow; this skill owns the prose.
 ---
 
 # writing-artifacts

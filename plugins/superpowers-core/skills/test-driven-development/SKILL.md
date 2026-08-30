@@ -1,6 +1,6 @@
 ---
 name: test-driven-development
-description: Use when implementing any feature or bugfix, before writing implementation code
+description: Use when implementing any feature or bugfix, before writing implementation code. Do NOT use inside the subagent-driven-development loop, which runs its own per-task implement→review→fix cycle and supersedes this skill there.
 ---
 
 # Test-Driven Development (TDD)

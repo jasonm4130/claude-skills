@@ -9,6 +9,8 @@ description: >
   or when the user explicitly asks for one.
   Triggers: "retro", "session summary", "what did we learn", "lessons learned",
   "session retrospective".
+  Do NOT use to record a decision (use adr) — a retro captures how the work went,
+  not what was decided.
 ---
 
 # Session Retrospective

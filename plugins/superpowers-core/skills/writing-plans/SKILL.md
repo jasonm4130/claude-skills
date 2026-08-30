@@ -1,6 +1,6 @@
 ---
 name: writing-plans
-description: Use when you have a spec or requirements for a multi-step task, before touching code
+description: Use when you have a spec or requirements for a multi-step task, before touching code. Do NOT use to produce the spec itself (use brainstorming) or to execute a plan that already exists (use subagent-driven-development).
 ---
 
 # Writing Plans

@@ -7,6 +7,8 @@ description: >
   is high and you want to preserve state before /compact or /clear.
   Triggers: "/handoff", "handoff", "write a handoff", "prep for resume",
   "session handoff", "write a resume doc", "handoff before clear".
+  Do NOT use for durable documentation — a handoff is disposable session state,
+  not an ADR, README or design doc.
 ---
 
 # Handoff
