@@ -310,9 +310,21 @@ const skipMsg =
 
 const haveGo = spawnSync("go", ["version"], { encoding: "utf8" }).status === 0;
 
+// This comparison is macOS-only, and not merely by preference. A native `go build`
+// on Linux emits an ELF, while the committed artifact is a Mach-O universal binary;
+// `lipo` — the only thing that could thin it down to a comparable slice — ships with
+// Xcode and does not exist on Linux, so the fallback path compares a fat Mach-O
+// against an ELF and can never match. The macOS-only `go-guards` CI job runs this
+// same check, so nothing goes unverified by skipping here.
+const stalenessSkip = !haveGo
+  ? "go toolchain not present — cannot rebuild to compare"
+  : process.platform !== "darwin"
+    ? `staleness comparison needs macOS (\`lipo\` to thin the universal binary); ran on ${process.platform}. The go-guards job covers this on macos-latest.`
+    : false;
+
 test(
   "the committed binary is not stale relative to go/",
-  { skip: haveGo ? false : "go toolchain not present — cannot rebuild to compare" },
+  { skip: stalenessSkip },
   () => {
     // The binary is a build artifact in git, because the marketplace install path
     // is `git clone` + copy with no build step anywhere in it. So "I edited the
