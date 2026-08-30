@@ -151,13 +151,27 @@ func lspFirst(raw []byte) {
 	if why != readOK {
 		os.Exit(0)
 	}
-	if in.ToolName != "Grep" {
+	// Grep carries the pattern and scope as fields; Bash carries the same search
+	// inside a shell command, which parseBashSearch re-expresses as the identical
+	// shape. Everything downstream is then common to both, so the classification
+	// rules below have exactly one definition.
+	var scope toolInput
+	switch in.ToolName {
+	case "Grep":
+		scope = in.ToolInput
+	case "Bash":
+		parsed, ok := parseBashSearch(in.ToolInput.Command)
+		if !ok {
+			os.Exit(0)
+		}
+		scope = parsed
+	default:
 		os.Exit(0)
 	}
 
 	// The actual pattern as passed to the tool — used verbatim in output. The
 	// tool call itself is never altered by this hook.
-	pattern := in.ToolInput.Pattern
+	pattern := scope.Pattern
 	if pattern == "" {
 		os.Exit(0)
 	}
@@ -169,9 +183,9 @@ func lspFirst(raw []byte) {
 	classify = strings.ReplaceAll(classify, `\(`, "(")
 	classify = strings.ReplaceAll(classify, `\)`, ")")
 
-	if nonCodeExt.MatchString(in.ToolInput.Glob) ||
-		nonCodeExt.MatchString(in.ToolInput.Path) ||
-		nonCodeType.MatchString(in.ToolInput.Type) {
+	if nonCodeExt.MatchString(scope.Glob) ||
+		nonCodeExt.MatchString(scope.Path) ||
+		nonCodeType.MatchString(scope.Type) {
 		os.Exit(0)
 	}
 
@@ -181,17 +195,25 @@ func lspFirst(raw []byte) {
 	if !matchesAny(codeSymbolPatterns(), classify) {
 		os.Exit(0)
 	}
-	if !lspIsUsable(in.ToolInput) {
+	if !lspIsUsable(scope) {
 		os.Exit(0)
 	}
 
+	// The escape hatch is described in terms of what the caller actually ran, so
+	// the instruction is executable as written. Naming "Grep" at a Bash caller
+	// is the bug class this repo already tests for in hook-emitted skill names:
+	// an instruction the agent cannot follow is worse than no instruction.
+	noun := "Grep"
+	if in.ToolName == "Bash" {
+		noun = "search command"
+	}
 	deny(fmt.Sprintf(`LSP-FIRST: "%s" looks like a code symbol. Use the LSP tool instead:
   - To find where it's defined: LSP goToDefinition
   - To find all usages: LSP findReferences
   - To check its type: LSP hover
   - To list symbols in a file: LSP documentSymbol
 
-  Only use Grep if LSP returns no results or you're searching non-code files.
+  Only use a text search if LSP returns no results or you're searching non-code files.
 
-  If the LSP tool is unavailable for this file type or returned no results, re-run this exact Grep with (?:) appended to the end of the pattern (pattern(?:)) to bypass this guard — that's a zero-width match, so it doesn't change what Grep actually searches for.`, pattern))
+  If the LSP tool is unavailable for this file type or returned no results, re-run this exact %s with (?:) appended to the end of the pattern (pattern(?:)) to bypass this guard — that's a zero-width match, so it doesn't change what is actually searched for.`, pattern, noun))
 }

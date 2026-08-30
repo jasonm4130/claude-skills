@@ -1,6 +1,6 @@
 # gates
 
-Four stateless `PreToolUse` gates and one never-blocking nudge, in one plugin.
+Five stateless `PreToolUse` gates and one never-blocking nudge, in one plugin.
 Each intercepts a *specific, high-signal action* at the moment it is about to
 happen, and each carries an ack marker so a deliberate override costs one token in
 history rather than a disabled hook.
@@ -11,6 +11,7 @@ history rather than a disabled hook.
 | **design-gate** | a new-project scaffold command (`npm create vite`, `cargo new`, `rails new`, …) | ask | `design-gate:ack` |
 | **workflow-model** | a `Workflow` script that fans out with no per-agent `model:` | deny | `model-guard:ack` |
 | **agent-model** | an `Agent` dispatch that omits `model` | deny | set `model` |
+| **lsp-first** | a shell or `Grep` search for a code symbol, when its language server resolves | deny | append `(?:)` to the pattern |
 | **json-config-guard** | a write that leaves `settings.json` / `.mcp.json` unparseable | reports after the fact (exit 2) | fix the syntax |
 | **consolidation trigger** | a repo that has moved far since its docs were last checked *against each other* | in-session nudge, never blocks | `/docs-consolidate --defer` |
 
@@ -337,8 +338,10 @@ the right place to stop.
 ```
 gates/
 ├── .claude-plugin/plugin.json
-├── bin/ccguard                                 — committed Rust binary (design-gate,
-│                                                 workflow-model, agent-model)
+├── bin/ccguard                                 — committed Go binary, universal
+│                                                 (design-gate, workflow-model,
+│                                                 agent-model, lsp-first,
+│                                                 json-config-guard)
 ├── hooks/hooks.json                            — PreToolUse (Bash, Workflow, Agent),
 │                                                 Stop, UserPromptSubmit
 ├── scripts/

@@ -13,6 +13,11 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ccguard\" design-gate \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-design-gate.mjs\" || node \"${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-design-gate.mjs\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ccguard\" lsp-first",
+            "timeout": 5
           }
         ]
       },
