@@ -87,6 +87,37 @@ export function resolveDataDir(fallbackName) {
  * @param {string} eventName
  * @param {string} additionalContext
  */
+/**
+ * An offer the USER is meant to see and act on.
+ *
+ * `additionalContext` alone is model-facing: Claude Code injects it as a system
+ * reminder and the human never sees it. That is the right channel for context,
+ * and the wrong one for an offer -- an offer phrased as "run X now unless the
+ * user objects" competes with everything else in a long session and loses, so
+ * the user is never actually asked. Measured on this plugin's own data before
+ * this change: 18 sessions flagged retro-worthy, 0 retros ever run.
+ *
+ * `systemMessage` on UserPromptSubmit is the documented user-visible channel --
+ * "Claude Code shows it in the transcript before Claude processes the prompt" --
+ * and it neither blocks nor erases the prompt, unlike exiting 2. The two fields
+ * are not exclusive, so the model keeps its instruction and the human gets the
+ * ask.
+ *
+ * @param {string} eventName
+ * @param {string} systemMessage   shown to the user
+ * @param {string} additionalContext  given to the model
+ */
+export function emitOffer(eventName, systemMessage, additionalContext) {
+  const payload = {
+    hookSpecificOutput: {
+      hookEventName: eventName,
+      systemMessage,
+      additionalContext,
+    },
+  };
+  process.stdout.write(JSON.stringify(payload) + "\n");
+}
+
 export function emitAdditionalContext(eventName, additionalContext) {
   const payload = {
     hookSpecificOutput: {

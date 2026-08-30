@@ -178,11 +178,15 @@ test("interleaving: a worthy session appended during the interview survives clea
     { ...env, ...EVENING, RETRO_BATCH_MIN_SESSIONS: "1", RETRO_BATCH_MIN_DAYS: "0" },
   );
   assert.equal(chk.code, 0);
-  assert.match(
-    JSON.parse(chk.stdout).hookSpecificOutput.additionalContext,
-    /1 retro-worthy session/,
-    "the concurrent session survived cleanup and still counts",
-  );
+  {
+    const { systemMessage, additionalContext } = JSON.parse(chk.stdout).hookSpecificOutput;
+    assert.match(
+      systemMessage,
+      /1 retro-worthy session/,
+      "the concurrent session survived cleanup and still counts",
+    );
+    assert.match(additionalContext, /Do not start it unprompted/);
+  }
 });
 
 test("end-to-end: PreCompact marks the session worthy without interrupting", async (t) => {

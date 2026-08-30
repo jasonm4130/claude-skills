@@ -38,7 +38,10 @@ hooks close it.
 config are ignored — a README edit is not domain work). `Stop` flags the first
 such repo that has a `CLAUDE.md` but no `CONTEXT.md` or `CONTEXT-MAP.md`.
 `UserPromptSubmit` turns that flag into a one-line offer and records the repo as
-offered.
+offered. The offer goes out as **`systemMessage`**, which Claude Code shows in the
+transcript, with `additionalContext` alongside telling the model not to act on it
+unprompted. Sending it as `additionalContext` alone put it in front of the model
+and never the user: 5 repos were offered that way and none converted.
 
 Noise is the binding constraint — an unconditional "no `CONTEXT.md` here" check
 fires on nearly every repo, every session, forever. Hence the three gates: source
