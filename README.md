@@ -5,6 +5,20 @@
 A Claude Code plugin **marketplace** hosting multiple independent plugins.
 Add the marketplace once, then install the plugins you want.
 
+## Scope
+
+This repo ships **capability**: skills, guards, workflows and agents that anyone can
+install. Every plugin is self-contained — a shipped file citing a path outside its own
+payload is a test failure, not a style preference
+(`scripts/repo-consistency.test.mjs`).
+
+The machine-level half — `settings.json`, which plugins are enabled, MCP registration,
+`CLAUDE.md`, lifecycle hooks — lives in
+**[jasonm4130/dotfiles](https://github.com/jasonm4130/dotfiles)**, managed with chezmoi.
+
+The test: *could a stranger install this and have it work?* If yes it belongs here. If it
+references one machine's paths, prose calibration, or state, it belongs in dotfiles.
+
 ## Install
 
 ```
@@ -36,108 +50,11 @@ Full details per plugin: see `plugins/<name>/README.md`.
 > informational only — `claude plugin validate` confirms Claude Code does not read or
 > enforce it, so it is not a substitute for this table.
 
-## Renamed and removed plugins
+## More
 
-A plugin that leaves the marketplace stops receiving updates but stays installed:
-its `<name>@jasonm4130-claude-skills` key remains in `enabledPlugins`, and anything
-it wrote under `~/.claude/plugins/data/<name>/` stays on disk. Nothing in this repo
-deletes that data — uninstall with `/plugin uninstall <name>@jasonm4130-claude-skills`
-and remove the data directory by hand if you want it gone.
-
-The marketplace `renames` field is deliberately not used for the three-guards →
-`gates` consolidation: it maps one name to one name, and auto-installing the full
-`gates` bundle for someone who had only one of the guards would widen what they
-opted into. The migration stays manual — the table below says what to run.
-
-| Removed | Date | Replaced by | What to do |
-|---|---|---|---|
-| `deep-dive` (and its earlier name `deep-research`) | 2026-08-26 | Claude Code's built-in `/deep-research` | Uninstall. The built-in now inherits the session model instead of pinning Opus, and votes on claims adversarially — the two things this plugin existed to add (verified 2026-08-26). |
-| `claude-design` | 2026-08-26 | `frontend-design` | Uninstall, and install `frontend-design` if you don't already have it. Its heavy path now carries the goal/layout/content/audience brief and the `/design-sync` design-system route directly — one skill instead of two that had to agree with each other. |
-| `superpowers-core`'s `using-skills` skill and its `SessionStart` hook | 2026-08-26 | Your own global `CLAUDE.md` | Keep `superpowers-core` installed — the five method skills are unchanged. The dispatcher kernel it used to inject every session now belongs in `~/.claude/CLAUDE.md`, which already loads at every session start; injecting it as well stated the same rule twice. Copy the rules you want there. Claude Code will stop prompting for the plugin's hook. |
-| `codebase-design` | 2026-08-26 | Nothing | Uninstall. The 2026-08-03 ADR kept it on the condition that an imperative hand-off from `brainstorming` produce invocations by 2026-08-24; it was still at zero, so the review clause fired. The design vocabulary it carried is native to Claude — `brainstorming` and `test-driven-development` now make their boundary and seam points directly. |
-| `docs-sync-guard` | 2026-08-26 | `gates` | Uninstall, then `/plugin install gates@jasonm4130-claude-skills`. Both mechanisms moved across unchanged: the commit gate (still `docs-sync:ack`) and the consolidation trigger, whose `/docs-consolidate` skill is now `gates:docs-consolidate`. The `.docs-sync` record and the `.git/docs-sync-defer` marker are per-repo and keep working as they are. |
-| `design-gate-guard` | 2026-08-26 | `gates` | Uninstall, then install `gates`. The scaffold gate moved across unchanged, `design-gate:ack` included. |
-| `workflow-model-guard` | 2026-08-26 | `gates` | Uninstall, then install `gates`. Both hooks moved across unchanged, `model-guard:ack` included. |
-
-## Repo layout
-
-```
-.claude-plugin/marketplace.json   # marketplace manifest (all plugins registered here)
-plugins/<name>/
-  .claude-plugin/plugin.json      # per-plugin manifest
-  skills/<skill>/SKILL.md         # skill definition + frontmatter
-  hooks/hooks.json                # hook registrations (where applicable)
-  scripts/ tests/                 # stdlib-only .mjs + node:test suites
-  bin/ccguard                     # committed Rust guard binary (plugins/gates only;
-                                  #   the .mjs stays as fallback AND reference impl)
-rust/                             # source for bin/ccguard
-docs/superpowers/{specs,plans}/   # design specs and implementation plans
-docs/research/                    # dated research + triage records
-RESEARCH_*.md                     # standalone research write-ups
-scripts/run-node-tests.sh         # CI test runner (globs files — `node --test <dir>`
-                                  #   is broken on Node 24)
-```
-
-## Development
-
-```bash
-bash scripts/run-node-tests.sh    # run every *.test.mjs in one process
-```
-
-Local Node is pinned to 24 (`mise.toml`), matching the version CI tests on.
-
-The whole `plugins/<name>/` tree is copied into the install cache — `README.md`,
-`CLAUDE.md` and `tests/` included — so anything a shipped file cites must resolve
-for someone who installed the plugin rather than cloning the repo. Cite `docs/`,
-a repo-root `RESEARCH_*.md`, or another repo by **github.com URL**, not by path.
-`repo-consistency.test.mjs` fails the build on a bare path, and also resolves
-every `blob/main/…` link against the working tree, so a link left behind by a
-file move is caught rather than silently 404ing.
-
-Two things are deliberately not flagged: instructional templates naming where to
-*save* a file (a citation carries a concrete date, a template carries
-`YYYY-MM-DD`), and paths that exist nowhere in the repo, which are test fixtures
-rather than references anyone can follow.
-
-CI (`.github/workflows/ci.yml`) validates all JSON manifests, runs `claude plugin
-validate` against every `plugins/<name>/` directory (catches malformed skill
-frontmatter that the JSON check above doesn't reach), runs the node test suite
-on ubuntu+macos (Node 24), runs the SDD bash smoke tests, runs `rust-guards`
-(the `rust/` unit tests plus the differential test that fails on a stale
-committed `bin/ccguard`), and runs `version-bump-check` (see Releasing).
-
-## Updating an installed plugin
-
-Claude Code keys "update available" off a plugin's **version**, so an update only
-reaches you once the version is bumped (that's enforced — see Releasing). To pick up
-a new version:
-
-- **Fastest** — `bash scripts/update-plugins.sh`, then `/reload-plugins`. The script
-  refreshes the marketplace metadata and fetches new versions of your installed plugins
-  in one shot; `/reload-plugins` then applies them without a restart.
-- **Usually nothing** — session-start autoUpdate pulls new versions of installed
-  plugins on the next launch.
-- **By hand:** `/plugin marketplace add jasonm4130/claude-skills` (refresh the
-  marketplace metadata), then **either** open `/plugin` and update from the menu, **or**
-  run `claude plugin update <name>@jasonm4130-claude-skills` (restart to apply).
-
-Three traps worth knowing: `/reload-plugins` only re-reads the *installed* cache — it does
-**not** fetch new versions; a bare `/plugin install <name>@jasonm4130-claude-skills`
-**no-ops** when the plugin is already installed; and `claude plugin update <name>` is not
-scoped to that name — it refreshes the whole marketplace payload, so one call can pull
-several plugins at once. `update-plugins.sh` reports what actually landed in the cache
-rather than how many calls it made, so its summary stays accurate either way.
-
-## Releasing (maintainer)
-
-1. Make the change under `plugins/<name>/`.
-2. Bump in one step: `node scripts/bump-plugin.mjs <name> <patch|minor|major>` — it updates
-   `plugins/<name>/.claude-plugin/plugin.json` **and** the matching `.claude-plugin/marketplace.json`
-   entry together (they must stay in sync).
-3. Pre-check locally: `node scripts/check-version-bumps.mjs main` (expect no violations).
-4. Open a PR. CI's **`version-bump-check`** fails the PR if any plugin's shipped content
-   changed without a strict semver increase — so the bump can't be forgotten.
-5. Merge with a merge commit once checks pass. Installed users get it per *Updating* above.
+- **[Developing](docs/developing.md)** — repo layout, tests, local install, releasing
+- **[Renamed and removed plugins](docs/migrations.md)** — where an old plugin went
+- **[go/](go/README.md)** — the compiled guard binary and why it is committed
 
 ## License
 

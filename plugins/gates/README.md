@@ -371,13 +371,13 @@ Each gate names itself in its decision reason (`docs-sync-guard:`, `design-gate-
 
 - **The design-gate, workflow-model and agent-model gates on arm64 macOS: nothing.**
   They run `bin/ccguard`, a committed static binary with no runtime dependency at all
-  (36.1ms → 2.9ms; see `rust/README.md` in the repo).
+  (36.1ms → 2.9ms; see `go/README.md` in the repo).
 - **Everywhere else, and the docs-sync gate and consolidation trigger everywhere:
   Node.js 18+ on PATH**, plus git for the docs-sync gate and the trigger. The compiled
   hook commands are `bin/ccguard <sub> "…/scripts/….mjs" || node "…/scripts/….mjs"`, so
   on Linux or an Intel Mac the binary fails to exec and the original `.mjs` guard runs
   instead — same behaviour, just without the speedup. (The path is passed twice
-  deliberately; `rust/README.md` explains which failure each copy covers.) Node is an
+  deliberately; `go/README.md` explains which failure each copy covers.) Node is an
   external prerequisite Claude Code does not ship — install it via Homebrew, WinGet, or
   your distro's package manager. With neither the binary nor Node the hook cannot run
   and the gate fails open (a non-blocking `hook error` per matching event). Why there is

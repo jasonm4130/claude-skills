@@ -305,7 +305,7 @@ carry its own. There is now exactly one committed binary in the repo.
 The `.mjs` path appears twice on purpose: the `||` covers a binary that never executes
 (127 missing, 126 wrong architecture), and the **argv** covers a binary that ran but
 hit a payload it cannot represent, where the `||` is useless because stdin is already
-drained. `rust/README.md` has the full argument.
+drained. `go/README.md` has the full argument.
 
 **The `.mjs` files are not dead code — do not delete them.** They are both the
 fallback and the reference implementation that `scripts/ccguard-differential.test.mjs`
@@ -319,7 +319,7 @@ winner reproducible.
 
 `bin/ccguard` is the one exception to "no build artifacts": the marketplace install
 path is `git clone` + copy with no build step anywhere, so a compiled hook has to ship
-pre-built. Source lives in `rust/`; see `rust/README.md` for the rebuild command and
+pre-built. Source lives in `go/`; see `go/README.md` for the rebuild command and
 the staleness fingerprint.
 
 ## Conventions
@@ -349,7 +349,7 @@ the staleness fingerprint.
 ```bash
 node --test plugins/gates/tests/*.test.mjs             # real temp git repos throughout
 node --test scripts/ccguard-differential.test.mjs      # binary vs .mjs equivalence
-cargo test --release --manifest-path rust/Cargo.toml   # the binary's own units
+(cd go && go test ./...)                               # the binary's own units
 ```
 
 Glob the files — Node 24 regressed bare-directory invocation (`node --test <dir>` →
@@ -359,5 +359,5 @@ The docs-sync boundary test builds 49 commits, so the suite takes ~1min. Filler 
 use `--allow-empty` — `rev-list --count` counts them identically and it avoids both the
 file I/O and a per-call filename counter that collides across calls.
 
-After editing `rust/src/`, rebuild and re-copy the binary (see `rust/README.md`) — the
-differential test fails on a stale one rather than letting it ship.
+After editing `go/`, rebuild and re-copy the binary (see `go/README.md`) — the
+differential test rebuilds and compares bytes, so a stale one cannot ship.

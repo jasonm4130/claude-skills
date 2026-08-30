@@ -54,7 +54,7 @@ For discipline skills, follow up with pressure scenarios: see [testing-skills-wi
 
 Each of these is a test that will fail, not a preference.
 
-**Name every skill plugin-qualified in anything a hook emits.** `Skill(retro)` returns `Unknown skill: retro`; `Skill(session-retro:retro)` works. A bare name is one the model resolves by guessing, and across an audit of 8 used skills it guessed wrong in 4. `scripts/repo-consistency.test.mjs` scans hook sources — both `.mjs` and `rust/src/*.rs` — and fails on a bare `"<skill> skill"`. Comments are stripped before scanning, so discussing the bare name in a comment is fine.
+**Name every skill plugin-qualified in anything a hook emits.** `Skill(retro)` returns `Unknown skill: retro`; `Skill(session-retro:retro)` works. A bare name is one the model resolves by guessing, and across an audit of 8 used skills it guessed wrong in 4. `scripts/repo-consistency.test.mjs` scans hook sources — both `.mjs` and `go/*.go` — and fails on a bare `"<skill> skill"`. Comments are stripped before scanning, so discussing the bare name in a comment is fine.
 
 **Give every skill exactly one mechanical inbound edge.** Every skill that actually fires has a named CLAUDE.md gate, a hook nudge, an unambiguous user phrase, or a hand-off from a skill that already fires. Five skills that had none were invoked zero times over 6–10 weeks and were deleted. A "see also" cross-reference does not cause invocation; an imperative instruction does.
 

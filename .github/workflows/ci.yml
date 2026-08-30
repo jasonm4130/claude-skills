@@ -69,39 +69,46 @@ jobs:
       - name: Run SDD bash helper smoke tests
         run: bash plugins/subagent-driven-development/scripts/scripts.test.sh
 
-  rust-guards:
-    # macOS-only by design: the committed binary is arm64 macOS (see rust/README.md).
-    # `macos-latest` is arm64, so this both compiles the crate and is the one runner
-    # where scripts/ccguard-differential.test.mjs actually executes rather than skips.
+  go-guards:
+    # macOS-only by design: the committed binary is a macOS universal build, and
+    # `macos-latest` is the one runner where scripts/ccguard-differential.test.mjs
+    # actually executes rather than skips. Go itself cross-compiles fine — it is the
+    # artifact under test that is macOS.
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Cargo unit tests
-        run: cargo test --release --manifest-path rust/Cargo.toml
-      - name: Committed binaries were built from the committed source
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache-dependency-path: go/go.mod
+      - name: Vet and unit tests
+        run: |
+          cd go
+          go vet ./...
+          go test ./...
+      - name: Committed binary was built from the committed source
         # The binary is a build artifact living in git because the marketplace has
         # no build step. That only stays honest if CI proves the committed binary
-        # came from the committed source — otherwise a source edit ships with a
-        # stale binary and every guard silently runs old logic.
+        # came from the committed source.
         #
-        # Comparing bytes would NOT work: Rust builds are not bit-reproducible
-        # across toolchain versions or build paths. So compare the source
-        # fingerprint that build.rs bakes in instead — same source, same
-        # fingerprint, whoever compiled it.
+        # The Rust predecessor could not compare bytes — Rust builds are not
+        # bit-reproducible across toolchain versions or build paths — so it compared
+        # a source fingerprint baked in by build.rs. Go with `-trimpath` IS
+        # reproducible, so we rebuild and compare the real artifact. Strictly
+        # stronger: it catches both a stale binary and one built from other source.
         shell: bash
         run: |
           set -euo pipefail
-          cargo build --release --manifest-path rust/Cargo.toml
-          TARGET=$(cargo metadata --format-version 1 --no-deps --manifest-path rust/Cargo.toml \
-            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).target_directory))')
-          FRESH=$("$TARGET/release/ccguard" --source-fingerprint)
-          echo "fresh build fingerprint: $FRESH"
-          GOT=$(plugins/gates/bin/ccguard --source-fingerprint)
-          if [ "$GOT" != "$FRESH" ]; then
-            echo "::error::plugins/gates/bin/ccguard is stale ($GOT != $FRESH) — rebuild and re-copy it (see rust/README.md)"
+          cd go
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -trimpath -o /tmp/fresh-arm64 .
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -trimpath -o /tmp/fresh-amd64 .
+          lipo -create -output /tmp/fresh-universal /tmp/fresh-arm64 /tmp/fresh-amd64
+          cd ..
+          if ! cmp -s /tmp/fresh-universal plugins/gates/bin/ccguard; then
+            echo "::error::plugins/gates/bin/ccguard does not match a fresh build of go/ — rebuild and re-copy (see go/README.md)"
             exit 1
           fi
           echo "the committed binary matches the committed source"

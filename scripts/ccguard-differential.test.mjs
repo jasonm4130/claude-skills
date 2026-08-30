@@ -19,13 +19,13 @@
 //      find tokenizer divergence nobody thought to write a case for.
 //
 // Skips — loudly, never silently — when the binary is absent or refuses to
-// execute, which is the expected state on Linux CI and on an Intel Mac, since the
-// committed binary is arm64 macOS only.
+// execute, which is the expected state on Linux CI. The committed binary is a
+// macOS universal build, so both Apple Silicon and Intel Macs run these.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -304,47 +304,79 @@ const haveDesignGate = runnable(IMPLS["design-gate"][0]);
 const haveWorkflow = runnable(IMPLS["agent-model"][0]);
 
 const skipMsg =
-  "ccguard binary not present or not executable here — expected on Linux and Intel macOS " +
-  "(the committed binary is arm64 macOS only). Build with `cargo build --release` in rust/ " +
-  "and copy it into plugins/*/bin/ to run these.";
+  "ccguard binary not present or not executable here — expected on Linux (the committed " +
+  "binary is a macOS universal build covering arm64 and x86_64). Build with " +
+  "`go build -ldflags=\"-s -w\" -trimpath` in go/ and copy it into plugins/*/bin/ to run these.";
 
-test("the committed binary is not stale relative to rust/src", { skip: haveDesignGate ? false : skipMsg }, () => {
-  // The binary is a build artifact in git, so "I edited the source" and "the
-  // shipped guard changed" are two different events. build.rs bakes a fingerprint
-  // of rust/src/*.rs into the binary; this recomputes it the same way and
-  // compares. CI does the same check by building fresh — this is the local copy
-  // so the mistake is caught before it is pushed.
-  const srcDir = join(root, "rust", "src");
-  const files = readdirSync(srcDir).filter((f) => f.endsWith(".rs")).sort();
+const haveGo = spawnSync("go", ["version"], { encoding: "utf8" }).status === 0;
 
-  // FNV-1a over (filename, contents) per file, mirroring rust/build.rs exactly.
-  let hash = 0xcbf29ce484222325n;
-  const MASK = (1n << 64n) - 1n;
-  const fold = (/** @type {Buffer} */ bytes) => {
-    for (const b of bytes) {
-      hash ^= BigInt(b);
-      hash = (hash * 0x100000001b3n) & MASK;
-    }
-  };
-  for (const f of files) {
-    fold(Buffer.from(f, "utf8"));
-    fold(readFileSync(join(srcDir, f)));
-  }
-  const expected = hash.toString(16).padStart(16, "0");
-
-  for (const bin of new Set(Object.values(IMPLS).map(([b]) => b))) {
-    const got = run(bin, ["--source-fingerprint"], "").stdout.trim();
-    assert.equal(
-      got,
-      expected,
-      `${bin} is stale.\n  binary was built from: ${got}\n  rust/src is now:       ${expected}\n` +
-        `Rebuild and re-copy:\n    cargo build --release --manifest-path rust/Cargo.toml\n` +
-        `    cp "$(cargo metadata --format-version 1 --no-deps --manifest-path rust/Cargo.toml | ` +
-        `node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).target_directory))')/release/ccguard" ` +
-        `plugins/gates/bin/ccguard`,
+test(
+  "the committed binary is not stale relative to go/",
+  { skip: haveGo ? false : "go toolchain not present — cannot rebuild to compare" },
+  () => {
+    // The binary is a build artifact in git, because the marketplace install path
+    // is `git clone` + copy with no build step anywhere in it. So "I edited the
+    // source" and "the shipped guard changed" are two different events, and only
+    // this check ties them together.
+    //
+    // The Rust version of this test could not compare bytes — Rust builds are not
+    // bit-reproducible across toolchain versions or build paths — so it compared an
+    // FNV-1a source fingerprint baked in by build.rs. Go with `-trimpath` IS
+    // reproducible, so the fingerprint apparatus is gone and we compare the real
+    // artifact instead. That is strictly stronger: it catches a stale binary AND a
+    // binary built from something other than this source.
+    //
+    // The committed file is a macOS universal binary, so thin it to this machine's
+    // arch before comparing against a native `go build`.
+    const goDir = join(root, "go");
+    const fresh = join(tmpdir(), `ccguard-fresh-${process.pid}`);
+    const built = spawnSync(
+      "go",
+      ["build", "-ldflags=-s -w", "-trimpath", "-o", fresh, "."],
+      { cwd: goDir, encoding: "utf8" },
     );
-  }
-});
+    assert.equal(built.status, 0, `go build failed:\n${built.stderr}`);
+
+    for (const bin of new Set(Object.values(IMPLS).map(([b]) => b))) {
+      const thin = join(tmpdir(), `ccguard-thin-${process.pid}`);
+      const arch = process.arch === "arm64" ? "arm64" : "x86_64";
+      const lipo = spawnSync("lipo", [bin, "-thin", arch, "-output", thin], { encoding: "utf8" });
+      // A non-universal binary (someone committed a single-arch build) has nothing
+      // to thin; compare it directly rather than treating that as an error here —
+      // the arch check below is what enforces universality.
+      const candidate = lipo.status === 0 ? thin : bin;
+
+      assert.deepEqual(
+        readFileSync(candidate),
+        readFileSync(fresh),
+        `${bin} is stale or was built from different source.\n` +
+          `Rebuild and re-copy:\n` +
+          `    cd go\n` +
+          `    GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -trimpath -o /tmp/cc-arm64 .\n` +
+          `    GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -trimpath -o /tmp/cc-amd64 .\n` +
+          `    lipo -create -output ../${bin.replace(`${root}/`, "")} /tmp/cc-arm64 /tmp/cc-amd64`,
+      );
+    }
+  },
+);
+
+test(
+  "the committed binary covers both macOS architectures",
+  { skip: haveDesignGate ? false : skipMsg },
+  () => {
+    // Shipping arm64 only means every Intel-Mac installer silently falls through to
+    // the `|| node` fallback in hooks.json and pays ~21ms of interpreter start per
+    // tool call, with nothing anywhere reporting that it happened.
+    for (const bin of new Set(Object.values(IMPLS).map(([b]) => b))) {
+      const archs = spawnSync("lipo", ["-archs", bin], { encoding: "utf8" }).stdout.trim().split(/\s+/);
+      assert.deepEqual(
+        [...archs].sort(),
+        ["arm64", "x86_64"],
+        `${bin} should be a universal binary covering arm64 and x86_64, got: ${archs.join(" ")}`,
+      );
+    }
+  },
+);
 
 test("design-gate: agrees on every scaffold the JS suite asserts", { skip: haveDesignGate ? false : skipMsg }, () => {
   for (const cmd of SCAFFOLDS) assertAgrees("design-gate", bash(cmd), cmd);
