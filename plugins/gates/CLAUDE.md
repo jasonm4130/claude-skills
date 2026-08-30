@@ -26,6 +26,15 @@ they are one design:
   `model:` (≠ `inherit`). Any explicit `model` — including `fable` — passes: setting it
   IS the ack. Design rationale + probe evidence:
   [`RESEARCH_delegation_model_tiering.md`](https://github.com/jasonm4130/claude-skills/blob/main/RESEARCH_delegation_model_tiering.md).
+- **json-config-guard** (`PostToolUse`, matcher `Edit|Write|MultiEdit|Bash`) — re-parses
+  `settings.json` / `settings.local.json` / `.mcp.json` after a write and **exits 2 with
+  the parse error on stderr**. PostToolUse runs after the write, so it cannot deny; the
+  point is that Claude Code silently drops config it cannot parse, so a stray comma
+  disables every hook here with nothing to trace it back to. Matched by **basename**, so
+  it covers a project's `.claude/settings.json` too. `Bash` is in the matcher because a
+  `sed -i`, heredoc redirect or `tee` rewrites a config without the write tools ever
+  being involved. Adopted from jasonm4130/dotfiles, where it was machine-level; it guards
+  by basename rather than by absolute path, which is what makes it distributable.
 - **consolidation trigger** — `Stop` measures commits since the `.docs-sync` record's
   `audited=` SHA and arms a flag; `UserPromptSubmit` consumes it fire-once and suggests
   `gates:docs-consolidate`. Never blocks. See README.md for the user-facing contract.

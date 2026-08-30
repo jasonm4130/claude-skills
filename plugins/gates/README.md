@@ -11,6 +11,7 @@ history rather than a disabled hook.
 | **design-gate** | a new-project scaffold command (`npm create vite`, `cargo new`, `rails new`, …) | ask | `design-gate:ack` |
 | **workflow-model** | a `Workflow` script that fans out with no per-agent `model:` | deny | `model-guard:ack` |
 | **agent-model** | an `Agent` dispatch that omits `model` | deny | set `model` |
+| **json-config-guard** | a write that leaves `settings.json` / `.mcp.json` unparseable | reports after the fact (exit 2) | fix the syntax |
 | **consolidation trigger** | a repo that has moved far since its docs were last checked *against each other* | in-session nudge, never blocks | `/docs-consolidate --defer` |
 
 They share a plugin because they share a design: no flag files, no session state,
