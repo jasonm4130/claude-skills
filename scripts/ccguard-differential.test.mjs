@@ -332,7 +332,7 @@ test(
     const fresh = join(tmpdir(), `ccguard-fresh-${process.pid}`);
     const built = spawnSync(
       "go",
-      ["build", "-ldflags=-s -w", "-trimpath", "-o", fresh, "."],
+      ["build", "-buildvcs=false", "-ldflags=-s -w", "-trimpath", "-o", fresh, "."],
       { cwd: goDir, encoding: "utf8" },
     );
     assert.equal(built.status, 0, `go build failed:\n${built.stderr}`);
@@ -352,8 +352,8 @@ test(
         `${bin} is stale or was built from different source.\n` +
           `Rebuild and re-copy:\n` +
           `    cd go\n` +
-          `    GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -trimpath -o /tmp/cc-arm64 .\n` +
-          `    GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -trimpath -o /tmp/cc-amd64 .\n` +
+          `    GOOS=darwin GOARCH=arm64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/cc-arm64 .\n` +
+          `    GOOS=darwin GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/cc-amd64 .\n` +
           `    lipo -create -output ../${bin.replace(`${root}/`, "")} /tmp/cc-arm64 /tmp/cc-amd64`,
       );
     }

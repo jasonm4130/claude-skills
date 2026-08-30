@@ -53,12 +53,20 @@ source fingerprint baked in by `build.rs`. Comparing the artifact is strictly
 stronger: it catches a stale binary *and* one built from something other than this
 source, and it deletes the whole fingerprint apparatus.
 
+**`-buildvcs=false` is load-bearing — do not drop it.** By default Go stamps the
+git revision, commit time and a `vcs.modified` dirty flag into the binary, so the
+bytes change on every commit even when no source did, and they differ between a
+build made with a dirty tree and one made after committing. That makes the
+comparison fail permanently and for a reason the diff cannot show you (`go version
+-m <binary>` is what reveals it). Every build command here, in CI, and in the
+staleness test passes the flag.
+
 ## Rebuilding
 
 ```sh
 cd go
-GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -trimpath -o /tmp/cc-arm64 .
-GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -trimpath -o /tmp/cc-amd64 .
+GOOS=darwin GOARCH=arm64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/cc-arm64 .
+GOOS=darwin GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/cc-amd64 .
 lipo -create -output ../plugins/gates/bin/ccguard /tmp/cc-arm64 /tmp/cc-amd64
 ```
 

@@ -103,8 +103,8 @@ jobs:
         run: |
           set -euo pipefail
           cd go
-          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -trimpath -o /tmp/fresh-arm64 .
-          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -trimpath -o /tmp/fresh-amd64 .
+          GOOS=darwin GOARCH=arm64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/fresh-arm64 .
+          GOOS=darwin GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/fresh-amd64 .
           lipo -create -output /tmp/fresh-universal /tmp/fresh-arm64 /tmp/fresh-amd64
           cd ..
           if ! cmp -s /tmp/fresh-universal plugins/gates/bin/ccguard; then
