@@ -1,255 +1,175 @@
 ---
 name: land
-description: Use when a human-approved plan with "# Task N" headings exists and the user wants every task landed on main without watching — "land the plan", "run this unattended", "/landing-loop:land <plan>". One task per iteration, one pull request per task, CI green as the only gate, merge through the repo's own merge command, a ledger in git. Do NOT use to write or approve a plan (brainstorming, writing-plans, adr do that), for a plan with open questions, on a repo with no CI gate, or for ad-hoc edits with no plan.
+description: Use when a human-approved plan with "# Task N" headings is committed on main and the user wants every task landed without watching — "land the plan", "run this unattended", "/landing-loop:land <plan>". Preflights the repo, then hands the plan to a deterministic Workflow that lands one task at a time as its own pull request, CI green as the only gate, merged through the repo's merge command, ledger in git. Do NOT use to write or approve a plan (brainstorming, writing-plans, adr do that), for a plan with open questions, on a repo with no CI gate, or for ad-hoc edits with no plan.
 ---
 
 # Land a plan unattended
 
-You are the outer loop. A human approved the plan; that approval is the only human
-gate in this run, and it happened before you started. Everything after it is a
-machine gate: the repo's check command, the pull request's CI, the repo's merge
-command. Your job is to pick one task, get it through those gates, record the
-result in git, and pick the next one — until every task is landed or blocked.
-
-`subagent-driven-development`'s workflow runs the inner loop per task (implement →
-review → fix → verify, with tiered models and a BLOCKED ladder). You never implement
-in this session; you orient, dispatch, verify, push, wait, merge, and record.
+A human approved the plan; that approval is the only human gate in this run, and it
+happened before you started. After it, every gate is a machine: the check command, the
+pull request's CI, the repo's merge command. **You** (the controller) do the preflight,
+enumerate the tasks, launch the loop, and write the final report. The loop itself is
+`workflows/land.mjs` — control flow as code, so it cannot skip a gate, merge by another
+route, or call a task done that GitHub says is open. Per task it runs
+`subagent-driven-development`'s workflow as a child for implement → review → fix.
 
 ## Invocation
 
 ```
-/landing-loop:land <plan-path> [--max-tasks N] [--dry-run]
+/landing-loop:land <plan-path> [--max-tasks N] [--skeptics N] [--dry-run]
 ```
 
-For a run nobody is watching, launch it from a terminal that stays open:
+For a run nobody is watching, from a terminal that stays open:
 
 ```sh
-claude --permission-mode auto -p "/goal Every task in <plan-path> is landed or blocked, shown by the ledger beside it; stop after 40 turns. Get there with /landing-loop:land <plan-path>" --permission-prompts none
+claude --permission-mode auto --permission-prompts none -p "/goal Every task in <plan-path> is landed or blocked, shown by the ledger beside it and by gh pr list; stop after 40 turns. Get there with /landing-loop:land <plan-path>"
 ```
 
-`--permission-prompts none` (v2.1.259+) denies anything that would have prompted
-instead of hanging. `/goal` adds a judge that is not you. Without a bound in the
-condition the run has no ceiling but the harness's own.
+`--permission-prompts none` (v2.1.259+) denies anything that would have prompted instead
+of hanging. `/goal` adds a judge that is not you. Without a bound in the condition the run
+has no ceiling but the harness's own.
 
-## Preflight — every line must hold, or refuse and say which
+## Preflight — every line must hold, or refuse and list every failure at once
 
-Print the check and its result for each. A refusal lists every failure at once.
+Print each check with its result.
 
-1. **Plan.** The file is committed on `main` (its own pull request is where the human
-   approved it), parses into `# Task N` / `## Task N` headings, and its
-   `## Open Questions / Unresolved Assumptions` section is empty or absent. An open
-   question is a decision; unattended runs execute decisions, they do not make them.
-2. **Scope per task.** Every task lists the files it may touch (`**Files:**`). A task
-   without one gets no authorized scope, and overeager rates go from 0% to 17% on
+1. **Plan.** Committed on `main` (its own pull request is where the human approved it),
+   parses into `# Task N` / `## Task N` headings, and its `## Open Questions / Unresolved
+   Assumptions` section is empty or absent. An open question is a decision; unattended
+   runs execute decisions, they do not make them.
+2. **Scope per task.** Every task lists the files it may touch (`**Files:**`). Without
+   that line a task has no authorized scope, and overeager rates go from 0% to 17% on
    that omission alone (arXiv 2607.05743).
 3. **Check command.** The plan's `## Global Constraints` names a `Verify:` command, or
    the repo has one canonical suite command you can name. Its last line on success must
-   be short. If the only verifier prints thousands of lines on pass, wrap it first
-   (see *Quiet verifier* below).
-4. **Merge command.** In order of preference: a repo script that waits for CI and merges
-   (`./merge-pr.sh`, `scripts/merge-pr`), else `gh pr merge --auto --merge` **only if**
-   `gh api repos/{owner}/{repo}/branches/main/protection` returns required checks.
-   Neither → refuse: there is no CI gate, so there is nothing to land through.
-5. **Tree.** On `main`, `git status --porcelain` empty, `git fetch` succeeds,
-   `main` equals `origin/main`.
-6. **Session.** Permission mode is `auto` or the run was launched with
-   `--permission-prompts none`. In `default` mode the first `gh pr create` will hang
-   on a prompt nobody answers.
-7. **Ledger.** `<plan-path minus .md>.ledger.md` exists or you create it from the
-   template below in the first task's branch.
+   be short; a verifier that prints thousands of lines on pass gets wrapped first (see
+   *Quiet verifier*).
+4. **Merge command, and it is allow-listed.** Preferred: a repo script that waits for
+   CI and merges (`./merge-pr.sh {pr}`). Otherwise `gh pr merge {pr} --auto --merge`,
+   only if `gh api repos/{owner}/{repo}/branches/main/protection` returns required
+   checks. Neither → refuse: there is no CI gate to land through. Then confirm the
+   command appears in `permissions.allow` of the repo's `.claude/settings.json` (e.g.
+   `Bash(./merge-pr.sh:*)`). Auto mode's classifier denied `./merge-pr.sh` on
+   2026-09-04 with no rule in place; an allow rule bypasses the classifier, a denial
+   mid-run halts the loop.
+5. **Tree.** On `main`, `git status --porcelain` empty, `git fetch` succeeds, `main`
+   equals `origin/main`.
+6. **Session.** Permission mode is `auto`, or the run was launched with
+   `--permission-prompts none`. In `default` mode the first `gh pr create` hangs on a
+   prompt nobody answers.
+7. **Inner loop installed.** Resolve the SDD workflow by literal path, pinned to the
+   version this skill was written against:
 
-`--dry-run` stops here and prints the task order.
+   ```sh
+   S="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.12.0/workflows/sdd.mjs"
+   [ -f "$S" ] && echo "$S" || echo "MISSING: subagent-driven-development 0.12.0 — run /plugin marketplace update jasonm4130-claude-skills"
+   ```
 
-## The ledger
+   `MISSING` is a stop, not a glob for another version.
 
-Lives beside the plan, committed on each task's branch, so it lands with the task.
-Pull requests are the truth about status; the ledger stores the mapping and the notes.
+`--dry-run` stops here and prints the task order with tiers.
 
-```markdown
-# Ledger — <plan title>
+## Enumerate the tasks
 
-Approved by the human who invoked /landing-loop:land on <ISO date>.
-Merge command: ./merge-pr.sh · Check command: scripts/check
+Turn the plan into `{ n, title, tier, effort, deps }` — ids as the plan writes them,
+never renumbered. Tier by the same table SDD uses: 1–2 files and a complete spec →
+`opus`/`low`; multi-file or integration → `opus`/`medium`; design judgment →
+`opus`/`high`. `deps` is honest: mark one wherever task B touches files task A changes.
+The loop lands tasks one at a time in dependency order, so a dep costs nothing but
+ordering; a missing dep costs a red merge.
 
-| Task | Branch | PR | Status | Note |
-| --- | --- | --- | --- | --- |
-| 1 | land/<slug>-t1 | #12 | landed | |
-| 2 | land/<slug>-t2 | #13 | blocked | CI red twice: rust/clippy, log in PR |
-| 3 | | | todo | deps: 2 |
-```
+`slug` is the plan file's name without date and extension, lowercase, hyphens only
+(`2026-09-04-landing-loop-bootstrap.md` → `landing-loop-bootstrap`). Branches are
+`land/<slug>-t<N>`.
 
-Status values: `todo`, `in-progress`, `landed`, `blocked`, `skipped` (a dep is blocked).
-Derive `landed` from `gh pr view <n> --json state` at orientation, never from memory.
+## Launch the loop
 
-## Orientation — run this at the top of every iteration
-
-Identical every time; the cost of orientation is what keeps context small.
-
-```sh
-git switch main && git pull --ff-only
-gh pr list --search "head:land/<slug>-" --state all --json number,headRefName,state,isDraft
-cat <ledger>
-```
-
-Reconcile: a merged PR marks its task `landed`; an open draft with a blocked note
-marks it `blocked`. Then pick the first `todo` task, in plan order, whose deps are all
-`landed`. If none: go to *Finish*.
-
-## One task per iteration
-
-### 1. Branch
+Resolve this plugin's own workflow the same way, pinned to this version:
 
 ```sh
-git switch -c land/<slug>-t<N> main
+L="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/landing-loop/0.1.0/workflows/land.mjs"
+[ -f "$L" ] && echo "$L" || echo "MISSING: landing-loop 0.1.0 — run /plugin marketplace update jasonm4130-claude-skills"
 ```
 
-Name the branch after the task; the git log outlives the agent.
-
-### 2. Dispatch the inner loop
-
-Resolve the SDD workflow by literal path, pinned to the version this skill was written
-against, and fail loud if it is missing:
-
-```sh
-P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.12.0/workflows/sdd.mjs"
-[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.12.0 — run /plugin marketplace update jasonm4130-claude-skills"
 ```
-
-`MISSING` is a stop, not a glob for another version.
-
-```
-Workflow({ scriptPath: "<resolved sdd.mjs>", args: {
+Workflow({ scriptPath: "<resolved land.mjs>", args: {
   planPath: "<abs plan path>",
   workdir: "<repo root>",
-  pluginDir: "<parent of workflows/>",
-  globalConstraints: "<plan's Global Constraints> + <the unattended constraints below>",
-  mergeBase: "<git rev-parse main>",
-  branchTip: "<git rev-parse HEAD>",
-  tasks: [ { n: <N>, title: "<title>", tier: "opus", effort: "<low|medium|high>", deps: [] } ],
-  testCmd: "<check command>",
-  limits: { fixRounds: 2, escalateAttempts: 1, maxParallel: 1, fableEscalation: false }
+  slug: "<slug>",
+  checkCmd: "<check command>",
+  mergeCmd: "./merge-pr.sh {pr}",
+  sddPath: "<resolved sdd.mjs>",
+  sddPluginDir: "<parent of sdd.mjs's workflows/>",
+  globalConstraints: "<plan's Global Constraints, verbatim>",
+  sessionLink: "<the Claude-Session trailer the harness gave you, or omit>",
+  approvedOn: "<today, ISO date>",
+  tasks: [ { n: 1, title: "...", tier: "opus", effort: "medium", deps: [] }, ... ],
+  limits: { fixRounds: 1, skeptics: 0, maxTasks: 0, consecutiveBlocked: 2, sddFableEscalation: false }
 }})
 ```
 
-One task in the list. Tier by the SDD table (mechanical → `low`, integration →
-`medium`, judgment → `high`). `fableEscalation: false` keeps the cost ceiling
-predictable; set it true only when the human asked for it.
+`mergeCmd` must contain `{pr}`. `limits.skeptics: 3` adds an adversarial panel after the
+local check — three independent agents told to refute completeness, majority refutes →
+blocked; worth it for tasks whose acceptance is hard to test. `maxTasks: 0` is unlimited.
+`sddFableEscalation` stays off unless the human asked for it; it is the one cost with no
+ceiling.
 
-**Unattended constraints**, appended verbatim to `globalConstraints`:
+The Workflow runs in the background and notifies you when it returns. Do not poll it and
+do not start other work in the repo while it runs; the tree is its.
 
-```
-Authorized scope: only the files this task lists. Anything else you notice goes in the
-commit body under "Out of scope, noticed" and stays unchanged.
-Tests are read-only. A test that seems wrong blocks the task: report BLOCKED with the
-test name and why, do not edit or delete it.
-Docs in the same commit: update every doc that describes behaviour this task changes.
-If none does, the commit body carries "docs-sync:ack" and a one-line reason.
-Commit messages end with the session link the harness supplies.
-```
+## What the loop does per task, so you can read its log
 
-### 3. Verify the returned head yourself
+Orient (fresh `main`, status reconciled from `gh pr list`, branch) → Implement (SDD
+child run, one task) → Verify (head is HEAD, tree clean, check command's last line) →
+Ship (ledger row committed, push, PR) → Gate (merge command; on a red check one fix
+round, then the PR is parked as a draft with the log in a comment). Two consecutive
+blocked tasks halt the run; an infrastructure failure at the gate halts it; a shipped PR
+from an earlier run resumes at the gate.
 
-The workflow's `verified` flags come from an agent. You have Bash.
+## On return: verify, then report
 
-```sh
-git rev-parse --verify <result.head>^{commit} && git rev-parse HEAD
-<check command>
-```
-
-Quote the check command's last line. `halted` non-null, a head that is not `HEAD`, or
-a red check → the task is `blocked`; go to *Record and move on*.
-
-### 4. Push and open the pull request
+The return is `{ landed, blocked, skipped, todo, halted, ledger, meta }`. Before
+reporting, confirm the two claims that matter with real commands:
 
 ```sh
-git push -u origin land/<slug>-t<N>
-gh pr create --title "<task title>" --body-file - <<'EOF'
-Task <N> of <plan-path>, landed unattended.
-
-<two lines: what changed, what verified it — quote the check's last line>
-
-Out of scope, noticed: <from the commit bodies, or "nothing">
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-EOF
+git switch main && git pull --ff-only && git log --oneline -<landed count>
+gh pr list --search "head:land/<slug>-" --state all
 ```
 
-Add the ledger row (`in-progress`, branch, PR number) in a second commit on the same
-branch and push it.
+Every `landed` entry has a merged PR; every `blocked` one is an open draft. If either
+disagrees with the return, say so and stop — a loop reporting landed while GitHub says
+open is exactly what this check exists for.
 
-### 5. Wait for CI, then merge through the repo's gate
+Then the final message, standing on its own for a reader with no transcript:
 
-Run the merge command. A repo script that waits and merges is the whole step:
+- Landed: task numbers with PR numbers.
+- Blocked or skipped: task, reason in one line, where the log is (the PR comment).
+- Halted: the reason, and the next runnable step.
+- Out of scope, noticed: merged from the PR bodies and commit messages.
 
-```sh
-./merge-pr.sh
-```
-
-If the merge command does not wait, watch first:
-
-```sh
-gh pr checks <n> --watch --fail-fast
-```
-
-Use `Monitor` for the watch when it is available; it streams instead of polling.
-
-**Red CI:** pull the failing log (`gh run view <run-id> --log-failed`), dispatch **one**
-fix: a `worker` agent with an explicit `model`, the task brief, the log, and the same
-unattended constraints. Push, watch again. Red a second time → `blocked`: mark the PR
-draft (`gh pr ready --undo <n>`), put the last 40 log lines in a PR comment, and move on.
-
-**A check that never registers** (the merge script reports missing checks) is
-infrastructure, not the task. Retry the wait once after 2 minutes; then stop the whole
-run and say so.
-
-### 6. Record and move on
-
-Landed: `git switch main && git pull --ff-only`, confirm the merge commit is on main,
-update the ledger row to `landed` in the next task's branch. Blocked: the draft PR
-carries the row; every task depending on it becomes `skipped`. Then the next iteration.
-
-## Stop rules — stop the run, not just the task
-
-- Two consecutive `blocked` tasks. Something upstream is wrong; more iterations spend
-  money on the same wall.
-- `--max-tasks` reached.
-- Any gate `deny` that repeats for the same reason after one fix attempt.
-- The merge command exits non-zero for a reason other than a red check.
-- A permission denial: in `--permission-prompts none` that is the host telling you the
-  action was outside what was authorized. Do not find another route to the same action.
-
-## Finish
-
-Final message, standing on its own for a reader with no transcript:
-
-- Landed: task numbers and PR numbers.
-- Blocked or skipped: task, reason in one line, where the log is.
-- Out of scope, noticed: merged from the PR bodies.
-- The next runnable step, if any.
-
-Then, in an interactive session, offer `handoff:handoff`. Never mark a task landed you
-did not watch merge.
+In an interactive session, offer `handoff:handoff`. Never mark a task landed you did not
+see merged.
 
 ## Rationalizations this skill exists to refuse
 
 | Thought | Answer |
 | --- | --- |
-| "The test is clearly wrong, I'll fix it." | The test is the oracle. Block the task and say why. |
-| "CI is flaky, I'll merge with `--admin`." | `--admin` is the bypass the gate exists to stop. Block. |
+| "The test is clearly wrong, I'll fix it." | The test is the oracle. The loop blocks the task and says why. |
+| "CI is flaky, I'll merge with `--admin`." | `--admin` is the bypass the gate exists to stop. |
 | "I can answer this open question myself." | A decision made unattended is a decision nobody approved. Refuse at preflight. |
 | "Two tasks are small, I'll batch them in one PR." | One task per PR is what makes a blocked task revertible alone. |
-| "The plan didn't mention this file but the fix needs it." | Out of scope, noticed. Block if the task cannot land without it. |
+| "The plan didn't mention this file but the fix needs it." | Out of scope, noticed. Blocked if the task cannot land without it. |
 | "Progress has been made, I'll call it done." | Status comes from `gh pr view`, not from how the transcript reads. |
 
 ## Quiet verifier
 
 A check that prints thousands of lines on success eats the context it protects. The
-pattern three practitioner groups arrived at independently — silent on pass, full log
-on fail — as a shell wrapper the plan can name as its `Verify:` command:
+pattern three practitioner groups arrived at independently — silent on pass, full log on
+fail — as a shell wrapper the plan can name as its `Verify:` command:
 
 ```sh
 #!/usr/bin/env bash
-# scripts/check — one line on success, the full log on failure.
+# scripts/check — one line per step on success, the full log on failure.
 set -uo pipefail
 log=$(mktemp)
 run() { if "$@" >"$log" 2>&1; then echo "✓ $*"; else echo "✗ $*"; cat "$log"; exit 1; fi; }
@@ -259,4 +179,4 @@ run cargo test --all-targets
 echo "CHECK OK"
 ```
 
-Adapt the commands to the repo. `CHECK OK` is the line the ledger quotes.
+Adapt the commands to the repo. `CHECK OK` is the line the ledger and the PR body quote.
