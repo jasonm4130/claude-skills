@@ -6,7 +6,8 @@
 //   - `gh pr merge` in any form, and any `gh` call carrying `--admin`
 //   - `gh workflow …` and `gh variable set|delete …` (the merge machine and its
 //     kill switch are not the agent's to touch; an unset switch is a frozen one)
-//   - `git push` that forces, or that targets main
+//   - `git push` that forces, or that targets the base branch (`BASE` in
+//     loop/config when present, and always `main`)
 //   - `git commit --no-verify` (the pre-commit hook is part of the gate)
 //   - `git commit` while `.github/workflows/**` is staged (a pull request runs
 //     its own copy of ci.yml, so a worker could weaken the gate in the same PR
@@ -22,7 +23,8 @@
 //
 // Repo-agnostic: nothing here names this project. Language-agnostic too.
 import { execFileSync } from "node:child_process";
-import { readSync } from "node:fs";
+import { readFileSync, readSync } from "node:fs";
+import { join } from "node:path";
 
 function readStdin() {
   const chunks = [];
@@ -44,7 +46,19 @@ function readStdin() {
 const GIT = String.raw`(?:^|[\s;&|(\`{])(?:(?:command|exec|builtin)\s+(?:-\w+\s+)*|env\s+(?:\w+=\S*\s+)*|\\|[^\s;&|"']*/)?["']?git["']?\s+(?:(?:-[A-Za-z]|--[\w-]+)(?:[=\s]+[^\s;&|]+)?\s+)*`;
 const gitRe = (sub, flags = "") => new RegExp(GIT + sub, flags);
 
-export function judge(command, stagedPaths) {
+/** Branch names a push must never target: main, plus BASE from loop/config. */
+export function protectedBranches(cwd) {
+  const out = new Set(["main"]);
+  try {
+    const cfg = readFileSync(join(cwd || process.cwd(), "loop", "config"), "utf8");
+    const m = cfg.match(/^:\s*"\$\{BASE:=([^}]+)\}"/m);
+    if (m) out.add(m[1].trim());
+  } catch {}
+  if (process.env.BASE) out.add(process.env.BASE);
+  return out;
+}
+
+export function judge(command, stagedPaths, bases = new Set(["main"])) {
   const c = String(command || "");
   const reasons = [];
   if (/\bgh\s+pr\s+merge\b/.test(c)) reasons.push("`gh pr merge` is not a route to main; the merge gate is CI plus the repo's merge command");
@@ -55,8 +69,11 @@ export function judge(command, stagedPaths) {
     const args = m[1];
     if (/(^|\s)(--force|--force-with-lease|-f|\+\S+)(\s|$)/.test(args) || /\s-\w*f\w*(\s|$)/.test(args)) reasons.push("force push rewrites history the gate already judged");
     const toks = args.trim().split(/\s+/).filter(Boolean);
-    if (toks.some((t) => t === "main" || t === "HEAD:main" || t.endsWith(":main") || t === "refs/heads/main" || t.endsWith(":refs/heads/main"))) {
-      reasons.push("pushing to main skips the pull request; branch, push, and let CI land it");
+    for (const b of bases) {
+      if (toks.some((t) => t === b || t === `HEAD:${b}` || t.endsWith(`:${b}`) || t === `refs/heads/${b}` || t.endsWith(`:refs/heads/${b}`))) {
+        reasons.push(`pushing to ${b} skips the pull request; branch, push, and let CI land it`);
+        break;
+      }
     }
   }
   if (gitRe(String.raw`commit\b[^\n]*\s(--no-verify|-n)(\s|$)`).test(c)) reasons.push("`--no-verify` skips the pre-commit hook, which is part of the gate");
@@ -103,7 +120,8 @@ function main() {
   if (payload.tool_name !== "Bash") return;
   const command = payload.tool_input && payload.tool_input.command;
   if (!command) return;
-  const reasons = judge(command, gitRe(String.raw`commit\b`).test(command) ? staged(payload.cwd || process.cwd(), command) : []);
+  const cwd = payload.cwd || process.cwd();
+  const reasons = judge(command, gitRe(String.raw`commit\b`).test(command) ? staged(cwd, command) : [], protectedBranches(cwd));
   if (!reasons.length) return;
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {

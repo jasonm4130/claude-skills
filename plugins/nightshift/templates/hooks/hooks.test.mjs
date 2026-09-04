@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { judge as routeJudge } from "./no-route-around-ci.mjs";
+import { judge as routeJudge, protectedBranches } from "./no-route-around-ci.mjs";
 import { judge as testsJudge } from "./tests-are-readonly.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -48,6 +48,20 @@ test("no-route-around-ci: the merge itself and every bypass of it are denied", (
   assert.ok(routeJudge("gh api --method PATCH repos/o/r/actions/variables/LANDING_STATE -f value=run", []).length);
   assert.ok(routeJudge("gh api repos/o/r/git/refs -f ref=refs/heads/main -f sha=abc", []).length);
   assert.ok(routeJudge("gh api repos/o/r/pulls/12/merge --input body.json", []).length);
+});
+
+test("no-route-around-ci: the configured base branch is protected like main", () => {
+  const bases = new Set(["main", "release"]);
+  assert.ok(routeJudge("git push origin HEAD:release", [], bases).length);
+  assert.ok(routeJudge("git push origin release", [], bases).length);
+  assert.deepEqual(routeJudge("git push origin HEAD:release", []), [], "unconfigured: only main");
+  const dir = mkdtempSync(join(tmpdir(), "ns-base-"));
+  try {
+    mkdirSync(join(dir, "loop"));
+    writeFileSync(join(dir, "loop", "config"), ': "${PLAN:=p.md}"\n: "${BASE:=release}"\n');
+    assert.deepEqual([...protectedBranches(dir)].sort(), ["main", "release"]);
+    assert.deepEqual([...protectedBranches(join(dir, "nowhere"))], ["main"]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("no-route-around-ci: the loop's own commands pass", () => {

@@ -70,10 +70,13 @@ export function detectStack(dir) {
 const STACK_TOOL = { cargo: "cargo", python: "uv", go: "go", node: "npm", generic: null };
 
 /** protected when BASE has required status checks and gh can say so; wait otherwise. */
+/** Escape a value for a plist <string>: a repo at ~/Work/R&D must stay parseable. */
+export const xml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 export function probeMergeMode(dir, base) {
   try {
     const url = execFileSync("git", ["-C", dir, "remote", "get-url", "origin"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-    const m = url.match(/github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/);
+    const m = url.match(/github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?\/?$/);
     if (!m) return "wait";
     const n = execFileSync("gh", ["api", `repos/${m[1]}/${m[2]}/branches/${base}/protection`, "--jq", ".required_status_checks.contexts | length"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     return Number(n) > 0 ? "protected" : "wait";
@@ -128,7 +131,7 @@ export function render(dir, opts) {
   const out = {};
   for (const f of LOOP_FILES) {
     let t = readFileSync(join(templates, "loop", f), "utf8");
-    if (f === "launchd.plist") t = t.replace(/__REPO__/g, vars.REPO).replace(/__HOME__/g, vars.HOME).replace(/__NAME__/g, vars.NAME).replace(/__PATH__/g, vars.PATH);
+    if (f === "launchd.plist") t = t.replace(/__REPO__/g, xml(vars.REPO)).replace(/__HOME__/g, xml(vars.HOME)).replace(/__NAME__/g, xml(vars.NAME)).replace(/__PATH__/g, xml(vars.PATH));
     out[`loop/${f}`] = fill(t, vars);
   }
   for (const f of HOOK_FILES) out[`.claude/hooks/${f}`] = readFileSync(join(templates, "hooks", f), "utf8");

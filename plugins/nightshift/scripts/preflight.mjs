@@ -45,7 +45,7 @@ export function readConfig(dir, env = process.env) {
 export function originSlug(dir) {
   const r = sh("git", ["-C", dir, "remote", "get-url", "origin"]);
   if (!r.ok) return null;
-  const m = r.out.match(/github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/);
+  const m = r.out.match(/github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?\/?$/);
   return m ? `${m[1]}/${m[2]}` : null;
 }
 

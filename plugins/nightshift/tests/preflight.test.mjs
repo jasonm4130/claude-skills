@@ -89,6 +89,10 @@ test("readConfig: config defaults, environment wins; originSlug parses ssh and h
     assert.equal(originSlug(repo.dir), "o/r");
     repo.git("remote", "set-url", "origin", "https://github.com/o/r");
     assert.equal(originSlug(repo.dir), "o/r");
+    repo.git("remote", "set-url", "origin", "git@github.com:acme/service.v2.git");
+    assert.equal(originSlug(repo.dir), "acme/service.v2", "dots in a repo name");
+    repo.git("remote", "set-url", "origin", "https://github.com/acme/service.v2");
+    assert.equal(originSlug(repo.dir), "acme/service.v2");
     repo.git("remote", "set-url", "origin", "/srv/git/r.git");
     assert.equal(originSlug(repo.dir), null, "a plain local origin is not github");
   } finally { rmSync(repo.root, { recursive: true, force: true }); }

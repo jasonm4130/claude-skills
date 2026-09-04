@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { main, mergeSettings, ciJobNames, classify, render, fill } from "../scripts/init.mjs";
+import { main, mergeSettings, ciJobNames, classify, render, fill, xml } from "../scripts/init.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -160,6 +160,18 @@ test("mergeSettings never removes and never duplicates", () => {
   assert.equal(s.hooks.PreToolUse.length, 1);
   const again = mergeSettings(JSON.parse(JSON.stringify(s)), { stack: "cargo", denyRules: true });
   assert.deepEqual(again, s);
+});
+
+test("a repo path with & renders a plist that still parses", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ns-R&D-"));
+  try {
+    execFileSync("git", ["init", "-q", "-b", "main", dir]);
+    const { files } = render(dir, { stack: "generic", base: "main", plan: "p.md", mergeMode: "wait" });
+    const plist = files["loop/launchd.plist"];
+    assert.ok(plist.includes("R&amp;D"), "ampersand escaped");
+    assert.doesNotMatch(plist, /R&D/);
+    assert.equal(xml("a<b>&c"), "a&lt;b&gt;&amp;c");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("fill leaves unknown placeholders alone and classify reports a missing file", () => {

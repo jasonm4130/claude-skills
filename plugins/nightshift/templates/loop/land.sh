@@ -108,9 +108,10 @@ plan_tasks() {
 # follow it. The log is captured first: under pipefail, `grep -q` closing the
 # pipe on an early match makes git exit 141 and the task read as not done.
 task_done() {
-  local merges
+  local merges b
   merges=$(git -C "$repo" log "origin/$BASE" --merges --format=%s%n%b)
-  grep -qE "(^|[^A-Za-z0-9])$(branch_for "$1")([^A-Za-z0-9-]|$)" <<<"$merges"
+  b=$(printf '%s' "$(branch_for "$1")" | sed 's/[][\.*^$+?(){}|]/\\&/g')  # literal, not ERE
+  grep -qE "(^|[^A-Za-z0-9])$b([^A-Za-z0-9-]|$)" <<<"$merges"
 }
 
 # The open PR on task N's branch: "number<TAB>draft<TAB>labels" or nothing.
@@ -162,10 +163,13 @@ fresh_branch() { # fresh_branch <branch>: the branch at origin/<base>, no leftov
   gw switch -q --detach "origin/$BASE"
   gw branch -q -D "$1" 2>/dev/null || true
   # Only reached when GitHub has no PR for this task, so a remote branch here is
-  # a run that died between push and `gh pr create`; without this the fresh
-  # branch's push is rejected as non-fast-forward and the night stops.
+  # a run that died between push and `gh pr create`. Its commits are kept under
+  # a dated name (a human may want them) and the name is freed; without this the
+  # fresh branch's push is rejected as non-fast-forward and the night stops.
   if git -C "$repo" show-ref -q --verify "refs/remotes/origin/$1"; then
-    log "  stranded remote branch $1 (no PR); deleting it"
+    local keep="$1-stranded-$(date +%Y%m%d%H%M%S)"
+    log "  stranded remote branch $1 (no PR); kept as $keep, name freed"
+    gw push -q origin "refs/remotes/origin/$1:refs/heads/$keep" 2>/dev/null || true
     gw push -q origin --delete "$1" 2>/dev/null || true
   fi
   gw switch -q -c "$1" "origin/$BASE"
@@ -328,6 +332,7 @@ while IFS=$'\t' read -r n title; do
     esac
     [ $dry = 1 ] && stop "would wait on open PR #$pr for task $n"
     [ "$landed" -lt "$MAX" ] || stop "$MAX task(s) landed, that is the night"
+    past_deadline && stop "deadline $DEADLINE reached"
     log "task $n: resuming on open PR #$pr"
     run_dir=$STATE_DIR/$(date +%F)-t$n; mkdir -p "$run_dir"; round=0
     land_pr "$n" "$pr" || stop "task $n did not land"
