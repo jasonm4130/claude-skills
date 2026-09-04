@@ -42,7 +42,7 @@ import { readStdin, safeJsonParse, emitPermissionDecision } from "./lib.mjs";
  */
 
 /** Executable plugin surface — changes here are what docs describe. */
-const CODE_RE = /^plugins\/([^/]+)\/(scripts|hooks|agents|workflows)\//;
+const CODE_RE = /^plugins\/([^/]+)\/(scripts|hooks|agents|workflows|go)\//;
 /** Never-flag list: tests and test fixtures inside those dirs. */
 const TEST_RE = /(^|\/)tests?\/|\.test\.[a-z]+$/;
 
