@@ -306,7 +306,7 @@ const haveWorkflow = runnable(IMPLS["agent-model"][0]);
 const skipMsg =
   "ccguard binary not present or not executable here — expected on Linux (the committed " +
   "binary is a macOS universal build covering arm64 and x86_64). Build with " +
-  "`go build -ldflags=\"-s -w\" -trimpath` in go/ and copy it into plugins/*/bin/ to run these.";
+  "`go build -ldflags=\"-s -w\" -trimpath` in plugins/gates/go/ and copy it into plugins/*/bin/ to run these.";
 
 const haveGo = spawnSync("go", ["version"], { encoding: "utf8" }).status === 0;
 
@@ -323,7 +323,7 @@ const stalenessSkip = !haveGo
     : false;
 
 test(
-  "the committed binary is not stale relative to go/",
+  "the committed binary is not stale relative to plugins/gates/go/",
   { skip: stalenessSkip },
   () => {
     // The binary is a build artifact in git, because the marketplace install path
@@ -340,7 +340,7 @@ test(
     //
     // The committed file is a macOS universal binary, so thin it to this machine's
     // arch before comparing against a native `go build`.
-    const goDir = join(root, "go");
+    const goDir = join(root, "plugins", "gates", "go");
     const fresh = join(tmpdir(), `ccguard-fresh-${process.pid}`);
     const built = spawnSync(
       "go",
@@ -363,10 +363,10 @@ test(
         readFileSync(fresh),
         `${bin} is stale or was built from different source.\n` +
           `Rebuild and re-copy:\n` +
-          `    cd go\n` +
+          `    cd plugins/gates/go\n` +
           `    GOOS=darwin GOARCH=arm64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/cc-arm64 .\n` +
           `    GOOS=darwin GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/cc-amd64 .\n` +
-          `    lipo -create -output ../${bin.replace(`${root}/`, "")} /tmp/cc-arm64 /tmp/cc-amd64`,
+          `    lipo -create -output ../${bin.replace(`${root}/plugins/gates/`, "")} /tmp/cc-arm64 /tmp/cc-amd64`,
       );
     }
   },

@@ -55,7 +55,7 @@ Full details per plugin: see `plugins/<name>/README.md`.
 
 - **[Developing](docs/developing.md)** — repo layout, tests, local install, releasing
 - **[Renamed and removed plugins](docs/migrations.md)** — where an old plugin went
-- **[go/](go/README.md)** — the compiled guard binary and why it is committed
+- **[plugins/gates/go/](plugins/gates/go/README.md)** — the compiled guard binary and why it is committed
 
 ## License
 

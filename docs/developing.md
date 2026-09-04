@@ -14,7 +14,7 @@ plugins/<name>/
   bin/ccguard                     # committed Go guard binary, macOS universal
                                   #   (plugins/gates only; the .mjs stays as
                                   #   fallback AND reference impl)
-go/                               # source for bin/ccguard
+  go/                             # source for bin/ccguard (plugins/gates only)
 docs/superpowers/{specs,plans}/   # design specs and implementation plans
 docs/research/                    # dated research + triage records
 RESEARCH_*.md                     # standalone research write-ups
@@ -30,7 +30,7 @@ bash scripts/run-node-tests.sh    # run every *.test.mjs in one process
 
 Local Node is pinned to 24 (`mise.toml`), matching the version CI tests on.
 
-Go is pinned to 1.27.1 in both `mise.toml` and `go/go.mod`'s `toolchain` line. The
+Go is pinned to 1.27.1 in both `mise.toml` and `plugins/gates/go/go.mod`'s `toolchain` line. The
 two must match: CI rebuilds `plugins/gates/bin/ccguard` from source and compares
 bytes against the committed binary, so a patch mismatch fails the `go-guards` job.
 
@@ -51,8 +51,8 @@ CI (`.github/workflows/ci.yml`) validates all JSON manifests, runs `claude plugi
 validate` against every `plugins/<name>/` directory (catches malformed skill
 frontmatter that the JSON check above doesn't reach), runs the node test suite
 on ubuntu+macos (Node 24), runs the SDD bash smoke tests, runs `go-guards`
-(the `go/` unit tests, a rebuild-and-compare against the committed binary, plus
-the differential test), and runs `version-bump-check` (see Releasing).
+(the `plugins/gates/go/` unit tests, a rebuild-and-compare against the committed
+binary, plus the differential test), and runs `version-bump-check` (see Releasing).
 
 ## Updating an installed plugin
 

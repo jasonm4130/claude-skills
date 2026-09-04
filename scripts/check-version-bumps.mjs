@@ -11,8 +11,8 @@
 // Surface = deny-list: the whole plugins/<name>/ tree ships to the install cache, so
 // ANY changed file under it requires a bump EXCEPT the dev-only set:
 //   - plugins/<name>/.claude-plugin/**  (manifest — where the version itself lives)
-//   - any tests/ dir, or any *.test.* file
-//   - the plugin's own top-level README.md / CLAUDE.md
+//   - any tests/ dir, or any *.test.* file, or any *_test.go file
+//   - the plugin's own top-level README.md / CLAUDE.md, and gates/go/README.md
 //
 // Marketplace ↔ plugin.json version equality is enforced separately by
 // scripts/repo-consistency.test.mjs, so an increase here implies the marketplace
@@ -101,7 +101,9 @@ export function isExempt(rel) {
   if (rel.startsWith(".claude-plugin/")) return true;
   if (/(^|\/)tests?\//.test(rel)) return true;
   if (/\.test\.[a-z0-9]+$/i.test(rel)) return true;
+  if (/_test\.go$/.test(rel)) return true;
   if (rel === "README.md" || rel === "CLAUDE.md") return true;
+  if (rel === "go/README.md") return true;
   return false;
 }
 
