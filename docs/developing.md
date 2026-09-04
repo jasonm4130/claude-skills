@@ -30,6 +30,10 @@ bash scripts/run-node-tests.sh    # run every *.test.mjs in one process
 
 Local Node is pinned to 24 (`mise.toml`), matching the version CI tests on.
 
+Go is pinned to 1.27.1 in both `mise.toml` and `go/go.mod`'s `toolchain` line. The
+two must match: CI rebuilds `plugins/gates/bin/ccguard` from source and compares
+bytes against the committed binary, so a patch mismatch fails the `go-guards` job.
+
 The whole `plugins/<name>/` tree is copied into the install cache — `README.md`,
 `CLAUDE.md` and `tests/` included — so anything a shipped file cites must resolve
 for someone who installed the plugin rather than cloning the repo. Cite `docs/`,
