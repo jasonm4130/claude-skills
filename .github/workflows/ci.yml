@@ -82,9 +82,13 @@ jobs:
           node-version: 24
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.27"
+          go-version-file: go/go.mod
           cache-dependency-path: go/go.mod
+        env:
+          GOTOOLCHAIN: auto
       - name: Vet and unit tests
+        env:
+          GOTOOLCHAIN: auto
         run: |
           cd go
           go vet ./...
@@ -100,8 +104,16 @@ jobs:
         # reproducible, so we rebuild and compare the real artifact. Strictly
         # stronger: it catches both a stale binary and one built from other source.
         shell: bash
+        env:
+          GOTOOLCHAIN: auto
         run: |
           set -euo pipefail
+          want=$(sed -n 's/^toolchain //p' go/go.mod)
+          got=$(go version -m plugins/gates/bin/ccguard | head -1 | awk '{print $2}')
+          if [ "$got" != "$want" ]; then
+            echo "::error::binary stamped $got, go.mod toolchain is $want"
+            exit 1
+          fi
           cd go
           GOOS=darwin GOARCH=arm64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/fresh-arm64 .
           GOOS=darwin GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/fresh-amd64 .
