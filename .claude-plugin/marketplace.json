@@ -119,6 +119,25 @@
       "category": "productivity"
     },
     {
+      "name": "landing-loop",
+      "source": "./plugins/landing-loop",
+      "description": "Outer loop for unattended delivery: lands every task of a human-approved plan on main \u2014 one PR per task, CI as the only gate, the repo's own merge command, a ledger in git. Drives subagent-driven-development per task.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": [
+        "unattended",
+        "autonomous",
+        "landing",
+        "pull-request",
+        "ci-gate",
+        "subagent-driven-development"
+      ],
+      "category": "productivity"
+    },
+    {
       "name": "session-retro",
       "source": "./plugins/session-retro",
       "description": "Interactive session retrospectives \u2014 deterministic activity triggers, one end-of-day offer, batch-scoped diff- and event-log-driven interview, native memory entries. No external services.",
