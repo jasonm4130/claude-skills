@@ -64,10 +64,10 @@ staleness test passes the flag.
 ## Rebuilding
 
 ```sh
-cd go
+cd plugins/gates/go
 GOOS=darwin GOARCH=arm64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/cc-arm64 .
 GOOS=darwin GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/cc-amd64 .
-lipo -create -output ../plugins/gates/bin/ccguard /tmp/cc-arm64 /tmp/cc-amd64
+lipo -create -output ../bin/ccguard /tmp/cc-arm64 /tmp/cc-amd64
 ```
 
 ## Equivalence with the `.mjs` guards
@@ -146,7 +146,7 @@ byte-for-byte against the `.mjs` implementations.
 ## Tests
 
 ```sh
-cd go && go vet ./... && go test ./...        # unit tests and port invariants
+cd plugins/gates/go && go vet ./... && go test ./...        # unit tests and port invariants
 node --test scripts/ccguard-differential.test.mjs   # the acceptance gate
 ```
 

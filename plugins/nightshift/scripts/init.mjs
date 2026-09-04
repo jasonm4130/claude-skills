@@ -223,7 +223,7 @@ export function main(argv = process.argv.slice(2), log = console.log) {
   catch { throw new Error(`${opts.repo} is not inside a git repository`); }
   const stamp = readStamp(dir);
   // Carry the values a previous init rendered with, so --check compares like with like.
-  const carried = stamp && stamp.vars ? { plan: stamp.vars.PLAN, mergeMode: stamp.vars.MERGE_MODE } : {};
+  const carried = stamp && stamp.vars ? { plan: stamp.vars.PLAN, mergeMode: stamp.vars.MERGE_MODE, base: stamp.vars.BASE || opts.base } : {};
   const d = new Date();
   const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; // local date, not UTC
   const { files, vars, stack } = render(dir, { ...opts, today, ...carried });

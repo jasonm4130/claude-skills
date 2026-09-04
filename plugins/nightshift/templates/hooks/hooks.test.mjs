@@ -21,6 +21,8 @@ test("no-route-around-ci: the merge itself and every bypass of it are denied", (
   assert.ok(routeJudge("gh pr checks 12 --watch && gh pr merge 12", []).length);
   assert.ok(routeJudge("gh workflow disable land.yml", []).length);
   assert.ok(routeJudge("gh variable set LANDING_STATE --body run", []).length);
+  assert.ok(routeJudge("gh variable delete LANDING_STATE", []).length);
+  assert.ok(routeJudge("gh variable remove LANDING_STATE", []).length);
   assert.ok(routeJudge("git push --force origin land/x-t1", []).length);
   assert.ok(routeJudge("git push -f origin land/x-t1", []).length);
   assert.ok(routeJudge("git push origin +land/x-t1", []).length);

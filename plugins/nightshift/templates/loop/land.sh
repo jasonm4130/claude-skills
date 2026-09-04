@@ -161,6 +161,13 @@ ensure_worktree() {
 fresh_branch() { # fresh_branch <branch>: the branch at origin/<base>, no leftovers
   gw switch -q --detach "origin/$BASE"
   gw branch -q -D "$1" 2>/dev/null || true
+  # Only reached when GitHub has no PR for this task, so a remote branch here is
+  # a run that died between push and `gh pr create`; without this the fresh
+  # branch's push is rejected as non-fast-forward and the night stops.
+  if git -C "$repo" show-ref -q --verify "refs/remotes/origin/$1"; then
+    log "  stranded remote branch $1 (no PR); deleting it"
+    gw push -q origin --delete "$1" 2>/dev/null || true
+  fi
   gw switch -q -c "$1" "origin/$BASE"
 }
 
@@ -320,6 +327,7 @@ while IFS=$'\t' read -r n title; do
       true,*|*"$BLOCKED_LABEL"*) stop "task $n: PR #$pr is blocked, waiting for a human" ;;
     esac
     [ $dry = 1 ] && stop "would wait on open PR #$pr for task $n"
+    [ "$landed" -lt "$MAX" ] || stop "$MAX task(s) landed, that is the night"
     log "task $n: resuming on open PR #$pr"
     run_dir=$STATE_DIR/$(date +%F)-t$n; mkdir -p "$run_dir"; round=0
     land_pr "$n" "$pr" || stop "task $n did not land"

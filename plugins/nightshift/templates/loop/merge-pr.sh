@@ -116,12 +116,15 @@ if [ -n "$failed" ]; then
 fi
 
 # The switch is read again here, after the wait: a night frozen while CI ran
-# must not land. Only enforced when the variable exists, so a daytime merge in
-# a repo that never set it is unaffected.
-sw=$(gh variable get "$STATE_VAR" 2>/dev/null || echo "unset")
-if [ "$sw" != "run" ] && [ "$sw" != "unset" ] && [ "${NIGHTSHIFT:-0}" = 1 ]; then
-  echo "$STATE_VAR=$sw — frozen, not merging PR #$pr" >&2
-  exit 3
+# must not land. Under the loop (NIGHTSHIFT=1) the variable must read exactly
+# `run`: unset counts as frozen, so deleting the variable is not a way past
+# it. A daytime merge by a human is not gated on it at all.
+if [ "${NIGHTSHIFT:-0}" = 1 ]; then
+  sw=$(gh variable get "$STATE_VAR" 2>/dev/null || echo "unset")
+  if [ "$sw" != "run" ]; then
+    echo "$STATE_VAR=$sw — frozen, not merging PR #$pr" >&2
+    exit 3
+  fi
 fi
 
 gh pr merge "$pr" --merge --delete-branch=false

@@ -4,8 +4,8 @@
 // Denies, in any permission mode (PreToolUse runs before the permission check,
 // so loosening permissions does not get past it):
 //   - `gh pr merge` in any form, and any `gh` call carrying `--admin`
-//   - `gh workflow …` and `gh variable set …` (the merge machine and its kill
-//     switch are not the agent's to touch)
+//   - `gh workflow …` and `gh variable set|delete …` (the merge machine and its
+//     kill switch are not the agent's to touch; an unset switch is a frozen one)
 //   - `git push` that forces, or that targets main
 //   - `git commit --no-verify` (the pre-commit hook is part of the gate)
 //   - `git commit` while `.github/workflows/**` is staged (a pull request runs
@@ -50,7 +50,7 @@ export function judge(command, stagedPaths) {
   if (/\bgh\s+pr\s+merge\b/.test(c)) reasons.push("`gh pr merge` is not a route to main; the merge gate is CI plus the repo's merge command");
   if (/\bgh\b[^\n]*\s--admin\b/.test(c)) reasons.push("`--admin` bypasses the checks the gate exists to wait on");
   if (/\bgh\s+workflow\b/.test(c)) reasons.push("`gh workflow` changes the merge machine; that is a human's change");
-  if (/\bgh\s+variable\s+set\b/.test(c)) reasons.push("`gh variable set` is the kill switch; only a human flips it");
+  if (/\bgh\s+variable\s+(set|delete|remove)\b/.test(c)) reasons.push("`gh variable set`/`delete` is the kill switch; only a human flips it");
   for (const m of c.matchAll(gitRe(String.raw`push\b([^\n;&|]*)`, "g"))) {
     const args = m[1];
     if (/(^|\s)(--force|--force-with-lease|-f|\+\S+)(\s|$)/.test(args) || /\s-\w*f\w*(\s|$)/.test(args)) reasons.push("force push rewrites history the gate already judged");

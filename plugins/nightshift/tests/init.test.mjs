@@ -128,6 +128,18 @@ test("--check: unchanged, then modified locally, then template newer; --update t
 function await_import_crypto() { return { createHash: (a) => cryptoMod.createHash(a) }; }
 import * as cryptoMod from "node:crypto";
 
+test("--check after init --base release compares against release, not main", () => {
+  const dir = repo();
+  try {
+    assert.equal(main(["--repo", dir, "--plan", "docs/plans/p.md", "--base", "release"], quiet), 0);
+    assert.match(readFileSync(join(dir, "loop", "config"), "utf8"), /BASE:=release\}/);
+    const lines = [];
+    assert.equal(main(["--repo", dir, "--check"], (l) => lines.push(l)), 0, lines.join("\n"));
+    assert.equal(main(["--repo", dir, "--update"], quiet), 0);
+    assert.match(readFileSync(join(dir, "loop", "config"), "utf8"), /BASE:=release\}/, "--update keeps the configured base");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("ciJobNames: a gate job wins; matrix job ids are returned as ids, which is why init only pre-fills gate", () => {
   const dir = mkdtempSync(join(tmpdir(), "ns-ci-"));
   try {
