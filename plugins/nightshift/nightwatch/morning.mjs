@@ -176,6 +176,16 @@ function logPath(stateDir, log) {
   return isAbsolute(log) ? log : join(stateDir, log);
 }
 
+// Per-outcome files live under outcomes/<slug>/ since the first-night fix; the
+// launcher that ran that night wrote them under runs/<stamp>/<slug>/. Read the
+// new place first and fall back to the old, so the first night stays readable.
+function outcomeFile(stateDir, stamp, slug, name) {
+  const now = join(stateDir, "outcomes", slug, name);
+  if (existsSync(now)) return now;
+  const then = join(stateDir, "runs", stamp, slug, name);
+  return existsSync(then) ? then : now;
+}
+
 // ---------- the report ----------
 
 export function report(stateDir, opts = {}) {
@@ -207,7 +217,7 @@ export function report(stateDir, opts = {}) {
 
     // Only the units this run actually ran: outcomes/<slug>/ is not run-scoped,
     // so an earlier night's u3 must not be read as tonight's.
-    const results = mine.map((r) => ({ unit: r.unit, result: readJson(join(stateDir, "outcomes", o.slug, `u${r.unit}.result.json`)) }));
+    const results = mine.map((r) => ({ unit: r.unit, result: readJson(outcomeFile(stateDir, j.stamp, o.slug, `u${r.unit}.result.json`)) }));
     const concerns = [];
     for (const { unit, result } of results)
       for (const c of result?.eval?.concerns || []) concerns.push({ unit, ...c });
@@ -223,6 +233,7 @@ export function report(stateDir, opts = {}) {
       units: mine.length,
       cost,
       wall,
+      specPath: row?.spec || "",
       concerns,
       blockedReason,
       passUnit: pass ? pass.unit : null,
@@ -293,13 +304,13 @@ function buildPrBody(stateDir, j, outcomes) {
   const out = [`# ${prTitle(j, outcomes)}`, "", `Landing branch \`${j.landing}\`, run \`${j.stamp}\`.`, ""];
   for (const o of outcomes) {
     if (!o.landedSha || o.passUnit === null) continue;
-    const dir = join(stateDir, "outcomes", o.slug);
-    const spec = readText(join(dir, `u${o.passUnit}.spec.md`));
+    // The unit's own snapshot of the spec, else the path the landed row names.
+    const spec = readText(outcomeFile(stateDir, j.stamp, o.slug, `u${o.passUnit}.spec.md`)) || readText(o.specPath || "");
     const title = (spec.match(/^# (.+)$/m) || [, o.slug])[1];
     out.push(`## ${title}`, "");
     out.push(`\`${o.slug}\`, commits \`${o.baseSha}..${o.landedSha}\` on \`${o.branch || j.landing}\`.`, "");
     out.push("Acceptance, as the passing unit ran it:", "");
-    const result = readJson(join(dir, `u${o.passUnit}.result.json`));
+    const result = readJson(outcomeFile(stateDir, j.stamp, o.slug, `u${o.passUnit}.result.json`));
     for (const r of result?.verify?.results || []) {
       const p = logPath(stateDir, r.log);
       const text = p ? readText(p) : "";

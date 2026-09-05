@@ -25,7 +25,11 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 
-const WRITE_EXT_RE = /\b[\w./-]*\.(?:png|json|md|log)\b/g;
+const WRITE_EXT_RE = /[~$\w./-]*\.(?:png|json|md|log|wav|mp3|jsonl|csv|svg)\b/g;
+// A file the unit edits and commits (docs/, src/, ...) is work, not an artefact;
+// the `Writes:` header is for what an acceptance command leaves behind outside
+// the committed tree: under the home or cache dirs, or a media/log file anywhere.
+const ARTEFACT_RE = /^(?:~|\$|\/|.*(?:^|\/)(?:\.cache|target|node_modules)\/)|\.(?:png|log|wav|mp3|jsonl|csv|svg)$/;
 const WRITE_VERB_RE = /\b(?:writes?|written|produces?|creates?|gains?|saves?|emits?)\b/i;
 const REQUIRED_HEADINGS = ["## Outcome", "## Acceptance", "## Non-goals", "## Context"];
 const ITEM_START_RE = /^\s*(?:\d+\.|[-*])\s/;
@@ -129,6 +133,7 @@ function checkWrittenArtifacts(item, writes, problems) {
     let m;
     while ((m = WRITE_EXT_RE.exec(clause.text))) {
       const path = m[0];
+      if (!ARTEFACT_RE.test(path)) continue;
       const line = lineAt(item, clause.start + m.index);
       if (!writes.some((w) => w === path || w.endsWith(`/${path}`) || path.endsWith(`/${w}`))) {
         problems.push({ line, msg: `mentions ${path} without a Writes: header entry` });
