@@ -1,0 +1,107 @@
+{
+  "label": "R5-tools",
+  "findings": [
+    {
+      "title": "Nightshift's only semantic reviewer is same-family, and no cited source supports buying a PR-time gate",
+      "claim": "Nightshift merges unattended PRs on deterministic CI plus an in-loop skeptic of the same model family as the generator, so nothing independent reads what lands overnight. That gap is real. The remedy R5 proposed does not survive its sources: the four-reviewer trial was written by a Sentry employee about their employer's product, and the only cross-tool benchmark is published by a competing review vendor whose own product tops its own table and which scored Greptile last (24%, 17 of 72 bugs, access revoked mid-evaluation). DORA's actual prescription points the other way, toward feedback during writing, small batches, and test automation over review optimisation. The cheap test comes before any subscription.",
+      "evidence": "Local, reproduced by the verifier: .github/workflows/ci.yml declares exactly five deterministic jobs (validate-manifests, node-tests, plugin-validate, go-guards, version-bump-check); loop/SKEPTIC.md is the only semantic reviewer; loop/merge-pr.sh merges on CI-green plus the kill switch with no other gate. Brief2 headline: 9 Nightshift PRs landed, $4.44 per landed PR, skeptic caught two real bugs on day one, no cross-vendor reviewer on the unattended stream. Sources: https://dev.to/_vjk/best-ai-code-reviewer-in-2026-we-ran-4-in-parallel-for-3-weeks-146-prs-679-findings-1c0f (2026-05-12) carries the author disclosure 'I work at Sentry, so one of the four reviewers is my employer's product'; https://macroscope.com/content/best-ai-code-review-tools-github-2026 (April 2026) is vendor-run and gives Greptile 'Detection rate: 24% (17/72 bugs)'; https://dora.dev/insights/balancing-ai-tensions/ (2026-03-10, n=1,110 Google engineers surveyed Q3 2025) recommends delivering AI feedback 'to the author during the writing phase' and says 'Investing in robust test automation for faster feedback may provide a better return on investment than optimizing manual reviews'. There is no independent measurement of AI code reviewers in the citation set at all.",
+      "classification": "tool",
+      "confidence": "medium",
+      "action": "Before subscribing to anything, run codex-review diff mode over the last twenty merged Nightshift PRs and count findings that survive; it is free, cross-vendor, and answers whether an independent opinion catches anything here. If it catches little, harden loop/SKEPTIC.md and the deterministic verifier instead, which is what DORA's own advice implies. Do not cite the dev.to trial or the Macroscope table as independent evidence for any vendor.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Delegation by volume is holding; the explicit-tier rule is not, and the violation lives in Workflow scripts",
+      "claim": "The 'main loop is a conductor, not a laborer' posture is being followed: subagents are 1,425 of 1,503 local transcripts, 70.1% of assistant messages and 78.3% of cache-creation tokens. The main loop's 88% share of output tokens reflects prose and thinking, not laboring. What is failing is the tiering rule in ~/Work/Git/CLAUDE.md: 1,011 of 1,418 subagent transcripts that record a model ran Opus 5 as their dominant model against 401 on Sonnet, and 1,300 of 1,425 subagent transcripts come from wf_* Workflow runs where the model is pinned in the script rather than chosen per dispatch. The Agent-tool guard cannot see these dispatches. Nothing currently measures any of it.",
+      "evidence": "Recomputed by me from REVIEW/local.sessions.jsonl (2026-08-22 to 2026-09-05): 1,503 rows, 1,425 sidechain; assistant_msgs main 18,599 vs sidechain 43,630 (70.1%); tok_cache_create main 67,755,419 vs sidechain 244,332,750 (78.3%); tok_out main 20,204,160 vs sidechain 2,776,106 (12.1%); dominant model per sidechain transcript claude-opus-5 1,011, claude-sonnet-5 401, claude-fable-5-1 5, claude-fable-5 1, none 7; 1,300 of 1,425 sidechain files carry a wf_ path segment. Concentration is per-session: brok-stacks session 82565888 ran 338 Opus / 3 Sonnet / 3 Fable subagents, claude-skills session 7c70b045 ran 306 Opus / 32 Sonnet. Predecessor measurement in ~/Work/Git/CLAUDE.md: 73% of Agent dispatches leaked untiered before the guard. Measurement tooling: ccusage 20.0.20 published 2026-08-15 reads the local logs with no server; claude-code-otel (the reference Grafana stack) 495 stars, last pushed 2025-06-17, so adopting it means maintaining it.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Fix the model argument in the Workflow scripts (Nightshift and any surviving wf_* runners) rather than writing another rule; that is a named location with a measured violation. Run ccusage weekly (npx ccusage@latest, zero setup) to see whether the split moves. Do not build a plugin for this and do not stand up the OTel/Grafana stack.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "The marketplace ships nine plugins and zero evals, and the official eval path is account-gated",
+      "claim": "claude-skills has a five-job CI and a large deterministic test suite but no evals directory anywhere, so nothing measures whether a skill fires when it should or changes the outcome when it does. Invocation counts (codex-plan-review 5, frontend-design 0 in two weeks) proxy triggering, not effect. The official `claude plugin eval` is early-access gated on this account. The third-party options are wshobson's PluginEval and MLflow's trace-plus-judge loop; neither publishes evidence it improves anything, and the OPENAI_API_KEY objection applies to MLflow only, since PluginEval runs on claude-agent-sdk against the Max plan.",
+      "evidence": "`find /Users/jasonmatthew/Work/Git/claude-skills -name '*eval*'` returns nothing; plugins/ holds exactly nine directories (adr, codex-review, domain-modeling, gates, handoff, nightshift, session-retro, ship-gate, writing-artifacts), verified 2026-09-05. Memory note reference_plugin_eval_early_access.md (modified 2026-09-04): `claude plugin eval` prints 'currently in early access' and exits 1; the pilot ran only via undocumented CLAUDE_CODE_WALNUT_SPIRE=1, cost $0.22 / 44 s, returned meanDelta 0 because the no-plugin baseline passed the same rubric. wshobson/agents 39,427 stars, pushed 2026-09-01 (GitHub API 2026-09-05); its PluginEval doc confirms static (<2 s, free) plus LLM judge (~30 s, 4 calls) plus Monte Carlo (50-100 calls, ~2-5 min) and publishes no validation results. MLflow post 2026-03-23 confirms 'export OPENAI_API_KEY=... # needed for LLM judges' and reports no quantitative outcome.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Write three ablation cases by hand for the two plugins whose value is contested (writing-artifacts, domain-modeling), each with a rubric the no-plugin baseline demonstrably fails; that is the lesson the Delta=0 pilot already left in memory. Retire on a failed eval, not on an invocation count. If either third-party harness gets a trial it is PluginEval, not MLflow.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Adoption is driven by who is seen using the tool, but the measurement is Copilot CLI at Microsoft, not Claude Code",
+      "claim": "In the only large-N CLI-agent rollout study, social exposure dominates every other adoption predictor: skip-level peer use +216% odds of trial, manager use +82%, prior IDE Copilot use +49-83% odds of trial but -12 to -15% on retention, senior ICs +22% trial, baseline PR activity +19-34% trial. Outcome side: +24.0% merged PRs per engineer per day [95% CI +14.5%, +33.7%] over four months, and a dose-response from +15.0% at three days a week to +50.1% at five or more. The applicability caveat is material and was omitted: the adoption half of the paper covers Copilot CLI only, because the rollout asymmetry limited the adoption sample, and the paper's own outcome comparison shows the two tools differ by about 2.2x. Treat visible peer use as a mechanism to bet on, not as a measured Claude Code result.",
+      "evidence": "arXiv 2607.01418 (Murphy-Hill, Butler, Savelieva, Microsoft; v1 2026-07-01; observation 2026-01-05 to 2026-04-29; tens of thousands of engineers; discrete-time logistic regression with week and division fixed effects). Verifier checked every number verbatim against the paper, including the paper's statement that the adoption study 'examined only Copilot CLI'. Author-stated caveats: single organisation, self-selected adopters, merged PRs do not measure quality. Local relevance from the brief: Jason is four weeks into leading a team that is slow to ship, running sit-down peer reviews as an experiment.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Run the sit-down peer reviews with Jason's own Claude Code session on the screen rather than a slide about it; that is the +216% channel and it costs nothing extra. Do not treat prior Copilot familiarity as a head start. Drop R5's 'recruit the two most active committers' advice: baseline PR volume predicts trial and retention, but the paper's moderator section reports larger lift at the ends of the seniority distribution, and that section was not re-verified here.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Spec-driven development was retired here the same week the mainstream version passed 133k stars",
+      "claim": "subagent-driven-development, landing-loop, superpowers-core and frontend-design were deleted from plugins/ on 2026-09-05, leaving no spec-to-execution path in the marketplace except Nightshift (which needs a plan handed to it) and adr. Externally the pattern went the other way; spec-kit is the most-starred artefact in this category. The retirement is defensible, since Nightshift's per-task PR loop is the same discipline in a different shape, but it is now an unstated bet.",
+      "evidence": "git log on claude-skills, 2026-09-05: bb18b9c 'Retire SDD, landing-loop and superpowers-core; adr hands to nightshift' deletes the three plugin.json files, e150711 'Retire frontend-design'. GitHub API 2026-09-05: github/spec-kit 133,529 stars, 12,019 forks, created 2025-08-21, pushed 2026-09-04. The circulated '~3-10x first-pass success' figure is attributed on https://www.thebcms.com/blog/spec-driven-development/ only to unlinked 'early adopter reports from GitHub and AWS'; the '60-80% fewer rework cycles' figure does not appear on that page at all and has no source, so it must not be quoted.",
+      "classification": "tool",
+      "confidence": "medium",
+      "action": "Do not install spec-kit; it duplicates adr plus Nightshift and assumes a slash-command harness that has been replaced. Read its task-decomposition template once against loop/task-brief and check whether Nightshift's `# Task N` briefs carry the same acceptance-criteria fields. Twenty minutes, not a migration.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Ten MCP servers are mounted and the context fix is already banked, so this is cost-only",
+      "claim": "The session mounts chrome-devtools, claude-in-chrome, claude-design, Gmail, Calendar, Drive, cloudflare-docs, context7, social and tavily. Tool definitions at that scale are the dominant context cost, and progressive disclosure is the documented fix; this harness already defers those schemas behind ToolSearch. There is no action here, only a reason not to add servers casually.",
+      "evidence": "Anthropic engineering, 2025-11-04: an illustrative Drive-to-Salesforce workflow goes 'from 150,000 tokens to 2,000 tokens, a time and cost saving of 98.7%' — a worked example, not a benchmark, and the conclusion does not depend on the number. GitHub API 2026-09-05: upstash/context7 61,640 stars pushed 2026-09-04, ChromeDevTools/chrome-devtools-mcp 50,957 pushed 2026-09-04, microsoft/playwright-mcp 36,811.",
+      "classification": "cost only",
+      "confidence": "medium",
+      "action": "None. Do not add Playwright MCP (duplicates chrome-devtools-mcp) or a GitHub MCP server (gh already covers it at no schema cost). Revisit a Sentry MCP only if ambient or brok-stacks ever carry production error volume.",
+      "status": "confirmed",
+      "question": "Q4 tools"
+    },
+    {
+      "title": "Stop the local skeptic: the local measurement kills it and the external prop was misread",
+      "claim": "Jason's own investigation ended with a shortlist and no working configuration, and on a flat-rate Max plan the token saving is worth roughly nothing. The conclusion stands on the local evidence alone. The Local-Splitter citation must be dropped: its 'cloud' model is a locally-served Gemma 3 4B judged by itself, its quality table was read backwards, and its T4 finding actually recommends draft-then-review for long-output workloads, which is the shape a diff-reviewing skeptic has.",
+      "evidence": "/Users/jasonmatthew/Work/Git/claude-skills/docs/research/2026-09-05-local-skeptic-inference.md: 'Opus baseline: 178 s, $0.99'; every-turn cache misses at 27-43k tokens costing 70-110 s of prefill per turn; 'The observed miss-every-turn therefore has an unexplained cause; do not rerun blind'; three of four shortlisted rows rest on remembered or vendor claims. Verifier on arXiv 2604.12301: Table 3 reads baseline 15 / treatment 5 for T1 and 15 / 6 for T1+T2, the reverse of what R5 reported; the judge is the same 4B model with 17 of 40 pairs inconsistent; T4's net cost increase is confined to output-light workloads and the paper recommends 'Add T4 for long-output workloads... when cloud outputs exceed ~500 tokens'.",
+      "classification": "cost only",
+      "confidence": "high",
+      "action": "Stop work on the local skeptic and say why in one line: it is priced as an optimisation that a flat-rate plan makes worthless. If privacy for the firewalled work environment is the real motive, open that as a separate project with its own justification rather than carrying it as a cost play.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "An error-triage agent is the only candidate that would touch a shipped product, and nothing published supports picking one",
+      "claim": "Roughly half of recent commits go into tooling, and every other candidate here improves how code gets written. An agent that watches ambient or brok-stacks in production and turns real user-visible failures into triaged PRs is the only one that touches whether shipped things are useful. Sentry Seer is the obvious instance, but there is no independent evidence for it: the single trial cited was written by a Sentry employee about their employer's product, and the 94% root-cause figure is a vendor claim that does not appear on the cited page. The case rests on mechanism only.",
+      "evidence": "Brief ground facts: four flagship products live with no measurable users; ambient has seven real recordings, all 08-29/30, none since; load-bearing today are transcoder, brok-stacks (86 containers), Coach, unifi, claude-statusline. Source check: https://dev.to/_vjk/... carries 'I work at Sentry, so one of the four reviewers is my employer's product'; https://docs.sentry.io/product/ai-in-sentry/seer carries no accuracy percentage and describes Seer primarily as error triage with code review secondary, so the PR-review trial measured the wrong half of the product for this use; the Anthropic 2026 Agentic Coding Trends quotes ('Organizations use AI agents to review large-scale AI-generated output') sit under Prediction headings.",
+      "classification": "tool",
+      "confidence": "low",
+      "action": "Check the error volume in ambient and brok-stacks before subscribing to anything; $40 per active contributor per month to watch an empty dashboard is the default outcome. If there is real volume, trial it on mechanism and measure it locally, and quote no published number for it.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Every reviewer tool recommended here ships source to a third party, which the work team cannot do",
+      "claim": "Greptile, Sentry Seer and CodeRabbit all ingest source and diffs into a vendor. The work team is firewalled and ships a healthcare consult-recording product, so their first gate is whether an external reviewer may see the repo at all, not its detection rate. Nothing in this finder's citation set addresses self-hosting, and nothing checks whether these reviewers handle Effect TS idioms; a reviewer that flags generator syntax or layer composition as smells would reproduce in CI exactly the 'AI slop wording' failure the team already showed on the barrel-file pattern. That last half is a mechanism argument, not a measurement.",
+      "evidence": "Brief, from Jason 2026-09-05: the work team's environment is 'firewalled (no data from it here)', stack is 'General software, Effect TS, AWS, LLM features, a healthcare consult-recording product (\"Scribe\")', and 'two engineers flagged a barrel-file pattern as \"AI slop wording\" because they did not know the pattern'. Brief2 regulatory line: TGA moved to compliance action against scope-creeping scribes (Aug 2026); Privacy Act ADM transparency commences 2026-12-10 and covers health providers regardless of turnover. Verifier note: Greptile's pricing page distinguishes an Enterprise tier with self-hosting, which is the tier such a team would need — unverified here and worth checking before it is put in a playbook.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Keep third-party PR reviewers out of the team playbook unless a self-hosted or in-tenant tier is confirmed in writing; lead with the data-residency gate rather than the tool comparison. Whatever reviewer the team trials, first run it over a merged Effect TS PR and count how many findings are idiom complaints; a reviewer that fails that is worse than none in front of sceptics.",
+      "status": "new-from-verifier",
+      "question": "Q2 team, Q4 tools"
+    }
+  ],
+  "dropped": [
+    "Greptile as the recommended PR gate (sub-claim of finding 1) — the only cross-tool benchmark cited scores Greptile last at 24% detection (17/72) with access revoked mid-evaluation, and its publisher is a competing vendor.",
+    "'DORA names automated review gates as the moderator' (evidence line of finding 1) — DORA says the opposite: feedback during writing, small batches, and test automation over review optimisation.",
+    "'88% of output tokens are main-loop, so the delegation rule is not holding' (original finding 2) — output tokens is the one index metric favouring that reading; message counts, cache-creation tokens and transcript counts all show delegation working. Replaced by the tiering violation in Workflow scripts.",
+    "Sentry Seer's 6/6 independent precision and 3.7 min latency (evidence of finding 8) — the sole source is a Sentry employee's own post, so it is a vendor claim, not independent evidence.",
+    "Seer's '94% root-cause accuracy' — no accuracy figure appears on the cited Sentry docs page.",
+    "Local-Splitter arXiv 2604.12301 as support for stopping the local skeptic (finding 7) — quality table read backwards, 4B model standing in for the cloud tier and judging itself, and its T4 conclusion actually favours draft-then-review for this workload shape.",
+    "'60-80% fewer rework cycles' for spec-driven development (finding 5) — the cited page does not contain it and no source exists.",
+    "'Teams with well-maintained context files see 40% fewer errors and complete tasks 55% faster' (R5 surprises) — not present in Anthropic's 2026 Agentic Coding Trends Report; secondary coverage only.",
+    "frontend-design's ~277,000 installs (R5 surprises) — listicle only, no first-party install-count source; the install-counts-are-not-usage point stands without the number.",
+    "Microsoft dose-response quoted as '+15.0% at 1 day/week' (findings 2 and 4) — the paper says three days a week."
+  ]
+}

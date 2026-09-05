@@ -1,0 +1,166 @@
+{
+  "label": "E3-shipping",
+  "findings": [
+    {
+      "title": "The tooling-vs-product split is a classification choice, and \"roughly half\" is defensible at 30 days",
+      "claim": "Over the last 30 days, commits Jason authored split 512 product / 192 tooling / 7 exploration on the finder's repo classification, which is 27.0% tooling. That verdict is not robust: reclassifying brok-stacks (116 human commits in 30d) and unifi (21) as household infrastructure rather than product puts it at 329/711 = 46.3%, so the brief's \"roughly half\" is a defensible reading of the same 30 days. The tooling share does climb inside the window, from roughly 20% (Aug 06-12) to 36-44% (since Aug 27), but not to half once ambient's tooling share is measured rather than assumed.",
+      "evidence": "GitHub API pull across 57 repos under jasonm4130 + jasonm4130-labs, REVIEW/out/E3-shipping/commits30.tsv: 512/192/7 = 27.0%; brok-stacks+unifi reclassified = 329/711 = 46.3%. Ambient measured directly: 9 of 86 non-merge commits since 2026-08-01 touch loop/ (verified in /Users/jasonmatthew/Work/Git/ambient), and 791 of 50,072 lines changed, against the 31.3% the finder assumed.",
+      "classification": "measurement artifact",
+      "confidence": "medium",
+      "action": "Do not quote a single tooling-share number without saying which repos count as product. Publish the classification with the number, or quote the two bounds (27% and 46%).",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Coach's commit count is 68% agent-written, so raw commit counts overstate its effort about 3x",
+      "claim": "Coach shows 460 non-merge commits in August, 311 by the `claude` identity (67.6%) and 149 by Jason; in September it is claude 17 / Jason 0. Of the 502 agent-authored commits since April, 450 are Coach (89.6%). Any effort or throughput accounting built on the brief's \"Coach 406 commits\" reads a product's own logging behaviour as engineering labour.",
+      "evidence": "`gh api repos/jasonm4130-labs/Coach/commits`, non-merge, author split re-pulled independently by the verifier: 2026-08 claude 311 / jasonm4130 149; 2026-09 claude 17 / 0. Subjects are memory writes: \"nudge ledger: record the 2026-09-04 batch sent\", \"check-in 2026-09-05: objective rows refreshed\".",
+      "classification": "measurement artifact",
+      "confidence": "high",
+      "action": "Exclude author.login == \"claude\" from every effort metric. Note that the pack's own classify.py sets mine={'jasonm4130','claude','none'} and so violates this rule.",
+      "status": "confirmed",
+      "question": "Q1 usage"
+    },
+    {
+      "title": "The general crowding-out hypothesis fails: July was peak tooling and peak product at once",
+      "claim": "July was both the peak tooling month (253 tooling commits, 17.6% share) and the peak product month (1,161 product commits, 37.5/day). Tooling and product rose together, so the general form of \"tooling costs product\" does not survive. The [ship]-win count corroborates only weakly: the vault logging automation landed 2026-06-21 and its standing-approval rule 2026-07-05, and wins/day step at exactly those boundaries (0.9 to 1.8 to 3.4 to 5.7), so the Jun-to-Jul win jump is partly an instrumentation change.",
+      "evidence": "Class table by month, human-authored non-merge: 04 433p/32t, 05 735p/91t, 06 643p/46t, 07 1161p/253t, 08 635p/161t, 09(1-5) 51p/44t (verifier reproduced July within 2 commits). Vault '## 🏆 Wins' [ship] lines: Jun 36, Jul 166, Aug 91, Sep 1-5 14, reproduced to the unit. chezmoi f8a2086 (2026-06-21) daily-notes automation; c831ae8 (2026-07-05) standing-approved vault logging.",
+      "classification": "strength",
+      "confidence": "medium",
+      "action": "Drop the general crowding-out claim. Treat any vault-derived output measure as instrumented from 2026-06-21 and again from 2026-07-05, and do not compare across those dates.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "The August output drop is the day job, and tooling took only a fifth of the cut",
+      "claim": "The weekday 09:00-17:00 share of commits collapsed from 54.0% (W32) through 26.6% (W33) to 0.0%, 0.0% and 3.8% (W34-36). The day job started 2026-08-17, written verbatim in the vault daily note. The remaining hours were not split proportionally: tooling fell 7.7 to 6.1 commits/day (-21%) while product fell 31 to 5.2/day (-83%), and in the last three days tooling ran at 13.1 commits/day, its highest rate in the whole 30-day window.",
+      "evidence": "Weekday-daytime share recomputed independently over ten local clones with author dates and --author='Jason': W30 20.2%, W31 30.9%, W32 54.0%, W33 26.6%, W34 0.0%, W35 0.0%, W36 3.8%. /Users/jasonmatthew/Documents/Main/Daily/2026-08-17 - Daily.md: \"- [x] First day at the new job ✅ 2026-08-17\" (I re-read this line). Ship-wins/day 4.5 (Aug 1-16) to 1.3 (Aug 17-31). The absolute weekly totals did not reproduce between finder and verifier and should not be quoted.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Set an explicit weekly tooling budget as a fraction of the hours that now exist (e.g. one evening in five) and check it against the same commit split weekly. The scarce resource changed in mid-August and the allocation did not.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Nightshift has never run unattended: every landing was a supervised daylight debug run",
+      "claim": "All 30 loop starts across five journals happened on 2026-09-05 between 05:57 and 16:22; the launchd job is scheduled for 02:00 and its log holds one manual 06:26 invocation that landed nothing. Twelve starts were dry runs. Nine PRs landed at $36.87 of metered API price, $4.10 per landed PR, which is notional because Jason is on a Max plan: the payback unit is plan capacity and wall clock, not money. The unattended-overnight thesis has not been tested once.",
+      "evidence": "Five journals under ~/.local/state/nightshift/ (ambient, ambient-hardening, ambient-live-asr, ambient-session-tools, claude-skills); ~/Library/LaunchAgents/dev.nightshift.ambient.plist StartCalendarInterval Hour=2 Minute=0; ~/.local/state/nightshift/ambient/launchd.log has exactly one entry (06:26, max 0, nothing landed). Cost $36.87 over 37 agent calls across all five journals ($32.90 across the two the finder read).",
+      "classification": "no failure, just cost",
+      "confidence": "high",
+      "action": "Wait for three consecutive 02:00 runs, then report PRs landed in the 02:00-07:00 window per night, blocked-task rate, and wall-clock hours consumed. Nothing before that is evidence about the loop. Report capacity, not dollars.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Seven of nine Nightshift landings are internal quality work; two are user-visible",
+      "claim": "Seven of the nine landed PRs are internal quality infrastructure: a WER scorer, a LibriSpeech fixture, a scoring harness, a quality script, log_mel tests and two doc corrections. Two are user-visible: #46 adds `show --json` to the CLI (src/main.rs, src/session.rs, docs/using/commands.md) and #47 fixes NaN-safe argmax across src/asr.rs, src/diarize.rs, src/features.rs and src/vad.rs. The original \"nothing user-visible\" claim was true of the first seven PRs and false of the run an hour later.",
+      "evidence": "`gh pr list -R jasonm4130-labs/ambient --state merged`, head branches land/*: #19 43L, #22 22L, #24 52L, #32 228L, #33 244L, #42 212L, #43 177L, plus #46 and #47 merged 2026-09-05T06:38-06:39Z; claude-skills #102 105L. Note the finder's stated proof that #43 was hand-merged (mergedBy jasonm4130) does not hold: the loop merges with Jason's token, so mergedBy is jasonm4130 on all nine. The real evidence is the absence of a \"landed as PR #43\" journal line.",
+      "classification": "tool",
+      "confidence": "medium",
+      "action": "Write into the plan template which of the two jobs the loop has. If it is meant to ship product, a plan whose tasks are all test scaffolding is the wrong plan. Never infer loop authorship from mergedBy.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "61% of the July plugin build is gone",
+      "claim": "The marketplace peaked at 18 plugins on 2026-07-31 and holds 9 today. Eight were retired outright (adversarial-agents, claude-design, codebase-design, deep-dive, frontend-design, subagent-driven-development, superpowers-core, visual-plan) and three guards were folded into `gates`, so 11 of the 18 (61%) no longer exist as plugins. Only 7 of today's 9 existed in July; the only net-new capabilities since the peak are gates and nightshift. Both readings are true: July over-produced, and the pruning discipline is real and rare.",
+      "evidence": "`git ls-tree --name-only <commit> plugins/` at month ends in ~/Work/Git/claude-skills, reproduced exactly by the verifier: 05-31 5, 06-30 8, 07-31 18, 08-15 16, 08-31 11, 09-05 9. Retirement commit subjects 2026-08-26 to 2026-09-05.",
+      "classification": "strength",
+      "confidence": "high",
+      "action": "Write the retirement condition into the next plugin's README on day one. Each of the eight retirements took its own session to argue and land.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Four of six model-invocable owned plugins were used; the measurable gap is session-retro at zero",
+      "claim": "Of the nine enabled owned plugins, three (gates, ship-gate, nightshift) expose no model-invocable skill, so their zero is structural. Of the six that do, four were invoked in the local 15-day window: codex-plan-review 7, writing-artifacts 3, domain-modeling 1, adr 1, which is 12 of 38 total invocations. Two were not: session-retro, and handoff, whose auto-fire was deliberately disabled on 2026-08-08 because compaction now continues the session. The only measurable gap is session-retro; the rest is passive machinery or a design decision.",
+      "evidence": "`skills` field of REVIEW/local.sessions.jsonl, sidechain rows excluded, 78 interactive sessions: 38 invocations, codex-plan-review 7 after merging three name spellings; built-ins lead (workflow-authoring 8, artifact-design 4, design 3). Archive 2026-04 to 07: 451 invocations dominated by brainstorming 75, writing-plans 72, SDD 43+30, all now retired. Handoff decision recorded in project_handoff_nudge_disabled_compaction_continues.md.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Judge only session-retro's zero. Before calling any other plugin dead weight, count hook fires, which this index does not record.",
+      "status": "corrected",
+      "question": "Q4 tools, Q1 usage"
+    },
+    {
+      "title": "Public shipping stopped 2026-07-07 and the pipeline built to sustain it was finished after the last post",
+      "claim": "The blog's newest published item is 2026-07-07; the prior cadence was roughly weekly from 2026-04-21. The two repos built to distribute public work, social-mcp (\"replaces Buffer for scheduled posting\") and content-ops, have had no commits since 2026-07-17 and 2026-07-16. The distribution machinery was completed eight and nine days after the last thing it existed to distribute, and neither repo is archived.",
+      "evidence": "https://jasonmatthew.dev/rss.xml re-fetched by the verifier: 07 Jul, 10 Jun, 02 Jun, 26 May, 12 May, 06 May, 29 Apr, 21 Apr 2026. `gh repo list` pushedAt: social-mcp 2026-07-17T13:47:12Z, content-ops 2026-07-16T21:46:29Z, jasonmatthew.dev 2026-08-07T11:18:08Z.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Publish through it within a fortnight or archive both repos. This is the clearest instance in the record of tooling outliving its output stream.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "What is actually in use today is the household stack, and it is genuinely load-bearing",
+      "claim": "Five things are demonstrably running: transcoder (a live encode on dell-02 in state \"verifying\" when probed twice), brok-stacks (nightly gated auto-deploy landed 2026-09-04, CVE fast path shipped), Coach (its check-in Routine committed autonomously at 2026-09-04T21:14 with no human in the loop), unifi (applied 2026-09-03) and claude-statusline (wired into settings.json). These serve Jason, the household and the parents' Unraid node.",
+      "evidence": "curl http://brok.jasonmatthew.me:9090/api/attempts returned a live attempt row (dell-02:vmaf lease, state verifying, /tv/Collateral S01E01) on the verifier's own request 2026-09-05. ~/.claude/settings.json statusLine = ~/.local/bin/claude-statusline, 2.8 MB binary dated 28 Aug 20:57. brok-stacks docs/HARDENING_AUDIT_2026-09-02.md; runbook notes parents' Unraid verified 2026-09-03. The 86-container count was not independently re-verified.",
+      "classification": "strength",
+      "confidence": "high",
+      "action": "None. Protect this stack's maintenance budget when the tooling budget is cut.",
+      "status": "confirmed",
+      "question": "Q1 usage"
+    },
+    {
+      "title": "Ambient, the current product bet, has captured seven sessions, all on two days a week ago",
+      "claim": "~/Documents/Ambient holds seven real capture sessions with audio and transcripts, all from 2026-08-29 and 2026-08-30, the build-out days. Both 2026-09-02 attempts produced zero bytes, one containing only a STOP file, and nothing has been recorded since. The WER harness and the notarised release pipeline are being built around a product whose only user has not fed it real audio in a week.",
+      "evidence": "`ls -la ~/Documents/Ambient`: 2026-08-29T1421/1422/1514/1517/1908 and 2026-08-30T1900/2316, each with audio + transcript.md (724K-4.7M); 2026-09-02T0816 (STOP only) and 2026-09-02T0816-02 (0B). Releases v0.0.1 and v0.0.2 both 2026-08-30; repo created 2026-08-29. The finder's added claim that Ambient's stated purpose is capturing office conversations at a firewalled job is not stated anywhere: the README says \"record conversations in the room and on Teams calls, transcribe and attribute them on-device\".",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Record one real meeting this week and read the transcript end to end before landing another WER task. A quality harness scoring a pipeline nobody has fed real audio to is measuring the wrong risk.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Four flagship products are live with no measurable adoption, and they were built concurrently, not serially",
+      "claim": "Endurebyte, skopia, games-games-games and transcoder are all live and none has measurable adoption: skopia 1 star, games 0, claude-skills 5 stars with 22 unique repo viewers in 14 days, and its 378 unique cloners are dominated by marketplace refresh and CI. The serial-focus mechanism is wrong: endurebyte ran 258/58/81/136/1 commits across April-August, so 52% of its commits came after April and it overlapped transcoder for four months. The pattern is wide concurrency abandoned wholesale.",
+      "evidence": "`gh repo list` pushedAt; commit matrix by repo-month in REVIEW/out/E3-shipping/notes.md (endurebyte 258 April, 1 since Aug 1; transcoder 941 total, last main commit 2026-08-28; skopia Jun 38 / Jul 64, last push 2026-07-27); curl 200 on jasonmatthew.dev, skopia.dev, games.jasonmatthew.dev, endurebyte.com on 2026-09-05; `gh api repos/<r>/traffic/{views,clones}` and stargazer counts.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Pick one and give it a user other than Jason, or archive the other three publicly. \"Live but unmaintained with zero users\" is the most common end state in this record and it is invisible in commit counts.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "The portfolio ran on nine to fifteen fronts a month and narrowed only when the job took the hours",
+      "claim": "Repos taking 20 or more of Jason's commits in a month: April 9, May 9, June 10, July 15, August 9, and September 1-5 only three, across 18, 20, 21, 27, 17 and 7 repos touched. July's product bloc alone is transcoder 289, claude-skills 188, brok-stacks 167, endurebyte 136, email-management 99, content-ops 70, unifi 69, skopia 64. The narrowing to three fronts in September is not a decision, it is what employment did to the available hours. Every allocation question in this pack should be anchored to this number rather than to a tooling percentage.",
+      "evidence": "I recomputed this from REVIEW/out/E3-shipping/commits.tsv (6,061 non-merge rows), filtering author == jasonm4130 and counting distinct repos with >= 20 commits per month: 9 / 9 / 10 / 15 / 9 / 3 against 18 / 20 / 21 / 27 / 17 / 7 repos touched. The July bloc counts reproduce exactly.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Choose the three fronts deliberately and name the rest as parked, in writing. The count of repos at 20+ commits per month is the single allocation metric to watch weekly.",
+      "status": "new-from-verifier",
+      "question": "Q3 operator gaps, Q1 usage"
+    },
+    {
+      "title": "Nothing in the shipping analysis is weighted by size, and the classifier script does not reproduce its own table",
+      "claim": "Every allocation conclusion here rests on raw commit counts, which the Coach finding itself disqualifies as an effort proxy. Where size was checked it changed the answer: ambient's loop machinery is 9 of 86 non-merge commits since 2026-08-01 but only 791 of 50,072 lines changed, against the 31.3% tooling share the finder assumed for it. Separately, the pack's own classify.py counts the `claude` identity as Jason and produces 19.5%, not the 27.0% its notes report, so the shipped script does not generate the shipped table.",
+      "evidence": "I re-ran the ambient count in /Users/jasonmatthew/Work/Git/ambient: 86 non-merge commits since 2026-08-01, 9 of them touching loop/. I read REVIEW/out/E3-shipping/classify.py line 38: `mine={'jasonm4130','claude','none'}`, and line 43 filters on that set. Verifier's numstat: 791 of 50,072 lines in loop/.",
+      "classification": "measurement artifact",
+      "confidence": "high",
+      "action": "Weight the next allocation pass by lines changed as well as commits, and fix classify.py's `mine` set before anyone re-runs it.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "The session index has a three-week hole, so every plugin-usage figure sits entirely after the job started",
+      "claim": "Neither session index covers 2026-08-01 to 2026-08-21: local rows begin 2026-08-21T22:05:24Z. The fifteen-day window that carries the skill-invocation counts therefore sits entirely after the day job began on 2026-08-17, and the archive stops in July. No before-and-after comparison of tool use across the employment change can be made from this data, and the low invocation counts cannot be read as decline.",
+      "evidence": "I parsed REVIEW/local.sessions.jsonl (1,503 rows): earliest start 2026-08-21T22:05:24.284Z, latest 2026-09-05T05:43:34.294Z. The archive period is stated as 2026-04 to 2026-07 in the brief, and the finder notes the archive index is near-empty for May (13 sessions) and June (44) against 618 in April and 716 in July.",
+      "classification": "measurement artifact",
+      "confidence": "high",
+      "action": "State the coverage hole wherever a local-vs-archive comparison is drawn. Treat May and June archive session rates as unusable.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "The pack reproduced Jason's known model failure mode: a confident negative with no positive check",
+      "claim": "The finder filed the day-job start date as one of three things it could not establish, writing that the vault notes \"never name a first day\", and inferred 2026-08-17 from commit timing instead. The date is written verbatim in the vault. This is the same failure the standing CLAUDE.md rule names (\"a confident negative needs a positive proof\") and that the pack lists as unchanged across periods, occurring inside the review itself, in an agent that had the file on disk.",
+      "evidence": "Finder's `gaps` field: \"the notes themselves never name a first day, so the confound's timing is inferred, not read.\" I grepped the file: /Users/jasonmatthew/Documents/Main/Daily/2026-08-17 - Daily.md contains \"- [x] First day at the new job ✅ 2026-08-17\". One `grep -ril \"first day\"` over the July-August dailies finds it.",
+      "classification": "model failure",
+      "confidence": "high",
+      "action": "Make the positive-check demand executable rather than advisory: require any agent filing an \"unresolvable gap\" to name and run the command that would find it. The prose rule alone did not fire here.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q3 operator gaps"
+    }
+  ],
+  "dropped": []
+}

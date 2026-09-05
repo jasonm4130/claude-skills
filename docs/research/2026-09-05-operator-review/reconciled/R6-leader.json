@@ -1,0 +1,205 @@
+{
+  "label": "R6-leader",
+  "findings": [
+    {
+      "title": "AI amplifies the system you already have, so the slow-to-ship diagnosis comes before any tooling push",
+      "claim": "DORA's central 2025 finding is that AI is an amplifier: strong teams get stronger, struggling teams have their dysfunctions intensified, and the returns come from the surrounding system rather than the tools. AI adoption showed a positive relationship with throughput and product performance and a negative relationship with delivery stability, because higher change volume exposes weak testing, version control and feedback loops. A team already slow to ship will get more code and the same or worse shipping rate.",
+      "evidence": "DORA 2025 State of AI-assisted Software Development, announced 2025-09-24, https://cloud.google.com/blog/products/ai-machine-learning/announcing-the-2025-dora-report — verifier confirmed verbatim: 90% of respondents use AI at work, >80% believe it increased their productivity, 30% report little or no trust in AI-generated code, positive AI-throughput and AI-product-performance relationships, negative AI-stability relationship, 'AI doesn't fix a team; it amplifies what's already there'; ~5,000 respondents plus 100+ hours of qualitative data, seven team profiles. Verifier: 'This is the best-sourced finding in the set.'",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Before any tooling push, spend a week establishing why they are slow to ship: measure lead time from first commit to production and where work waits. Then name the DORA team profile that matches, out loud, so 'we're slow' becomes a shared diagnosis the team can argue with.",
+      "status": "confirmed",
+      "question": "Q2 team"
+    },
+    {
+      "title": "The one rigorous AI-mandate field study says throughput doubled and the bottleneck moved to review",
+      "claim": "In a 27-month panel at an AI-forward company under a '2x merged PRs per engineer' mandate, per-capita throughput reached 2.09x baseline with merge and revert rates steady, while per-reviewer load roughly doubled and automated review overtook human review. The authors attribute the gain to an adoption-and-use channel that the mandate catalysed, not to the mandate directly, and disclaim exact causal attribution. The mandate relocated the constraint rather than removing it, so review capacity must be budgeted before throughput rises.",
+      "evidence": "arXiv:2607.01904, 'AI Writes Faster Than Humans Can Review: A Longitudinal Study of an Enterprise 2x Mandate', submitted 2026-07-02, https://arxiv.org/abs/2607.01904 — 802 developers, 196,212 pull requests, Jan 2024 to Apr 2026, staggered difference-in-differences; verifier confirmed every load-bearing number verbatim in the abstract, plus the paper's own 'catalyst rather than a direct driver' language and its non-randomised, single-company caveat. Verifier struck the corroborating cite arXiv:2605.01160 as a single-author literature review restating other people's telemetry, not independent measurement.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Measure current review latency and per-reviewer load and set a ceiling before asking for more agent-assisted output. Land automated pre-PR checks (the codex-review diff mode already exists at home) so the first pass is machine-run and humans review design, not syntax.",
+      "status": "confirmed",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Expect gains by quadrant, not in general: greenfield 30-40%, brownfield high-complexity 0-10%",
+      "claim": "Denisov-Blanch's Stanford corpus of ~100,000 developers across hundreds of companies splits AI gains by codebase maturity and task complexity: roughly 30-40% on greenfield low-complexity, 10-15% greenfield high-complexity, 15-20% brownfield low-complexity, and 0-10% on brownfield high-complexity, with roughly half of gross gains consumed by rework. This reconciles the METR result with the enthusiasts, who are describing different quadrants rather than disagreeing. It predicts that a mature healthcare product like Scribe sits in the worst quadrant, and it explains why a personal commit mix weighted toward greenfield tooling feels far more productive than the work team's brownfield work.",
+      "evidence": "Denisov-Blanch (Stanford Software Engineering Productivity Lab), ~100k-developer analysis, reported secondarily; corroborated inside this pack at REVIEW/wave1/digest.md lines 302-304, where R1's own verifier struck the claimed independence and the primary link (proxify.io returns HTTP 403) but kept the corrected form: 'roughly 35-40% on greenfield low-complexity work down to about 0-10% on brownfield high-complexity'. Same split is carried as surviving external evidence in brief2 line 37. Denisov-Blanch is also a co-author of arXiv:2607.01904, the paper this finder leans on hardest.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "State the quadrant rule in the team AI stance: expect real gains on new services and low-complexity work, expect single digits on mature Scribe code, and expect roughly half of gross gains back as rework. It gives a lead a position that survives pushback from both camps, unlike a single study either camp can dismantle. Cite it as secondary reporting, not as a paper.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q2 team, Q3 operator gaps"
+    },
+    {
+      "title": "A clear written AI stance is the cheapest of DORA's seven amplifying capabilities and the right week-5 artifact",
+      "claim": "DORA's AI Capabilities Model names 'clear and communicated AI stance' as one of seven capabilities that amplify AI's benefits, on the reasoning that ambiguity creates risk and a clear policy supplies the psychological safety experimentation needs. For a lead four weeks in with no budget and no mandate, this is the highest-leverage artifact that costs a page of writing; the other six (AI-accessible internal data, healthy data ecosystems, platform engineering, user-centric focus, version control, small batches) are mostly infrastructure programmes.",
+      "evidence": "DORA AI Capabilities Model, https://dora.dev/capabilities/ — verifier confirmed the page lists exactly those seven capabilities and carries verbatim: 'Ambiguity creates risk. A clear policy provides the psychological safety needed for effective experimentation.' Verifier also confirmed no 2026 State of AI-assisted Software Development report supersedes the 2025 one (only the 2026.01 ROI report exists), so the companion model is current. The 'cheapest of the seven' judgement is this finder's, and is a reasonable read of the other six.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Write a one-page team AI stance this week: what agents may touch and what they may not given healthcare data in Scribe, what must be human-verified before merge, that nobody is measured on AI usage, and that not using it on a given task is a legitimate choice. Circulate for comment rather than announcement.",
+      "status": "confirmed",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Usage targets produce theatre; publish the metrics you will not track",
+      "claim": "The adoption metrics teams reach for first — percentage of code written by AI, suggestion acceptance rate, adoption rate in isolation, and any individual-level usage tracking — are flagged as vanity or misleading by the group running the largest DevEx dataset, with acceptance rate flawed because accepted code is often heavily modified or deleted before commit. Announcing what you will not measure is itself an adoption intervention: it removes the incentive to perform usage. Provenance caveat the finder omitted: DX sells the AI-measurement platform it recommends, so its 5-15% productivity benchmark and its 60-70% weekly-active ceiling are vendor-published with no external replication; the metrics-to-avoid guidance is independently corroborated by DORA's March 2026 leader guidance to stop relying on narrow output-based metrics.",
+      "evidence": "DX, 'How to measure AI's impact on developer productivity', last updated 2025-11-12, https://getdx.com/blog/ai-measurement-hub/ — verifier confirmed near-verbatim: 'Accepted code is often heavily modified or deleted before commit'; 'Always aggregate at team or department level, never track individuals'; 'Allow 3-6 months'; '38,880 developers at 184 companies'; 'Even leading organizations reach only 60-70% weekly active usage'; 'Real productivity boost: 5-15%, not 50-100%'. Independent leg verified directly on https://dora.dev/insights/balancing-ai-tensions/ (2026-03-10): 'leaders must stop relying on such narrow, output-based metrics'.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Publish a one-paragraph measurement stance: team-level only, no individual usage tracking, no AI-authorship percentage; the scoreboard is delivery lead time, change failure rate, review latency, and one product outcome. Say the first honest read is 3-6 months out. Label the DX numbers as vendor-published when you show them.",
+      "status": "confirmed",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Hooks are the only part of a shared config that is policy; everything else is advice",
+      "claim": "The vendor draws the distinction a tech lead should build guardrails on: CLAUDE.md instructions are advisory and get ignored as the file grows, while hooks are deterministic and guarantee the action happens. For a healthcare product that is the difference between a documented rule and an enforced one, and it removes a class of review argument, because anything a hook or linter can decide should never reach a human reviewer's opinion.",
+      "evidence": "Anthropic, 'Best practices for Claude Code', https://code.claude.com/docs/en/best-practices — verifier confirmed verbatim: 'Unlike CLAUDE.md instructions which are advisory, hooks are deterministic and guarantee the action happens'; 'If Claude already does something correctly without the instruction, delete it or convert it to a hook'; and 'Bloated CLAUDE.md files cause Claude to ignore your actual instructions!'. DORA independently lists version control as 'a critical safety net as AI accelerates the velocity of change', https://dora.dev/capabilities/.",
+      "classification": "tool",
+      "confidence": "high",
+      "action": "Take the top three things the team argues about in review and the top three things that must never happen in a healthcare repo, and make each a hook or a CI check. Port the pattern from the home gates plugin, not the plugin itself.",
+      "status": "confirmed",
+      "question": "Q2 team, Q4 tools"
+    },
+    {
+      "title": "Shared agent configuration is the multiplayer primitive, and it belongs in the repo reviewed like code",
+      "claim": "Individual prompting skill does not compound across a team; a checked-in configuration does. Vendor guidance is explicit that CLAUDE.md should be in git so the team contributes and that it compounds in value, and Anthropic's own teams treat it as a handbook that doubles as onboarding material. The one enterprise datapoint on packaging team knowledge as reusable agent skills reports 2.6 hours per week saved per developer and NPS +35 across 67 surveyed engineers at Yahoo: self-reported, from a paper advocating the approach, so the direction is evidence and the magnitude is marketing.",
+      "evidence": "Anthropic, 'Best practices for Claude Code', https://code.claude.com/docs/en/best-practices — verifier confirmed verbatim: 'Check CLAUDE.md into git so your team can contribute. The file compounds in value over time.' Bakal, 'Knowledge Activation: AI Skills as the Institutional Knowledge Primitive for Agentic Software Development', arXiv:2603.14805, submitted 2026-03-16, revised 2026-06-04 — verifier confirmed the abstract carries '2.6 hours per week saved, Net Promoter Score +35' from 67 surveyed Yahoo engineers. Verifier verdict: 'Honest handling of weak evidence.'",
+      "classification": "tool",
+      "confidence": "medium",
+      "action": "Land a repo CLAUDE.md in the Scribe repo as a normal PR the team reviews: Effect TS conventions, the barrel-file pattern with its rationale, AWS deploy commands, test runner, review conventions. Every recurring 'AI slop' argument becomes a line in that file or a skill, so it is argued once. Note that the 200-line cap is a personal house rule, not vendor guidance, so do not present it as such.",
+      "status": "confirmed",
+      "question": "Q2 team, Q4 tools"
+    },
+    {
+      "title": "After CLAUDE.md the shared primitives are Stop hooks, /goal conditions and fresh-context review subagents",
+      "claim": "Shared config answers 'what does the team agree on' but not 'what does the team run'. The same vendor page carries the mechanisms that make agreement enforceable across a team: a Stop hook runs a check as a script and blocks the turn from ending until it passes, a /goal condition is re-evaluated after every turn, an adversarial review step runs a subagent over the diff in fresh context, and /batch fans work out. One mechanical caveat: Claude Code overrides a Stop hook and ends the turn after 8 consecutive blocks, so a Stop hook is a strong nudge, not an unconditional gate. CI remains the only hard gate.",
+      "evidence": "Anthropic, 'Best practices for Claude Code', https://code.claude.com/docs/en/best-practices — quoted verbatim in this pack at REVIEW/wave1/17.json line 80: a Stop hook 'runs your check as a script and blocks the turn from ending until it passes', and '/goal re-checks a condition after every turn'; the 'Add an adversarial review step' section plus its callout 'a reviewer prompted to find gaps will usually report some, even when the work is sound' are recorded in REVIEW/wave1/25.json (missed text). The override limit is the verifier's own check at REVIEW/wave1/25.json line 60: 'Claude Code overrides the hook and ends the turn after 8 consecutive blocks'.",
+      "classification": "tool",
+      "confidence": "high",
+      "action": "In the stance doc, pair each team rule with the mechanism that carries it: hook or CI check for must-never-happen, /goal for the outcome criterion, a fresh-context review subagent before the human review, CLAUDE.md only for what genuinely cannot be checked. Do not sell a Stop hook as a guarantee.",
+      "status": "new-from-verifier",
+      "question": "Q2 team, Q4 tools"
+    },
+    {
+      "title": "An AI reviewer that never says 'this is fine' will validate every skeptic in the room",
+      "claim": "Introducing AI review to a team already suspicious of AI output makes calibration the whole ballgame. The measured dominant failure mode of LLM reviewers is systematic over-rejection of correct, requirement-conforming code, with false-negative rates dwarfing false positives, and 'explain your reasoning and propose a fix' scaffolding makes it worse. A bot producing findings on every clean PR manufactures evidence that AI is unreliable and delivers it to the people most primed to accept it. Stronger still for a skeptical audience: the vendor's own documentation states the same bias and prescribes the fix, which is more persuasive than a paywalled citation nobody can open.",
+      "evidence": "Jin & Chen, Automated Software Engineering (Springer, 2026), 5 models x 3 benchmarks x 3 prompt styles: GPT-4o FNR 26-88% vs FPR 0-11%; Claude-4.5 26-62% vs <7%; GPT-4o's FNR rose 26% to 73% as prompt complexity rose — as recorded and applied in /Users/jasonmatthew/Work/Git/claude-skills/docs/research/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md (2026-07-15), which shipped the fix (an APPROVED verdict with zero findings stated as the correct expected result). I re-read that doc: the numbers match line for line. Provenance note from the verifier: the primary Springer paper was never opened, so this rests on a secondary summary. Vendor corroboration: Anthropic best-practices, 'A reviewer prompted to find gaps will usually report some, even when the work is sound, because that is what it was asked to do', with the prescribed fix 'flag only gaps that affect correctness or the stated requirements'. The CMU paper's real title is '3100 Opinions on Code Review in an AI World: Building Causal Theory from Practitioner Discourse', arXiv:2607.07980, 2026-07-08 (the quoted sentence about review as 'the control point' is verbatim).",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Port the clean-pass and reproducibility-gate wording from the codex-review skill into whatever review automation the work team gets, before it sees a single PR. Introduce it by showing the vendor's own callout about over-flagging: leading with the tool's known bias is what buys trust.",
+      "status": "confirmed",
+      "question": "Q2 team, Q4 tools"
+    },
+    {
+      "title": "'This reads like AI slop' is a coin flip dressed as a finding",
+      "claim": "Developers cannot tell AI-written code from human-written code: in a TOSEM 2024 study developers with 3-5 years' experience scored 50% on Python and 49.75% on Java, and falsely labelled 41.59% of human-written code as ChatGPT-generated. Separately, Bacchelli & Bird found defect-related comments are a small proportion of review comments and mainly low-level, while code and change understanding is the key aspect of review and the least tool-supported. So an authorship objection is not a technical finding, and the moment a reviewer does not recognise a pattern is exactly the moment review is supposed to transfer knowledge. The barrel-file rejection is that 41.59% figure happening in the room.",
+      "evidence": "Xu, Ni, Guo, Liu, Wang, Liu & Yang, TOSEM (Nov 2024), arXiv:2411.04704 — verifier read the decompressed PDF: 20 true/false questions on comment-stripped code, 50% accuracy Python (n=21), 49.75% Java (n=23), 41.59% of human-written code falsely classified as ChatGPT-generated. Same result carried as surviving external evidence in brief2 line 39. Bacchelli & Bird, ICSE 2013, https://sback.it/publications/icse2013.pdf. The finder's original Penn State citation is withdrawn: the verifier confirmed with the page that the 53% figure covers text detection, 'not code'.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Add one line to the review guide: an objection must name a concrete failure mode or a named principle the change violates; authorship, tone and 'this doesn't look like how we write' are not findings. When a reviewer does not know a pattern, the response is 'explain it to me' plus a five-minute writeup from the author, not a change request.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "For engineers lacking foundations, the intervention is human pairing on the agent's decisions",
+      "claim": "DORA names an expertise paradox: lowering entry barriers risks false expertise by letting engineers bypass the productive struggle that deep learning requires. The prescribed counter is not less AI, it is pairing engineers with senior mentors to review AI-generated architectural decisions, so the review target is the choice rather than the output. This is also the respectful framing, treating the gap as a normal artifact of the tooling era rather than a personal deficiency. Scope note: DORA specifies junior-with-senior pairing on architectural decisions; extending it to a no-exceptions explain-your-code rule for everyone is a defensible design choice but is not DORA's.",
+      "evidence": "DORA, 'Balancing AI tensions', 2026-03-10, https://dora.dev/insights/balancing-ai-tensions/ — verifier confirmed verbatim: 'Lowering entry barriers to new domains risks creating false expertise by allowing engineers to bypass the productive struggle necessary for deep, long-term learning', and the prescription 'actively pairing junior engineers with senior mentors to review AI-generated architectural decisions'. KPMG/Melbourne corroboration verified verbatim: 66% rely on AI output without evaluating accuracy, 56% report resulting mistakes.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Institute one rule with no exceptions and no naming of individuals: you must be able to explain, at review, why the code does what it does, and 'the agent chose that' is not an explanation. Pair on the explaining, not on the typing. Present the everyone-version as your call, not as DORA's.",
+      "status": "confirmed",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Self-reported speed is not evidence, for enthusiasts or skeptics",
+      "claim": "METR's randomised trial found 16 experienced open-source maintainers were 19% slower with AI tools on repos they knew well, while believing afterwards they had been 20% faster, a ~39-point gap between felt and measured. METR states the result does not generalise beyond that setting. The transferable lesson is narrow and strong: nobody's feeling about speed counts as evidence. The broad lesson that AI slows experienced developers down is not supported, and the greenfield/brownfield quadrant split explains why both camps see what they see. Handing skeptics a study whose own authors disclaim generalisation is dismantlable in one search and costs the lead the credibility the move was meant to buy.",
+      "evidence": "METR, 'Measuring the Impact of Early-2025 AI on Experienced Open-Source Developer Productivity', 2025-07-10, https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/ — verifier confirmed exact figures (19% longer, 16 developers, 246 tasks, +24% forecast, +20% believed after) and the authors' own disclaimers that the result does not show AI fails to speed up most developers, nor generalise beyond their pool and repository types. Contrast in DORA 2025: >80% believe AI increased their productivity while 30% report little or no trust in AI-generated code, https://cloud.google.com/blog/products/ai-machine-learning/announcing-the-2025-dora-report (2025-09-24).",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Open the team conversation with the METR result and its disclaimers together, then the quadrant split, not with a demo. State the rule that follows: claims about speed need a measurement, and until the team has one, nobody's opinion outranks anyone else's. That gives skeptics standing and buys permission to run the experiment.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "The team's quality instinct is well-aimed even though the proxies are worthless",
+      "claim": "GitClear, a code-analytics vendor, reports that across 623 million changes (2023-2026) eight maintainability signals moved the wrong way at once: refactoring line moves -70%, code block duplication +81%, within-commit copy/paste +41% (measured from 2022, not 2023), error-masking constructs +47%, cross-file reuse -35%, legacy maintenance -74%, two-week churn +15%. GitClear frames this as a workflow-incentive effect rather than a claim about AI code quality. It is an uncontrolled industry trend with no non-AI comparison group, not a causal finding, but it is the only large dataset pointing at maintainability, which makes the team's concern well-aimed even though the proxies they use (comment wording, authorship smell) are not.",
+      "evidence": "GitClear, 'The Maintainability Gap: 2026 AI Code Quality Research', January 2026, https://www.gitclear.com/the_ai_code_quality_maintainability_gap — verifier confirmed each figure on the page (block duplication 40.3 to 73.0, 'an 81% increase'; function connectivity 'fallen 35% since 2023'; legacy maintenance 'fallen 74%') and the framing sentence 'The headline is not \"AI writes bad code.\"'. Verifier corrections applied here: the copy/paste series starts in 2022, GitClear sells code-analytics tooling and has published a multi-year series arguing this thesis, and the original causal phrasing in the title and actionable is withdrawn.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Give the two quality-focused engineers the maintainability brief and let them own it: duplication, cross-file reuse and swallowed errors as tracked repo metrics. It redirects energy currently spent on comment wording onto something the data says decays, and gives skeptics a real job rather than a veto. Present GitClear as a vendor trend, not as proof.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Tell the team and your management that a dip is coming, before it comes",
+      "claim": "DORA's 2026 ROI work models value realisation as a J-curve: a temporary productivity drop is normal and comes from three named costs, workflow adaptation, the verification burden of reviewing AI-generated code, and downstream process adjustment such as testing. A lead four weeks in who does not pre-announce the dip will spend month three defending the initiative against a number they predicted privately. The published worked example (500 engineers, $176k fully loaded salary) shows 39% first-year ROI with roughly eight-month payback and prices an instability tax of $344,000 from a change-failure rate rising 5% to 6%. These are illustrative model outputs, not measurements of any real dip, and DORA says to treat them as high-uncertainty conversation starters.",
+      "evidence": "DORA, 'ROI of AI-assisted Software Development', last updated 2026-04-22, https://dora.dev/ai/roi/report/ — verifier confirmed the page carries the framing but none of the numbers, as the finder disclosed. InfoQ, 2026-05-11, https://www.infoq.com/news/2026/05/dora-roi-ai-assisted-dev-report/ — verifier confirmed each figure verbatim, including 'the J-Curve of value realisation', the three named causes, the 500-person/$176,000 example, '39% ROI and a payback period of around eight months', and 'a negative downtime impact of $344,000'.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "In the stance doc, state the expected dip, its three named causes, and the date you will review it. Use the ROI arithmetic as a conversation opener with your own management, never as a commitment.",
+      "status": "confirmed",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Plan for concealment, not refusal, but do not treat early-2025 general-workforce data as a diagnosis of this team",
+      "claim": "In a 47-country survey of 48,000+ people (fieldwork Nov 2024 to Jan 2025), 57% of employees said they hide their AI use and present AI-generated work as their own, 66% relied on output without evaluating accuracy, 56% reported mistakes at work because of AI, only 47% had received training and only 40% had a workplace genAI policy. This is general-workforce evidence from roughly twenty months ago, not developer-specific and not current, and software teams have AI use semi-visible in commits, PR descriptions and tool telemetry in a way most knowledge work does not. Use it as a reason to write the policy and open a disclosure channel, not as a claim about what this engineering team is doing.",
+      "evidence": "KPMG and University of Melbourne, 'Trust, attitudes and use of artificial intelligence: A global study 2025', fieldwork Nov 2024 to Jan 2025, published April 2025, https://kpmg.com/xx/en/media/press-releases/2025/04/trust-of-ai-remains-a-critical-challenge.html — verifier confirmed every figure verbatim on the page, and raised the population and currency limits now folded into the claim.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Pair the stance doc with a standing, no-stakes way to disclose: a channel where people post what they tried and what went wrong, seeded by Jason posting their own failures first. Make 'I generated this and here is how I checked it' the normal PR description sentence.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Scope the sit-down reviews to changes that teach something",
+      "claim": "Bacchelli & Bird (ICSE 2013, Microsoft: 17 developers observed, 570 comments coded, 165 managers and 873 programmers surveyed) found reviews deliver less defect-finding than reviewers expect, with defect comments a small proportion and mainly low-level, while code and change understanding is the key aspect of review and the least tool-supported. That supports scoping sit-downs to changes carrying a pattern or a decision worth transferring. It is thirteen-year-old pre-agent evidence about human-authored reviews, so it is a rationale rather than a proof, and the paper's own survey ranks knowledge transfer first for only 8% of programmers. The volume half of the argument is solid: per-reviewer load roughly doubled under a 2x throughput mandate, so an unscoped synchronous ritual becomes a bottleneck exactly as PR volume rises.",
+      "evidence": "Bacchelli & Bird, 'Expectations, Outcomes, and Challenges of Modern Code Review', ICSE 2013, https://sback.it/publications/icse2013.pdf — verifier checked the source and withdrew the finder's quotation, which paraphrased 'All the interviewees but one motivated their code reviews *also* from a learning perspective' and dropped the load-bearing 'also'; the abstract states finding defects 'remains the main motivation'. Volume leg: arXiv:2607.01904, 2026-07-02, per-reviewer load roughly doubled.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Keep the sit-downs, timebox to 30 minutes, and pick the PR by whether it teaches something (a new pattern, an Effect TS idiom, an LLM-feature design choice) rather than by queue order. Rotate who drives, and have the author walk through the decision, not the diff. Everything else goes async with automated checks first.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Broadcast awareness for internal tooling is measured; live pairing specifically is not",
+      "claim": "Broadcast awareness interventions for internal developer tooling have measured effects: Google's Testing on the Toilet study applied statistical causal inference over six years of tool-usage data covering thousands of developers, then surveyed and interviewed 382 developers, and found the intervention generally effective at increasing tool adoption, moderated by breadth of applicability, saturation of existing adoption, and memorability of the tool name. The finder's original claim that no measurement exists for adoption interventions is withdrawn as a confident negative with no positive proof. Live pairing in front of the team remains unmeasured, so run it as an experiment, and use the ICSE moderators as the variables to control.",
+      "evidence": "Murphy-Hill, Smith, Sadowski, Jaspan, Winter et al., 'Do Developers Discover New Tools On The Toilet?', ICSE 2019, DOI 10.1109/ICSE.2019.00059 — verifier's own check, and carried as surviving external evidence in brief2 line 40 ('Testing-on-the-Toilet style broadcast has measured effect (Google ICSE 2019)'). Mechanism evidence for the pairing half: KPMG/Melbourne April 2025 concealment figures, and DORA's AI Capabilities Model, 'a clear policy provides the psychological safety needed for effective experimentation', https://dora.dev/capabilities/.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Run the weekly 30-minute session on a real Scribe ticket, screen shared, and deliberately include a failure: the agent producing something wrong, the check that caught it, the correction. Pair it with a broadcast channel, and design for the three moderators: pick tools that apply broadly, are not already saturated, and have a memorable name. State the success criterion in advance (two people other than Jason volunteer a session within six weeks) so the experiment can fail visibly.",
+      "status": "corrected",
+      "question": "Q2 team, Q4 tools"
+    },
+    {
+      "title": "Write per-piece-of-work acceptance criteria instead of holding the outcome personally (opinion)",
+      "claim": "DORA's March 2026 leader guidance says to route AI-generated code feedback to authors during writing rather than to reviewers afterwards, to enforce small batches as a countermeasure against overwhelmed review, and to stop relying on narrow output-based metrics. It says nothing about outcome ownership, single-threading or lead-as-bottleneck; that extension is this researcher's reasoning and is labelled opinion. The defensible version: write one line of acceptance criteria per piece of work that the author verifies before requesting review, because the small-batch and author-side-feedback guidance points that way, not because DORA warns about a lead holding the outcome.",
+      "evidence": "DORA, 'Balancing AI tensions: Moving from AI adoption to effective SDLC use', 2026-03-10, https://dora.dev/insights/balancing-ai-tensions/ — verifier fetched the page and confirmed the three quotes verbatim, including 'AI-generated feedback on the code should be delivered to the author during the writing phase' and 'Enforcing the discipline of working in small batches is a critical countermeasure', and confirmed the absence of any bottleneck or outcome-ownership claim. Cognitive-load framing: Noda, Storey, Forsgren & Greiler, 'DevEx: What Actually Drives Productivity', ACM Queue 21(2), 2023, https://dl.acm.org/doi/10.1145/3595878.",
+      "classification": "practice",
+      "confidence": "low",
+      "action": "Put one line of acceptance criteria in the ticket or PR template that the author verifies before requesting review; review whether the criterion was right, not whether the diff is good. Cap WIP so batches stay small. Present this as your judgement, not as DORA guidance.",
+      "status": "corrected",
+      "question": "Q2 team, Q3 operator gaps"
+    },
+    {
+      "title": "Name the situation you inherited before choosing a play (opinion)",
+      "claim": "Opinion, from a practitioner framework rather than measurement: the diagnosis a new lead makes in the first months determines which plays fit, and an intervention that works in a turnaround backfires in a realignment. 'Slow to ship' is compatible with several different situations, including no outcome clarity, a broken delivery pipeline, or a team defending a quality standard nobody has told them how to meet in the new tooling era. Two causes have been diagnosed at four weeks without the data to separate them, which is the risk this framework exists to catch.",
+      "evidence": "Michael D. Watkins, 'The First 90 Days', STARS model, summarised at https://www.mindtools.com/ac2gss8/the-first-90-days/ (accessed 2026-09-05). Verifier's note applied: this is a summary site rather than Watkins' book, so the frequently-quoted ~6.2-month break-even was never checked at source and should not be quoted. Contrast with the measurement-first stance DORA takes on team profiles, https://cloud.google.com/blog/products/ai-machine-learning/announcing-the-2025-dora-report (2025-09-24).",
+      "classification": "practice",
+      "confidence": "low",
+      "action": "Write down, in one sentence each, which STARS situation this team is in and what observation would prove you wrong. Test it in weeks 5-8 against delivery data before committing to the tooling push. Drop the 6.2-month break-even figure.",
+      "status": "confirmed",
+      "question": "Q2 team, Q3 operator gaps"
+    }
+  ],
+  "dropped": [
+    "Original framing of 'Making yourself the outcome-keeper is the documented way a lead becomes the bottleneck' — DORA's page contains no bottleneck or outcome-ownership guidance; kept only in its corrected, opinion-labelled form.",
+    "Original framing of 'Pairing with an agent in front of the team ... the evidence for it is opinion' — the confident negative ('absence of measurement is the finding') is refuted by Google ICSE 2019; kept only in its corrected form.",
+    "Penn State 53% AI-text detection citation — the page itself states the research covers text, 'not code'; replaced by TOSEM 2024 (arXiv:2411.04704).",
+    "The Bacchelli & Bird quotation 'nearly all interviewees motivated their code reviews from a learning or knowledge transfer perspective' — not in the paper; the paper's abstract says finding defects 'remains the main motivation'.",
+    "arXiv:2605.01160 as corroboration for the 98%/91% telemetry figures — a single-author literature review restating others' data, not independent measurement.",
+    "Missed candidate not promoted: IEC 62304 / EU AI Act obligations for Scribe — the verifier reached only consultant write-ups and named it a thread, not a finding, and the pack's surviving regulatory evidence is Australian (TGA compliance action Aug 2026, Privacy Act ADM transparency from 2026-12-10), so the claim is not checkable here.",
+    "Missed candidate not promoted: the arXiv:2607.07980 causal model of 26 constructs and 67 relationships — the structure claim cannot be checked against anything in the pack.",
+    "Missed candidate not promoted: Effect's first-party @effect/ai packages as the first CLAUDE.md entry — real and checkable (REVIEW/wave1/digest.md line 389) but already owned by the stack finder; folding it in here would double-count it."
+  ]
+}

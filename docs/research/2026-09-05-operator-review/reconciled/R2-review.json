@@ -1,0 +1,209 @@
+{
+  "label": "R2-review",
+  "findings": [
+    {
+      "title": "The team's cosmetic bias is the documented industry default, not a local defect",
+      "claim": "Reviewing for comments and naming while missing structure is what code review does by default everywhere it has been measured. Treating it as this team's failing will produce shame and no change; treating it as a mechanism problem will.",
+      "evidence": "Bacchelli & Bird, ICSE 2013, https://sback.it/publications/icse2013.pdf - card sort of 570 comments across 200 Microsoft review threads: 'code improvements' is the top category at 165 comments (29%), of which 58 better practices, 55 dead-code removal, 52 readability; 'defects' is fourth of nine at 78 comments (14%), 65 of them simple logic slips. Verifier re-checked every figure verbatim in the extracted PDF (out/R2-review/bacchelli.txt lines 728-758, 431, 440).",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Open the first review conversation with this number rather than with a critique: 29% cosmetic vs 14% defects is the industry baseline. Then change mechanism, not exhortation.",
+      "status": "confirmed",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Reviewer familiarity roughly doubles acted-on comments, but the routing lever barely exists at five people",
+      "claim": "Reviewers who have reviewed a file before produce roughly twice the density of comments the author acts on (65-71% vs 32-37%). Two limits the original finding missed: 'useful' in that paper means the author changed code near the comment, so familiarity buys acted-on comments, not demonstrably structural ones; and at a five-person team CODEOWNERS routing degenerates to what the team already does. The paper's own recommendation is to keep inexperienced reviewers on the change and add one or two experienced ones, not to route away from them.",
+      "evidence": "Bosu, Greiler & Bird, MSR 2015, https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/bosu2015useful.pdf - ~1.5M comments across five Microsoft products; 'almost twice more useful (65%-71%) than the first time reviewers (32%-37%)' (bosu.txt line 785), plateau at 70-80% after ~5 reviews of a file (line 789). Verifier: ChangeTrigger is the usefulness classifier's root node (line 713), and lines 1046-1054 recommend 'including inexperienced reviewers... authors of changes should include at least one or two experienced reviewers'.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Do not build a routing policy. Make a second and third familiar reviewer per Scribe module a growth goal, and require at least one experienced reviewer on each change while keeping the less experienced on it. Drop the claim that this is the highest-leverage 60-day change.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "The checklist is not dead; the evidenced move is a reading strategy plus author-supplied context",
+      "claim": "One small experiment on mostly-novice reviewers found only a weak overall relationship between checklists and review performance, with directional benefits for both checklist forms - not a null result, and not the only controlled experiment on the question. The stronger evidenced move is scenario or perspective-based reading, where each reviewer runs a different systematic search for a different fault class, combined with context the author supplies.",
+      "evidence": "Goncalves, Fregnan, Baum, Schneider & Bacchelli, EMSE 2022, https://link.springer.com/article/10.1007/s10664-022-10123-8 - abstract: 'the guided checklist is a more effective aid for a simple review, while the checklist supports reviewers' efficiency and effectiveness in a complex task. However, we did not identify a strong relationship between the guidance provided and code review performance'; n=67, 'the majority of the participants are novice reviewers with low or no code review experience' (verifier pulled the full paper to out/refute-R2-review/goncalves.txt). Porter, Votta & Basili, IEEE TSE 21(6):563-575, 1995 compares ad hoc, checklist and scenario-based detection, with two EMSE 1998 replications. Bacchelli & Bird 2013: 798 of 873 developers (91%) say unfamiliar files take longer, and 'understanding the reason of the change' is the top reviewer challenge.",
+      "classification": "practice",
+      "confidence": "low",
+      "action": "Ship the five-question PR template (problem, rejected alternatives, new-pattern rationale, what you ran, which hunks are AI-generated and unverified) as an addition, not as a replacement for a checklist. If you want an explicit strategy, assign fault classes per reviewer - one takes the error channel, one takes the data path.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "The 400-line review limit is folklore from one 2006 vendor case study; measured medians are 24-78 lines",
+      "claim": "The size number the team will find if it Googles is wrong by an order of magnitude. Organisations that ship fast converged on medians far under 100 changed lines without anyone writing a rule.",
+      "evidence": "SmartBear/Cisco MeetingPlace case study, 10 months to May 2006, https://static0.smartbear.co/support/media/resources/cc/book/code-review-cisco-case-study.pdf - 2,500 reviews, 3.2M LOC, 50 developers, recommends 100-300 LOC per sitting and 'LOC under review should be under 200, not to exceed 400'; in that same study 61% of reviews found zero defects (verifier read out/refute-R2-review/smartbear.txt). Measured medians: Google 24 lines (Sadowski et al., ICSE-SEIP 2018), Apache 25, Linux 32, Android and AMD 44, Chrome 78, versus Lucent's 263-line inspections (Rigby & Bird, FSE 2013, rigby.txt lines 742-748). Verifier note: 78 is Chrome's median, not a measured upper bound - Bing, Office and SQL are larger but unpublished.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Set the norm near 50 changed lines and 5 files, not 400. Enforce with a size label and a size-based SLA, never a merge block. Adopt stacked PRs as the mechanism, sold internally as 'unblocks the author' - the stacked-diff cycle-time claims are vendor marketing, not measurement.",
+      "status": "confirmed",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Publish a first-response SLA, but measure pickup time before calling latency the bottleneck",
+      "claim": "A first-response SLA is the cheapest intervention available and Google publishes one business day as the maximum. Whether waiting dominates this team's cycle time is unmeasured: the peer-reviewed data shows fast pickup at Microsoft, AMD, Google and OSS, and only vendor telemetry shows PRs idle for half their lifespan.",
+      "evidence": "Google reviewer guidance, https://google.github.io/eng-practices/review/reviewer/speed.html (accessed 2026-09-05): 'One business day is the maximum time it should take to respond to a code review request', because slow reviews raise 'pressure to allow developers to submit CLs that are not as good as they could be' and discourage cleanups and refactors. Against the latency-dominates framing: Rigby & Bird, FSE 2013, rigby.txt line 758, 'most reviews are picked up with[in] a few hours, indicating that reviewers are regularly watching and performing review'; Sadowski et al. 2018 measures Google's median full-review latency 'under 4 hours'. LinearB, 2021-07-23, https://linearb.io/blog/pull-request-pickup-time (733,000 PRs) reports '50% of pull requests were idle for 50.4% of their lifespan' - vendor telemetry, not peer-reviewed.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Write one line into the team contract - first response within one business day - and put a 15-minute review window in each engineer's calendar. Measure pickup time from week one and let the number, not the assumption, say whether latency is the problem.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Keep the sit-down reviews and re-justify them as teaching, on the knowledge-transfer evidence only",
+      "claim": "Review's measured product is knowledge spread: 66-150% more distinct files known. That is exactly this team's deficit, so the experiment is well aimed and should be kept. The further claim that meetings add little defect detection over individual reading is second-hand only and should not be asserted.",
+      "evidence": "Rigby & Bird, FSE 2013, https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/rigby2013convergent.pdf lines 77-78: 'conducting peer review increases the number of distinct files a developer knows about by 66% to 150% depending on the project'. Votta, FSE 1993 (quoted verbatim in Bacchelli & Bird line 103) establishes that '20% of the interval in a traditional inspection is wasted due to scheduling' - a scheduling cost, not a defect-yield result. Johnson & Tjahjono 1998, the actual meetings-find-no-more-bugs source, is paywalled and was not read.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Reframe the sit-down publicly as a weekly 45-minute teaching session on one structurally interesting change, kept off the merge path, and narrate your own orientation questions out loud. Justify it on knowledge spread, not on bug counts, and do not tell the team that meetings are proven not to find defects.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "The barrel-file incident: the missing artefact was the author's rationale, and the cost claim needs local measurement",
+      "claim": "Two engineers rejecting an unfamiliar pattern is a symptom of a PR that did not explain itself. Barrel files do carry large measured costs, but in a monorepo with build-graph test selection; whether they cost anything in Scribe's frontend is unmeasured and the mechanism does not transfer automatically.",
+      "evidence": "Atlassian engineering, 2025-06-26, https://www.atlassian.com/blog/atlassian-engineering/faster-builds-when-removing-barrel-files - 'a 75% reduction in build minutes consumed' per commit, unit tests per build 1600 to 200 (-88%), integration tests 130 to 20 (-85%), TypeScript highlighting 30%+ faster; verifier confirmed each figure and the date, and flagged that the measurement is on a 90,000+ file monorepo where the win came from a precise build dependency graph selecting fewer tests. Bacchelli & Bird 2013: 'understanding the reason of the change' is the top reviewer challenge and 91% of 873 developers say unfamiliar files take longer.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Author side: any PR introducing a pattern new to the codebase carries a 'why this pattern' paragraph naming the alternative it beat. Lead side: benchmark the disputed pattern locally, both ways, before telling the two engineers whether they were right - the Atlassian number is not evidence about Scribe.",
+      "status": "confirmed",
+      "question": "Q2 team, Q3 operator gaps"
+    },
+    {
+      "title": "Stop reviewing anything a machine can decide, and hold every bot to a published false-positive bar",
+      "claim": "Style, formatting, import order and naming conventions should be unreviewable by construction. Google's rule is not 'try to automate' but a numeric bar an analyzer must clear to be allowed to speak in review at all, and that bar is the right one to apply to an AI reviewer too.",
+      "evidence": "Software Engineering at Google ch. 20, https://abseil.io/resources/swe-book/html/ch20.html (accessed 2026-09-05, every figure verified verbatim): a Tricorder check must 'produce less than 10% effective false positives'; the platform's overall effective false-positive rate is 'just below 5%'; it analyses 'more than 50,000 code review changes per day'; developers apply automated fixes ~3,000 times per day; 'Not useful' is clicked 250 times per day. Bacchelli & Bird's 29% cosmetic share shows what fills the vacuum when this is not automated.",
+      "classification": "tool",
+      "confidence": "high",
+      "action": "Make formatter, lint and typecheck required CI checks this month, then declare style comments out of scope and delete every checklist item a tool can decide. Publish the sub-10% effective-false-positive bar as the team standard and apply it to the AI reviewer at its first monthly audit - a bot that fails gets switched off, not tuned indefinitely.",
+      "status": "confirmed",
+      "question": "Q2 team, Q4 tools"
+    },
+    {
+      "title": "AI first-pass review is worth running, never as the only reviewer, and capped on volume",
+      "claim": "Across 3,109 agentic PRs, those reviewed only by agents were merged 23 percentage points less often than human-reviewed ones (45.20% vs 68.37%). That is an association on observational data, confounded by which PRs attract human attention at all - not a measured effect of the review. More bot comments per PR is associated with longer resolution and lower average relevance. Both point the same way: augment, and cap the volume.",
+      "evidence": "Chowdhury, Banik, Ferdous & Shamim, arXiv:2604.03196 (2026-04-03), https://arxiv.org/abs/2604.03196 - 19,450 PRs from AIDev, 3,109 in commented review state: 'CRA-only PRs achieve a 45.20% merge rate, 23.17 percentage points lower than human-only PRs (68.37%)', '60.2% of closed CRA-only PRs scored in the 0-30% signal range', '12 of 13 CRAs displayed average signal ratios below 60%'; the authors conclude agents 'should augment rather than replace human reviewers'. Fatima et al., MSR '26, arXiv:2604.24450 (2026-04-27) - 7,416 bot comments on 4,532 PRs: 'higher Reviewer Bot Activity volume is associated with longer PR resolution times and lower average feedback quality'.",
+      "classification": "tool",
+      "confidence": "medium",
+      "action": "Cap the AI reviewer at ~5 comments per PR ranked by confidence, with no approve and no block authority, labelled distinctly so humans do not read them as team consensus. Audit its accept rate monthly against the 10% bar. Present the merge-rate gap to the team as an association, not as proof the bot causes bad merges.",
+      "status": "corrected",
+      "question": "Q2 team, Q4 tools"
+    },
+    {
+      "title": "Giving the AI reviewer more context can make it worse, and it detects a minority of what humans flag",
+      "claim": "The instinct to hand the reviewer the whole repo is contradicted by the only benchmark that ablates context, and headline detection rates are low enough that an AI pass cannot substitute for the human structural read.",
+      "evidence": "Kumar, 'SWE-PRBench', arXiv:2603.26130 (2026-03-27), https://arxiv.org/abs/2603.26130 - 350 PRs with human-annotated ground truth across 6 languages: 'frontier models detect only 15-31% of human-flagged issues in diff-only mode', 'all eight tested models showed degraded performance as context increased', and 'a structured 2,000-token diff-with-summary prompt outperforms a 2,500-token full-context prompt'. Single-author preprint on open-source PRs; verifier called this the finding handled most honestly in the set.",
+      "classification": "tool",
+      "confidence": "medium",
+      "action": "Feed the reviewer a curated diff plus the author's summary, not the repository. Re-test on ten real Scribe PRs before adopting - this contradicts common practice, so it is a hypothesis to check, not a setting to take on faith.",
+      "status": "confirmed",
+      "question": "Q2 team, Q4 tools"
+    },
+    {
+      "title": "AI-generated code moves the defect mass into exactly the structural places this team does not look",
+      "claim": "The measured degradation in AI-era codebases is duplication, error-masking and lost reuse - none of which a comment-clarity review catches, and all of which compound in a healthcare product.",
+      "evidence": "GitClear, 'The Maintainability Gap', January 2026, https://www.gitclear.com/the_ai_code_quality_maintainability_gap - 623 million changes 2023-2026: duplicated blocks 40.3 to 73.0 per million changed lines (+81%), copy/paste within commit 9.4% (2022) to 15.7% (H1 2026), error-masking constructs +47%, two-week churn +15%, cross-file connectivity 343 to 223 calls per thousand changed lines (-35%), long-term legacy maintenance 1.7% to 0.46% (-74%). Verifier correction: moved/refactored code fell from 13% of changed lines in 2023 to 3.8% year-to-date ('down 70%'); the 21% baseline the finder quoted does not appear on the cited page. Vendor corpus, not peer-reviewed. Direction corroborated by DORA 2025, https://dora.dev/dora-report-2025/ (survey 13 June-21 July 2025, ~5,000 respondents): AI adoption relates positively to throughput and negatively to delivery stability.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Replace the three habitual review questions with three structural ones: does this duplicate something already in the repo, does it swallow an error rather than represent it, does it call into existing abstractions or route around them. In Effect terms: is the error channel typed rather than collapsed by a catch-all, are resources scoped, are retries and timeouts explicit.",
+      "status": "confirmed",
+      "question": "Q2 team, Q4 tools"
+    },
+    {
+      "title": "Reviewers can no longer triage by look, because generated code signals uniform confidence",
+      "claim": "Practitioners identify trust-calibration as the central problem with LLM-generated multi-file changes because, in the authors' words, 'the LLM signals uniform confidence across high- and low-risk code segments', so reviewers must inspect every line. This is a participatory design study, not a measurement of review effort.",
+      "evidence": "Heander, Sergeyuk, Zakharov, Soderberg & Mukhortov, arXiv:2606.01969 (2026-06-01), https://arxiv.org/html/2606.01969v1 - workshops with 17 practitioners plus a validation survey of 43 professionals; participants asked for change-impact overviews, file-level risk from change history, chunk decomposition, and visibility into why the model chose a solution; 63% expected reduced review effort from the prototype workflow (means 3.50-3.91 on a 5-point scale). Verifier: 'heterogeneous-quality output with homogeneous confidence' was the researcher's paraphrase, not a quotation, and 63% is expectation, never measurement.",
+      "classification": "practice",
+      "confidence": "low",
+      "action": "Require authors to annotate which hunks are AI-generated and unverified versus human-verified, and to state what they ran against the change. Present it as a design hypothesis the team tries, not as an evidenced effort reduction.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Decide review capacity policy before generated volume rises, on one company's evidence",
+      "claim": "At one AI-forward company under an explicit 2x mandate, per-capita throughput reached 2.09x, per-reviewer load roughly doubled and automated review overtook human review, while merge and revert rates held steady. DORA 2025 separately finds AI adoption associated with higher throughput and lower stability and frames AI as an amplifier of existing foundations - it does not name review capacity as the mechanism.",
+      "evidence": "He, Agarwal, Denisov-Blanch, Azaletskiy, Koyejo & Vasilescu, arXiv:2607.01904 (2026-07-02), https://arxiv.org/abs/2607.01904 - 'a panel of 802 developers and 196,212 pull requests (January 2024-April 2026)', 'reaching 2.09x the pre-mandate baseline in April 2026', 'per-reviewer load roughly doubled and automated review overtook human review, while merge and revert rates held steady'; gains concentrated in newer code, and the authors explicitly decline causal attribution ('adoption and usage intensity were not randomly assigned'). Verifier could not find DORA 2025 attributing the instability to review capacity.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Budget review as work on the board and cap open PRs per author at 2-3. Decide now what happens when generated volume rises. Do not present this as a law - it is one mid-sized company under a mandate this team does not have.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Instrument before you intervene, because perception of these changes is measurably unreliable",
+      "claim": "Every recommendation here should be judged on three numbers taken before the changes, because the team's felt sense of whether review got better is not evidence. The largest RCT in this area found developers wrong about their own speed by 39 percentage points.",
+      "evidence": "METR, 2025-07-10, https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/ (arXiv:2507.09089) - 16 experienced developers, 246 real tasks in repositories they averaged 5 years on, randomised to allow or disallow AI: they forecast a 24% speedup, estimated afterwards they had been sped up 20%, and were in fact 19% slower. Verifier: every figure confirmed on METR's page, correctly labelled an RCT, and the 39-point gap is arithmetic on the two numbers.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "On day 1 capture three numbers and nothing else: median PR size (lines and files), median pickup time, and a one-week hand tally of review comments bucketed into style/naming, correctness, structure-design, question. Repeat at day 90, and have the team predict the shift before you show them.",
+      "status": "confirmed",
+      "question": "Q2 team, Q3 operator gaps"
+    },
+    {
+      "title": "Put the teaching in the review path rather than a guild, on the positive evidence not the absence of it",
+      "claim": "No controlled evidence was found either way on guilds, so the case against them is not measured. The case for the alternative is: review has measured knowledge-transfer effects, and Google runs a documented version of raising foundations inside the review path - readability certification, where every change must be authored or reviewed by someone certified in that language.",
+      "evidence": "Sadowski, Soderberg, Church & Sipko, 'Modern Code Review: A Case Study at Google', ICSE-SEIP 2018, https://sback.it/publications/icse2018seip.pdf - verified in out/refute-R2-review/sadowski.txt lines 547-556: 'Developers can gain readability certification in a particular language... Every change must be either authored or reviewed by someone with a readability certification for the language(s) used.' Rigby & Bird, FSE 2013: peer review raises distinct files known by 66-150%. Bosu et al., MSR 2015: reviewer usefulness climbs across the first five reviews of a file. The Spotify guild critique (Jeremiah Lee, 2020) is a first-person account, not measurement, and cannot carry a recommendation.",
+      "classification": "practice",
+      "confidence": "low",
+      "action": "No standing guild, but say why honestly: review is the mechanism with evidence, not that guilds are proven to fail. Run a lightweight readability-certification analogue for Effect - one or two people certify the idioms, and every change is authored or reviewed by one of them - and after eight weeks distil the sit-down arguments into a five-page 'how we build Scribe' document.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "A 30-60-90 a new tech lead can run, with the review-record step added",
+      "claim": "Days 1-30 stand as written: remove noise and get a baseline. Days 31-60 change what reviewers are asked rather than who they are, since routing is close to a no-op at five people, and the PR template is added alongside a checklist rather than replacing one. Days 61-90 prove and prune. The plan is missing one step that may not be optional: what review record a healthcare consult-recording product is obliged to keep.",
+      "evidence": "Composed from the sources verified above: Tricorder's sub-10% bar and the one-business-day SLA (https://abseil.io/resources/swe-book/html/ch20.html, https://google.github.io/eng-practices/review/reviewer/speed.html, accessed 2026-09-05); size medians from Sadowski et al. ICSE-SEIP 2018 and Rigby & Bird FSE 2013; familiarity from Bosu et al. MSR 2015; comment mix from Bacchelli & Bird ICSE 2013; AI-era targets from GitClear January 2026 and arXiv:2604.03196; measurement discipline from METR 2025-07-10.",
+      "classification": "practice",
+      "confidence": "low",
+      "action": "Days 1-30: capture the three day-0 numbers; make formatter, lint and typecheck required CI checks; declare style comments out of scope; move the sit-down off the merge path; publish the one-page review contract (first response in one business day, ~50 lines and 5 files target, only correctness and structure block, nits labelled and non-blocking). Days 31-60: add the five-question PR template, add the three structural questions in their Effect forms, adopt stacked PRs above the size target, switch on the capped AI first-pass reviewer, and treat familiar-reviewer growth as a goal rather than a routing policy. Days 61-90: re-run the tally and pickup time with a team prediction first, audit the AI reviewer against the 10% bar and switch it off if it fails, prune anything that did not earn its slot. Before designing any of it around speed, establish what review record Scribe is obliged to keep under its regulatory regime.",
+      "status": "corrected",
+      "question": "Q2 team, Q3 operator gaps"
+    },
+    {
+      "title": "Google's own 2018 numbers beat every source this review leaned on: 24 lines, one reviewer, four hours",
+      "claim": "The most applicable single source was absent from a review that cited Rigby & Bird four times, and it improves three findings from one document. Google's median change modifies 24 lines, over 35% touch a single file and ~90% fewer than 10; fewer than 25% of changes have more than one reviewer, median reviewer count 1; median latency for the entire review process is under 4 hours. The two-reviewer norm imported from Rigby & Bird does not hold at the organisation everyone is copying, and the one-business-day SLA is a ceiling, not a target.",
+      "evidence": "Sadowski, Soderberg, Church & Sipko, ICSE-SEIP 2018, https://sback.it/publications/icse2018seip.pdf. Checked directly in out/refute-R2-review/sadowski.txt: 'over 35% of the changes under consideration modify only a single file and about 90% modify fewer than 10 files. Over 10% of changes modify only a single line of code, and the median number of lines modified is 24' (lines 662-668); 'fewer than 25% of changes have more than one reviewer... with a median reviewer count of 1' (lines 681-683); 'The overall (all code sizes) median latency for the entire review process is under 4 hours' (lines 652-654), which the paper contrasts with Rigby & Bird's 14.7-20.8h.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Set the size target from Google's 24-line median rather than Chrome's 78, and require one reviewer by default, not two - a second reviewer is a growth choice for familiarity, not a quality gate. Treat one business day as the outer bound and aim at hours.",
+      "status": "new-from-verifier",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Google already published the nit convention and the approval rule this review was reinventing",
+      "claim": "The two lines that address the team's cosmetic bias most cheaply already exist as published guidance: approve once the change definitely improves code health even if imperfect, and prefix non-blocking polish with 'Nit: '. The approval rule is what makes nit-labelling stick, because without it a labelled nit still blocks.",
+      "evidence": "Google, 'The Standard of Code Review', https://google.github.io/eng-practices/review/reviewer/standard.html, fetched and quoted verbatim 2026-09-05: 'In general, reviewers should favor approving a CL once it is in a state where it definitely improves the overall code health of the system being worked on, even if the CL isn't perfect' and 'if it's not very important, prefix it with something like \"Nit: \" to let the author know that it's just a point of polish that they could choose to ignore'. Its sibling speed page was cited twice in the original finding set; this page was cited nowhere.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Adopt both lines verbatim in the review contract rather than inventing a local convention. Borrowed wording from a named source also lands better with sceptics than a new lead's house rules.",
+      "status": "new-from-verifier",
+      "question": "Q2 team"
+    },
+    {
+      "title": "The bot bar and the comment cap apply to Jason's own reviewers, and can be tested this week",
+      "claim": "The sub-10% false-positive bar, the ~5-comment cap and the never-the-only-reviewer rule apply to Jason's codex-review and Nightshift setup as directly as to the work team, and the numbers to audit against already exist. 80% of eligible codex chains ran the full round cap rather than converging, the worst chains spent 1.2-1.8M tokens to surface one unique finding, and the unattended stream has no cross-vendor reviewer at all - the skeptic is same-family.",
+      "evidence": "wave1/E6-spend.json: `codex-review.mjs stats` gives 236 chains, forced=135, eligible=86, uniquePer5=45.29; rounds-per-chain distribution {1:1, 2:5, 3:12, 4:72}, so 72 of 90 (80%) hit the cap; least-efficient chains 1,845,866 / 1,817,900 / 1,229,119 tokens per unique finding; 138 forced chains total 508.7M tokens, over 60% of spend. Nightshift's gate is deterministic CI plus a same-family skeptic (brief2 headline facts). Prior calibration baseline already on disk: /Users/jasonmatthew/Work/Git/claude-skills/docs/research/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md. The 10% bar is the confirmed Tricorder figure above.",
+      "classification": "tool",
+      "confidence": "high",
+      "action": "Score one month of codex-review findings against the sub-10% effective-false-positive bar, cap the reviewer's output at ~5 ranked findings, and stop the round cap being the default exit - a chain that has produced nothing unique by round 2 should end. Put a non-same-family reviewer on the unattended stream or accept in writing that it has none.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Two of the three structural review questions are machine-decidable, so they should not be asked of tired humans",
+      "claim": "The set contradicts itself: it says stop reviewing anything a machine can decide, then hands humans duplication, error-masking and reuse as reading questions. Duplication and error-masking are CI checks, and the Effect properties are type-level rather than prose-level, so the move is a strictness setting and a lint rule behind the same false-positive bar - not a question a reviewer remembers to ask.",
+      "evidence": "Synthesis of two confirmed findings in this set: the Tricorder sub-10% bar and 'stop reviewing anything a machine can decide' (Software Engineering at Google ch. 20, verified verbatim), and GitClear's own January 2026 recommendation to 'put a tripwire on duplicate blocks' and 'review for error-masking explicitly' over 623M changes. The specific tools (jscpd for duplicate blocks, dependency-cruiser for the import graph and the barrel-file question) are candidates that were not evaluated in this pack.",
+      "classification": "tool",
+      "confidence": "medium",
+      "action": "Before adding the three structural questions to the human review contract, spend one day trying to move duplication and error-masking into CI, and settle the barrel-file question with an import-graph tool rather than an opinion. Hold whatever you adopt to the same sub-10% bar, and keep only reuse and design as human questions.",
+      "status": "new-from-verifier",
+      "question": "Q2 team, Q4 tools"
+    }
+  ],
+  "dropped": [
+    "Nothing was dropped outright. The one refuted finding, 'The intuitive fix (a review checklist) is the one with a null result', carried a correction and survives in corrected form at low confidence: the Goncalves paper reports directional benefit for both checklist forms plus a weak overall relationship, and 'the only controlled experiment on it' was false (Porter, Votta & Basili 1995 plus two 1998 replications).",
+    "Not promoted from 'missed': the regulatory frame (IEC 62304, DCB0129, HIPAA 164.312). The specific standards are not checkable anywhere in the evidence pack, and the regulatory lane belongs to R3-stack, which carries the dated AU items. The usable half of the point - establish what review record Scribe must keep before optimising the review path for speed - is carried inside the corrected 30-60-90 instead."
+  ]
+}

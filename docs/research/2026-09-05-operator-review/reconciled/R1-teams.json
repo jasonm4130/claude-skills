@@ -1,0 +1,186 @@
+{
+  "label": "R1-teams",
+  "findings": [
+    {
+      "title": "AI raises throughput and instability together; whether maturity protects you is contested",
+      "claim": "AI adoption correlates with both higher delivery throughput and higher instability across the two largest 2025-2026 datasets. That much is replicated. Whether engineering maturity inoculates a team is contested: DORA's survey says controls are what convert AI into value, Faros's telemetry says strong foundations do not protect against the downstream deterioration. Track a stability counterpart to every throughput number precisely because nobody can currently promise good practice protects you. Neither dataset is causal: DORA is self-reported survey, Faros is observational telemetry on a self-selected customer base.",
+      "evidence": "DORA, 2025 State of AI-assisted Software Development, 2025-09-24, ~5,000 respondents plus 100h interviews: verbatim 'positive relationship between AI adoption on both software delivery throughput and product performance... AI adoption does continue to have a negative relationship with software delivery stability', plus 'AI doesn't fix a team; it amplifies what's already there' - https://cloud.google.com/blog/products/ai-machine-learning/announcing-the-2025-dora-report . DORA 'Balancing AI tensions', 2026-03-10, 1,110 open responses from Google engineers collected Q3 2025, carries the throughput-and-instability sentence verbatim - https://dora.dev/insights/balancing-ai-tensions/ . Faros AI Engineering Report 2026, 2026-04-12, 22,000 developers across 4,000+ teams: task throughput/dev +33.7%, PR merge rate/dev +16.2%, bugs/dev +54%, incidents-to-PR ratio +242.7%, monthly incidents +57.9% - and states the counter-position, 'strong engineering foundations do not protect against downsides' - https://www.faros.ai/blog/ai-acceleration-whiplash-takeaways",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Stop treating 'did the agent finish?' as the outcome. Put a stability counterpart next to every throughput number quoted about nightshift: revert/fix-forward rate and rework ratio per landed PR. REVIEW/git-summary.md already carries revert/fix ratios; surface them in the nightshift journal beside the landed-task count.",
+      "status": "corrected",
+      "question": "Q1 usage, Q2 team"
+    },
+    {
+      "title": "Effect size is predicted by task realism and population, not by who published",
+      "claim": "The spread in reported productivity effect is explained by task realism and population selection, not by the independent/vendor split. Randomised studies on realistic enterprise tasks cluster from -19% to +21%; vendor and executive self-reports run +20% to +200%. Plan brownfield Effect TS work at single digits to about 15%, and present it as a range with a wide confidence interval, not a point estimate.",
+      "evidence": "METR RCT, 2025-07-10, 16 experienced OSS developers, 246 real tasks in their own repos: 19% slower with AI access while developers self-estimated a 20% speedup - https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/ . METR follow-up 2026-02-24: returning developers -18% (CI -38% to +9%), new recruits -4%, with METR's own selection-bias caveat. Google enterprise RCT, Paradis et al., arXiv 2410.12944 (submitted 2024-10-16), 96 full-time Google engineers on a complex enterprise task: about 21% less time on task, wide CI - verified at source 2026-09-05. Vendor and executive side: Shopify via Bessemer 2026-04-02 is an interview with VP Engineering Farhan Thawar who calls the ~20% 'just a humble estimate' with no published reversion metrics; Cursor/Vercel 2026-07-28 +54% applies to Vercel's Cursor power users, not the company; Anthropic 2026-03-09 claims code output per engineer +200%.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Do not anchor the work team on Shopify's ~20%; it is an executive estimate, not a measurement. Give the team a range (single digits to ~15% net on existing Scribe code, higher on new surfaces) and say the confidence interval is wide. Missing a 54% target will read as the team failing.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Review, not generation, is the measured bottleneck, and merged-without-review is the leading indicator",
+      "claim": "The constraint moved from writing code to absorbing it, and the tell is code merged with no review at all. Faros's magnitudes are correlational telemetry from its own customer base, so treat them as directional; the direction is corroborated independently. The one-business-day first-response SLA is a real Google standard and the safest thing to transfer verbatim.",
+      "evidence": "Faros AI, 2026-04-12, 22,000 developers, all verbatim: median time to first PR review +156.6%, average code review time +199.6%, median time in review +441.5%, PRs merged without review +31.3%, daily PR contexts per developer +67.4%, stalled 7-day-plus tasks +26% - https://www.faros.ai/blog/ai-acceleration-whiplash-takeaways . Google eng-practices, verbatim: 'One business day is the maximum time it should take to respond to a code review request' - https://google.github.io/eng-practices/review/reviewer/speed.html . Linear 2026-06-10 reports issues created and PRs merged both up 50% Jan-Mar 2026, but that is Maciek Pekala's own team in a first-person post, not a dataset - https://linear.app/now/reviewing-code-in-the-agent-era . Independent corroboration of direction: GitClear Maintainability Gap (June 2026) and arXiv 2510.24265.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Work team: set a one-business-day first-review SLA and instrument 'PRs merged without review' as a tracked metric. Jason solo: merged-without-human-review is 100% on nightshift by design, so the mitigation has to live in the machine-review gate, not in a human SLA.",
+      "status": "confirmed",
+      "question": "Q2 team, Q1 usage"
+    },
+    {
+      "title": "Small batch is a named DORA capability and Google's reviewer standard, but the finding-density numbers are not its mechanism",
+      "claim": "Small batches are one of DORA's seven AI capabilities and are enforced in Google's own reviewer guidance, and Cloudflare prices review effort by diff size. Anthropic's finding-density numbers show large diffs carry more defect mass, not that reviewers detect less per line on them; cite them accordingly and do not present them as the causal case for small batches.",
+      "evidence": "Anthropic, Code Review for Claude Code, 2026-03-09, verbatim: 'On large PRs (over 1,000 lines changed), 84% get findings, averaging 7.5 issues'; 'On small PRs under 50 lines, that drops to 31%, averaging 0.5 issues' - https://claude.com/blog/code-review . Cloudflare, 2026-04-20, verbatim tiering: trivial (<=10 lines) 2 agents ~$0.20, lite (<=100 lines) 4 agents ~$0.67, full (>100 lines) 7 agents ~$1.68 - https://blog.cloudflare.com/ai-code-review/ . 'Working in small batches' is one of the seven capabilities in the 2025 DORA AI Capabilities Model, enumerated in the PDF at services.google.com/fh/files/misc/2025_dora_ai_capabilities_model.pdf (neither dora.dev page lists them). Google eng-practices instructs reviewers to send back large CLs for splitting - https://google.github.io/eng-practices/review/reviewer/speed.html",
+      "classification": "strength",
+      "confidence": "high",
+      "action": "Nothing to change solo: nightshift's one-plan-task-per-CI-gated-PR is already this practice and is the strongest thing in the setup. Carry it to the work team verbatim as the first change: one issue, one PR, and a reviewer mandate to bounce oversized diffs rather than review them.",
+      "status": "corrected",
+      "question": "Q2 team, Q1 usage"
+    },
+    {
+      "title": "Cloudflare, not Anthropic, is the published precedent for unattended landing, and the metric to copy is the override rate",
+      "claim": "Production agent-review systems converge on parallel specialists, a dedup and verification coordinator, cost tiering by diff size, and explicit 'what not to flag' prompting. They diverge on approval. Anthropic and Shopify require a human approver; Cloudflare lets its review agents block or clear merges autonomously with a human break-glass override used on 0.6% of merge requests. So the transferable lesson for nightshift is not 'add a human approver' but 'copy Cloudflare's blocking rubric, coordinator filter and override-rate metric'.",
+      "evidence": "Cloudflare, 'Orchestrating AI Code Review at scale', 2026-04-20: 131,246 review runs across 48,095 merge requests in 5,169 repos, 2026-03-10 to 2026-04-09; seven specialist reviewers plus a coordinator doing dedup, re-categorisation and reasonableness filtering; median review 3m39s, mean cost $1.19, 85.7% cache hit rate; the bot itself runs '/submit_review requested_changes (block merge)' on critical or production-safety items; 288 break-glass human overrides (0.6%) are humans overriding a machine that had already gated the merge; verbatim 'Telling an LLM what not to do is where the actual prompt engineering value resides' - https://blog.cloudflare.com/ai-code-review/ . Anthropic 2026-03-09, verbatim: 'It won't approve PRs - that's still a human call' - https://claude.com/blog/code-review . Shopify via Bessemer 2026-04-02: 'We still require a human PR reviewer, which is now becoming a big bottleneck' - https://www.bvp.com/atlas/inside-shopifys-ai-first-engineering-playbook",
+      "classification": "operator failure",
+      "confidence": "medium",
+      "action": "Upgrade nightshift's gate from CI-plus-one-same-family-skeptic toward Cloudflare's shape: two or three narrow specialists, a dedup/verify pass that filters speculation, and an explicit what-not-to-flag rubric. Instrument the override rate (how often Jason reverts or overrules a landed PR) as the single trust signal; Cloudflare's 0.6% is the benchmark.",
+      "status": "corrected",
+      "question": "Q1 usage, Q2 team, Q4 tools"
+    },
+    {
+      "title": "Spec-first discipline is the named constraint, and it is the largest gap in Jason's own sessions",
+      "claim": "Specification discipline, not model capability, is the binding constraint on AI-assisted dependability. Jason owns the tools for this and does not run them: plan mode in 8 of 78 local sessions, a median of 2 human prompts per session. Note one deletion: the widely-quoted Linear line beginning 'Discipline - specs before prompts...' is not in the cited article and should not be used.",
+      "evidence": "arXiv 2605.01160 (2026-05-01), 'The Productivity-Reliability Paradox', 67-source multivocal review plus a four-month pilot: 'Specification discipline, not model capability, is the binding constraint on AI-assisted software dependability.' Linear docs, Coding sessions, verbatim: 'The more clearly an issue defines the desired outcome, scope, and constraints, the less time Linear spends exploring the codebase or inferring requirements' - https://linear.app/docs/coding-sessions . Anthropic 2026-03-24: generator and evaluator negotiate explicit success criteria before coding, 'Sprint 3 alone had 27 criteria' - https://www.anthropic.com/engineering/harness-design-long-running-apps . Local index 2026-08-22 to 2026-09-05, reproduced from local.sessions.jsonl on 2026-09-05: 78 main sessions, plan_mode in 8 (10.3%), any Skill in 16 (20.5%), 675 human prompts, median 2.0 per session, adr 1, domain-modeling 1, codex-plan-review 5.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "The number to fix is a median of 2 human prompts per session. Make plan mode or the adr skill the default entry for anything that will produce a PR, and treat 'one prompt then dispatch' as the anti-pattern. Cheapest enforcement is a hook, not a resolution: a PreToolUse guard that refuses an unattended workflow launch when no plan artifact exists in the session.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "The verifier is the ceiling on autonomy: an agent solves the problem the verifier describes, not the one you meant",
+      "claim": "In both of Anthropic's long-autonomy write-ups the human's real work is building the check, not the code. Where the verifier is a genuine end-to-end oracle, extreme autonomy works; where it is weak, the agent optimises the wrong target with full confidence. Both sources are single-project engineering narratives, not measurements across teams, and the C compiler is the best case for the claim because a perfect oracle exists there.",
+      "evidence": "Anthropic, 'Building a C compiler with a team of parallel Claudes', 2026-02-05: 16 parallel instances in Docker on a shared git repo, ~2,000 sessions over two weeks, 2B input / 140M output tokens, ~$20,000, a 100k-line compiler at 99% pass that built Linux 6.9, QEMU, FFmpeg, SQLite, PostgreSQL and Redis; verbatim 'it's important that the task verifier is nearly perfect, otherwise Claude will solve the wrong problem'; GCC used as a reference oracle - https://www.anthropic.com/engineering/building-c-compiler . Anthropic, 2026-03-24: generator-evaluator split because, verbatim, 'agents tend to respond by confidently praising the work-even when, to a human observer, the quality is obviously mediocre'; the evaluator drives the running app through Playwright MCP rather than reading the diff; solo agent 20 min / $9 producing non-functional gameplay versus full harness 6 hours / $200 producing a playable result - https://www.anthropic.com/engineering/harness-design-long-running-apps",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Audit what nightshift's CI gate actually proves. On claude-skills the suite largely exercises the harness itself, so green is not evidence the shipped behaviour is right. Before extending unattended landing to any product repo, write that repo's end-to-end oracle first and treat its absence as a hard block.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Harness complexity is a depreciating asset, and roughly half of Jason's commits are harness",
+      "claim": "Every scaffold encodes an assumption about a model weakness, and model upgrades silently invalidate those assumptions, so harness code carries a write-down product code does not. Anthropic documents one instance of exactly this on their own stack within a model generation. One instance at one vendor is thin support for a general depreciation rate, so treat it as an observed instance, not a measured trend.",
+      "evidence": "Anthropic, 2026-03-24, verbatim: 'Every component in a harness encodes an assumption about what the model can't do on its own, and those assumptions are worth stress testing, both because they may be incorrect, and because they can quickly go stale as models improve'; and the instance, verbatim, 'Opus 4.6 largely removed that behavior on its own, so I was able to drop context resets from this harness entirely' - https://www.anthropic.com/engineering/harness-design-long-running-apps . Local ground facts 2026-09-05: 30-day commits Coach 406, transcoder 272, brok-stacks 161, claude-skills 98, ambient 88, roughly half of recent commits into tooling rather than products; four skills (subagent-driven-development, landing-loop, superpowers-core, frontend-design) retired on 2026-09-05; model progression across the covered period Opus 4.6 to 4.7 to 4.8 to Opus 5; any Skill invoked in only 16 of 78 local sessions.",
+      "classification": "cost only",
+      "confidence": "medium",
+      "action": "Put a scheduled expiry review on the marketplace: on each model-family upgrade, re-run one representative task with the skill disabled before keeping it. Today's four retirements were the right call made reactively; make it a cadence so the harness shrinks on schedule instead of accumulating until an audit.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Token spend is a vanity metric, but DORA's diminishing-returns line is opinion, not DORA data",
+      "claim": "DORA argues in a June 2026 opinion piece that token consumption is a vanity metric prone to Goodhart gaming, and recommends cost-per-accepted-change and code-rework rate instead. Its diminishing-returns line is quoted commentary from a third party, not a DORA measurement. The recommendation stands on its own merits; the empirical framing does not.",
+      "evidence": "DORA, 'Finding balance in the era of tokenmaxxing', 2026-06-02, Evan Conaway: token consumption framed as a vanity metric, 'when a metric becomes a target, it ceases to be a good measure', recommends team-level aggregates, DORA metrics paired with cost-per-change and code-rework rates, and circuit breakers for runaway consumption - https://dora.dev/insights/finding-balance-in-the-era-of-tokenmaxxing/ . The '10x cost increases producing marginal throughput gains' line is commentary attributed to Adnan Masood, not a DORA measurement; the only research figure in the piece is the ~30% distrust number from the 2025 survey. Local index 2026-08-22 to 2026-09-05: 6.69B cache-read and 23.0M output tokens across 78 main sessions and 1,425 subagent transcripts, against 388 commit calls and 156 PR calls (the last two are main-session-only, a different denominator).",
+      "classification": "cost only",
+      "confidence": "medium",
+      "action": "Compute one number monthly: plan-equivalent cost per merged, non-reverted PR, split tooling versus product. That ratio would settle whether the 1,425-subagent fan-out buys anything. This is a measurement gap, not evidence of waste - nothing in the index answers it either way today.",
+      "status": "corrected",
+      "question": "Q1 usage"
+    },
+    {
+      "title": "In teams agent configuration is an owned platform product; solo, Jason is the platform team with no consumer",
+      "claim": "Companies that made this work put agent config under explicit ownership: a small platform team, a shared standards file, and in Cloudflare's case a reviewer whose whole job is checking that AGENTS.md is honoured. DORA's seven AI capabilities are: a clear and communicated AI stance; healthy data ecosystems; AI-accessible internal data; strong version control practices; working in small batches; user-centric focus; quality internal platforms. Jason's gap is not the platform, it is that a platform with one user produces no adoption signal.",
+      "evidence": "Shopify via Bessemer, 2026-04-02, verbatim: 'We have an ML infrastructure team...pretty sure it's six engineers. Their job isn't to dictate how teams use AI; it's to remove friction', plus engineers assessed on being AI-reflexive in biannual reviews - https://www.bvp.com/atlas/inside-shopifys-ai-first-engineering-playbook . Cloudflare, 2026-04-20: one of the seven specialist reviewers is dedicated to AGENTS.md verification, flagging major architectural shifts that land without updated AI instructions - https://blog.cloudflare.com/ai-code-review/ . DORA 2025, verbatim: '90% of organizations have adopted at least one platform and there is a direct correlation between a high quality internal platform and an organization's ability to unlock the value of AI' - https://cloud.google.com/blog/products/ai-machine-learning/announcing-the-2025-dora-report . Capability names from the 2025 DORA AI Capabilities Model PDF, services.google.com/fh/files/misc/2025_dora_ai_capabilities_model.pdf .",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "At work, ship the marketplace to the team as a repo-level AGENTS.md plus a thin shared plugin, then use invocation counts and override rates as the feedback loop solo use cannot provide. Solo, accept that only an audit distinguishes a live skill from a dead one, and schedule the audit.",
+      "status": "confirmed",
+      "question": "Q2 team, Q4 tools"
+    },
+    {
+      "title": "Point agents at greenfield and low-complexity work; use the asymmetry to prioritise, not the point estimates to forecast",
+      "claim": "Multiple secondary reports of Denisov-Blanch's ~100k-developer analysis agree on a large asymmetry: roughly 35-40% on greenfield low-complexity work down to about 0-10% on brownfield high-complexity. DORA's ROI report echoes 35-40% versus 10% or less on legacy code. The primary is a conference talk, not a paper, and the DORA ROI figures are an illustrative model, so use the direction to prioritise and do not forecast from the numbers.",
+      "evidence": "Denisov-Blanch, Stanford, ~100,000 developers: the write-up R1 cited (proxify.io) returns HTTP 403 and is a staffing vendor's summary of a conference talk; other secondary summaries give greenfield low-complexity 35-40% and brownfield high-complexity 0-10%; the 'net ~15-20% after rework' figure could not be confirmed. DORA 'ROI of AI-Assisted Software Development (2026.01)', reported by InfoQ 2026-05 (2026-05-11 is InfoQ's date, not the report's): greenfield 35-40% versus 10% or less on legacy; DORA states 'Treat these calculations as a high-uncertainty estimate meant to spark a conversation, rather than a rigid mathematical formula', and the change failure rate moving 5% to 6% is an assumed input to a sample calculator, not a measured outcome - https://www.infoq.com/news/2026/05/dora-roi-ai-assisted-dev-report/",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "For the Effect TS / AWS / Scribe team: assign agent-heavy work to new features and new services, and use humans-plus-agent-review on the legacy consult-recording paths. This also reframes 'slow to ship': if most of the backlog is high-complexity brownfield, tooling is not the lever, scope and batch size are.",
+      "status": "corrected",
+      "question": "Q2 team"
+    },
+    {
+      "title": "The sit-down peer review is on the right axis; sequence machine pre-review first and add the SLA",
+      "claim": "Turn on agent pre-review on every PR first, then run the sit-downs on the residue, and add the one-business-day first-response SLA as the only new metric. Be honest about what is measured: Anthropic measured review coverage and reviewer agreement, not defects or delivery. Nobody has published an outcome measurement for replacing human line-by-line review.",
+      "evidence": "Linear, 2026-06-10, verbatim: 'I don't read line by line, because finding bugs and checking for logic correctness is now mostly covered by agents' - one engineer's account, not a dataset - https://linear.app/now/reviewing-code-in-the-agent-era . Anthropic, 2026-03-09: substantive review coverage rose from 16% to 54% of PRs, with 'less than 1% of findings are marked incorrect' - https://claude.com/blog/code-review . Google eng-practices: one business day maximum first response - https://google.github.io/eng-practices/review/reviewer/speed.html . Faros 2026-04-12: PRs merged without review +31.3% - https://www.faros.ai/blog/ai-acceleration-whiplash-takeaways",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Keep the sit-downs and change what they are spent on. The barrel-file episode is a knowledge gap a sit-down fixes and a bot does not; line-by-line bug hunting is not. Add the one-business-day first-response SLA and stop there on new metrics.",
+      "status": "confirmed",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Autonomy is a per-task choice, but the edges-not-core rule is not sourced where it is usually cited",
+      "claim": "Anthropic's teams describe autonomy as a per-task decision: Product Design runs fully autonomous loops on feature code, Security Engineering keeps a human checking in periodically. The much-quoted rule that auto-accept 'works best for tasks on the product's edges, not core business logic' is not on the cited page and appears only in third-party summaries; find the primary before quoting it. The edge/core tagging recommendation for nightshift stands on its own reasoning, not on that quote.",
+      "evidence": "Anthropic, 'How Anthropic teams use Claude Code', 2025-07-24: two direct fetches return eight team sections (Infrastructure, Product Engineering, Product Design, Security Engineering, Inference, Data Infrastructure, Growth Marketing, Legal) with no Claude Code team section and no auto-accept passage. On the page, verbatim: Product Design 'set up autonomous loops where Claude Code writes the code for the new feature, runs tests, and iterates continuously', and 'Problems that typically take 10-15 minutes of manual scanning now resolve 3x as quickly' - https://claude.com/blog/how-anthropic-teams-use-claude-code",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Tag each planned task as edge or core at plan time and let the unattended loop take only the edge ones. One line in the plan format, and it converts an implicit risk into a declared one. Present the rule as Jason's own policy, not as an Anthropic quote.",
+      "status": "corrected",
+      "question": "Q1 usage, Q2 team"
+    },
+    {
+      "title": "Independent longitudinal data shows codebase quality degrading, and it caps how much of Faros to believe",
+      "claim": "GitClear's 623-million-change longitudinal dataset is the independent, cross-vendor quality series the review-bottleneck case otherwise leans on Faros alone for. It also caps confidence in Faros's magnitudes: GitClear measures two-week churn at +15% where Faros reports +861%, a roughly 50x gap that argues against quoting Faros to one decimal place. GitClear is itself a vendor with a product in this space.",
+      "evidence": "GitClear, 'The Maintainability Gap', June 2026, 623 million changed lines 2023-2026: duplication +81%, refactoring line moves -70%, error-masking constructs +47%, cross-file function calls -35%, two-week churn +15% (2025 edition: 211M lines, code clones up roughly 4x). Contrast with Faros AI, 2026-04-12: code churn +861% - https://www.faros.ai/blog/ai-acceleration-whiplash-takeaways . Both figures appear in the wave 1 verified fact set (REVIEW/brief2.md, external evidence section).",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Quote Faros directionally and GitClear numerically when talking about quality decay. For the work team, the transferable metric is duplication and rework trend on the Scribe repo over a quarter, not a percentage borrowed from either vendor.",
+      "status": "new-from-verifier",
+      "question": "Q2 team, Q1 usage"
+    },
+    {
+      "title": "Perceived speedup is redistributed effort, which is why the review burden is invisible on the dashboard",
+      "claim": "A 415-practitioner independent study finds perceived productivity gains are largely surface-level acceleration accompanied by redistributed effort and hidden costs, specifically increased code review burden and persistent cognitive load from verifying output. This is the mechanism behind the gap between DORA's 80%-believe-it-helped and the measured randomized numbers, and it is the strongest independent support for the review-bottleneck finding.",
+      "evidence": "Afroz, Feng, Menezes, Kimura, Trinkenreich, Steinmacher, Sarma, 'The Fast and Spurious: Developer Productivity with GenAI', arXiv 2510.24265, submitted 2025-10-28, revised 2026-04-05, 415 software practitioners. Verified at source 2026-09-05, verbatim: 'perceived productivity gains may be spurious -- surface-level acceleration, often accompanied by redistributed effort and hidden costs'; 'gains were offset by increased code review burden, persistent cognitive load from output verification, and unchanged collaboration patterns'. Consistent with METR 2025-07-10, where developers self-estimated +20% while measuring -19%.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Use this to set the team's expectation before the tooling lands: the time saved writing reappears as time spent verifying, so budget review capacity up front rather than treating it as overhead. For Jason solo, it is the argument for measuring consumption of agent output, not just production of it.",
+      "status": "new-from-verifier",
+      "question": "Q2 team, Q3 operator gaps"
+    },
+    {
+      "title": "Unattended landing must not transfer from claude-skills to Scribe, and nothing in the research said so",
+      "claim": "Every autonomy recommendation in this finder was written for repos where a bad merge is cheap, and none of it was applied to the team it was asked to advise. A consult-recording healthcare product carries PHI in prompts, transcripts and CI logs, clinical-safety review obligations, and merges that are not cheap to revert. The unattended-landing pattern is the one part of Jason's setup that should not cross into the work environment.",
+      "evidence": "Nightshift lands PRs unattended behind a CI gate plus a same-family skeptic, with no cross-vendor reviewer on the unattended stream (REVIEW/brief2.md nightshift facts, 2026-09-05). Regulatory items in the verified set: the TGA moved to compliance action against scope-creeping scribes (Aug 2026), with clinician sign-off and no clinical recommendations as the boundary; the Privacy Act automated-decision-making transparency obligation commences 2026-12-10 and covers health providers regardless of turnover. Contrast with the operating precedents: Anthropic and Shopify both keep a human approver (https://claude.com/blog/code-review ; https://www.bvp.com/atlas/inside-shopifys-ai-first-engineering-playbook ), and Cloudflare's autonomous gate runs on its own infrastructure repos, not a regulated clinical product.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "State the boundary explicitly in the team playbook: agent-authored PRs, human approver, always, in Scribe. Confine unattended landing to repos where a bad merge is cheap and no PHI is in scope. Add the 2026-12-10 ADM transparency date as a calendar item, not a footnote.",
+      "status": "new-from-verifier",
+      "question": "Q2 team"
+    },
+    {
+      "title": "Effect TS is off the ecosystem centre of mass, so the context pack matters more than the model choice",
+      "claim": "Opinion, weakly evidenced: gains from coding agents are largest in high-popularity mainstream idiom and shrink outside it, which would make Effect TS - niche, idiom-heavy, thinly represented in training data - a first-order effect on the work team ahead of the greenfield/brownfield split. The effect size is not verifiable from any primary source reachable today. What is well supported is the remedy: a repo-level AGENTS.md carrying Effect idioms plus a curated Effect context pack.",
+      "evidence": "The ecosystem-familiarity claim traces to the Denisov-Blanch conference talk, whose cited write-up (proxify.io) returns HTTP 403 and has no paper behind it - treat the effect size as unverified. The remedy is independently supported: 'AI-accessible internal data' is one of the seven DORA 2025 AI capabilities (2025 DORA AI Capabilities Model PDF), and Cloudflare built one of its seven specialist reviewers specifically to verify that AGENTS.md instructions are honoured after architectural change, 2026-04-20 - https://blog.cloudflare.com/ai-code-review/ . Effect v4 RC landed 2026-08-12 with a real migration (package merge, Cause flattening, Do-notation removal), so the idiom in training data is also behind the codebase.",
+      "classification": "practice",
+      "confidence": "low",
+      "action": "Ship an Effect-idiom AGENTS.md and a curated context pack (v4 migration notes, service/layer patterns, the repo's own error model) before measuring anything about agent performance on Scribe. Label the ecosystem-gain argument as a hypothesis when presenting it; the context pack is worth building either way.",
+      "status": "new-from-verifier",
+      "question": "Q2 team, Q4 tools"
+    }
+  ],
+  "dropped": [
+    "Every number above 20% is a vendor number; every independent measurement lands at or below 20% - refuted: the dichotomy breaks both ways (Google's enterprise RCT, arXiv 2410.12944, is independent, randomized and ~21%; Faros telemetry is independent and above 20%), and the anchor it recommended, Shopify's ~20%, is an executive's self-described 'humble estimate'. The original title is dead; it survives only as the corrected finding 'Effect size is predicted by task realism and population, not by who published' at reduced confidence.",
+    "Serious agent-review implementations are multi-agent, deduplicated, cost-tiered - and all of them keep a human as the approver - refuted: the universal is backwards on its own largest exemplar. Cloudflare's agents block or clear merges autonomously and the 0.6% 'break glass' figure is humans overriding a machine gate, not humans approving code. The original title is dead; it survives only as the corrected finding naming Cloudflare as the precedent for nightshift, at reduced confidence.",
+    "Sub-claim dropped: the Linear quote 'Discipline - specs before prompts, tests before shipping, reviews before merging, ADRs before architecture changes - is what prevents AI from amplifying chaos'. Not present at the cited article across two fetches and an exact-phrase search; treat as fabricated or misattributed. Replaced by arXiv 2605.01160.",
+    "Sub-claim dropped: Anthropic's auto-accept guidance that agent work 'works best for tasks on the product's edges, not core business logic'. Not on the cited 2025-07-24 page; it appears only in third-party summaries. The edge/core tagging recommendation is kept as Jason's own policy, unsourced.",
+    "Sub-claim dropped: that Anthropic's large-PR finding-density numbers are 'the mechanism behind the small-batch advice'. More code yields more findings; the data shows defect mass, not a per-line detection collapse.",
+    "Sub-claim dropped: that teams with pre-existing controls got throughput without instability, and that this is 'the single most replicated finding in the literature'. Faros states the opposite - 'strong engineering foundations do not protect against downsides' - so the question is contested, not settled.",
+    "Sub-claim dropped: that 'the measured wins in 2026 come from removing line-by-line bug-hunting from humans entirely'. Anthropic measured review coverage and reviewer agreement; no source measures defect or delivery outcomes from that substitution.",
+    "Sub-claim dropped: DORA's 'diminishing returns where 10x cost increases yield marginal throughput gains' presented as a DORA measurement. It is quoted third-party commentary inside an opinion piece.",
+    "Sub-claim dropped: six paraphrased DORA capability names ('prioritise foundational practices', 'fortify safety nets', and others). Those are DORA recommendation language, not capability names; the correct seven are now carried in the platform finding."
+  ]
+}
