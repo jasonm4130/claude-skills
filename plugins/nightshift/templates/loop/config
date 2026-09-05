@@ -27,7 +27,7 @@
 # (GEN_BUDGET + SKEPTIC_BUDGET) * (REPAIR_ROUNDS + 1) dollars.
 : "${MODEL:=opus}"
 : "${GEN_BUDGET:=4}"
-: "${SKEPTIC_BUDGET:=1}"
+: "${SKEPTIC_BUDGET:=5}"
 : "${REPAIR_ROUNDS:=1}"
 : "${MAX:=3}"
 : "${DEADLINE:=6h}"
