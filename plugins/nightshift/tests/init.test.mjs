@@ -163,6 +163,18 @@ test("mergeSettings never removes and never duplicates", () => {
   assert.deepEqual(again, s);
 });
 
+test("PROMPT.md and SKEPTIC.md keep their {{PLAN}}/{{BASE}} placeholders for land.sh to fill at run time", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ns-prompt-"));
+  try {
+    execFileSync("git", ["init", "-q", "-b", "main", dir]);
+    const { files } = render(dir, { stack: "generic", base: "release", plan: "docs/plans/p.md", mergeMode: "wait" });
+    assert.match(files["loop/PROMPT.md"], /\{\{PLAN\}\}/);
+    assert.match(files["loop/PROMPT.md"], /origin\/\{\{BASE\}\}/);
+    assert.doesNotMatch(files["loop/PROMPT.md"], /docs\/plans\/p\.md|origin\/release/);
+    assert.match(files["loop/config"], /BASE:=release\}/, "config, by contrast, is filled");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("a repo path with & renders a plist that still parses", () => {
   const dir = mkdtempSync(join(tmpdir(), "ns-R&D-"));
   try {

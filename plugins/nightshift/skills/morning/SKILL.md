@@ -58,7 +58,9 @@ Each blocked task gets one of:
    push, `gh pr ready <n>` and remove the label: `gh pr edit <n> --remove-label land:blocked`.
    The next run resumes it from "open PR".
 2. **Close the PR.** The loop treats a closed unmerged PR as a human decision
-   and stops on that task until the plan changes.
+   and stops on that task until the plan changes — unless the closed PR carries
+   the `land:retry` label (`gh pr edit <n> --add-label land:retry`), which says
+   "run it again from scratch" and the next night starts the task over.
 3. **Edit the plan.** Wrong or under-specified task: a plan change is a pull
    request (`nightshift:plan`'s landing step).
 4. **Refreeze.** `gh variable set LANDING_STATE --body frozen` when the stops
