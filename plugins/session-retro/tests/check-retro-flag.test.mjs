@@ -191,7 +191,8 @@ test("EOD offer fires: past RETRO_EOD_HOUR, 3 worthy, no offer today", async (t)
     env(tmp),
   );
   assert.equal(code, 0);
-  const { systemMessage, additionalContext } = JSON.parse(stdout).hookSpecificOutput;
+  const { systemMessage, hookSpecificOutput: { additionalContext } } =
+    JSON.parse(stdout);
   assert.match(
     systemMessage,
     /\[session-retro\].*3 retro-worthy sessions have accrued/,
@@ -247,7 +248,8 @@ test("EOD env override: RETRO_EOD_HOUR=8 fires at 09:00", async (t) => {
     env(tmp, { RETRO_NOW: MORNING, RETRO_EOD_HOUR: "8" }),
   );
   assert.equal(code, 0);
-  const { systemMessage, additionalContext } = JSON.parse(stdout).hookSpecificOutput;
+  const { systemMessage, hookSpecificOutput: { additionalContext } } =
+    JSON.parse(stdout);
   assert.match(systemMessage, /3 retro-worthy sessions/);
   assert.match(additionalContext, /Do not start it unprompted/);
 });
@@ -299,7 +301,8 @@ test("EOD fires: yesterday's offer does not suppress today's (calendar day, not 
   );
   assert.equal(code, 0);
   {
-    const { systemMessage, additionalContext } = JSON.parse(stdout).hookSpecificOutput;
+    const { systemMessage, hookSpecificOutput: { additionalContext } } =
+      JSON.parse(stdout);
     assert.match(systemMessage, /3 retro-worthy sessions/);
     assert.match(additionalContext, /Do not start it unprompted/);
   }
@@ -328,7 +331,8 @@ test("EOD sweep never deletes a newer day's marker", async (t) => {
   );
   assert.equal(code, 0);
   {
-    const { systemMessage, additionalContext } = JSON.parse(stdout).hookSpecificOutput;
+    const { systemMessage, hookSpecificOutput: { additionalContext } } =
+      JSON.parse(stdout);
     assert.match(systemMessage, /3 retro-worthy sessions/, "tomorrow's marker does not suppress today");
     assert.match(additionalContext, /Do not start it unprompted/);
   }
@@ -424,7 +428,7 @@ test("processed sids are excluded from the count and the worthy log is not rewri
   assert.equal(code, 0);
   // Only todo1 is unprocessed → count 1.
   const parsed = JSON.parse(stdout);
-  assert.match(parsed.hookSpecificOutput.systemMessage, /1 retro-worthy session/);
+  assert.match(parsed.systemMessage, /1 retro-worthy session/);
   assert.match(parsed.hookSpecificOutput.additionalContext, /Do not start it unprompted/);
   // The worthy log is byte-for-byte unchanged (never rewritten).
   assert.equal(readFileSync(worthyPath, "utf8"), before, "worthy log must not be rewritten");
@@ -473,7 +477,8 @@ test("env override: RETRO_BATCH_MIN_SESSIONS=2 fires with 2 worthy", async (t) =
   );
   assert.equal(code, 0);
   {
-    const { systemMessage, additionalContext } = JSON.parse(stdout).hookSpecificOutput;
+    const { systemMessage, hookSpecificOutput: { additionalContext } } =
+      JSON.parse(stdout);
     assert.match(systemMessage, /2 retro-worthy sessions/);
     assert.match(additionalContext, /Do not start it unprompted/);
   }
@@ -492,7 +497,8 @@ test("RETRO_EOD_HOUR garbage falls back to the 16:00 default", async (t) => {
   );
   assert.equal(code, 0);
   {
-    const { systemMessage, additionalContext } = JSON.parse(stdout).hookSpecificOutput;
+    const { systemMessage, hookSpecificOutput: { additionalContext } } =
+      JSON.parse(stdout);
     assert.match(systemMessage, /3 retro-worthy sessions/);
     assert.match(additionalContext, /Do not start it unprompted/);
   }
@@ -512,8 +518,27 @@ test("RETRO_EOD_HOUR=24 (out of range) falls back to the 16:00 default", async (
   );
   assert.equal(code, 0);
   {
-    const { systemMessage, additionalContext } = JSON.parse(stdout).hookSpecificOutput;
+    const { systemMessage, hookSpecificOutput: { additionalContext } } =
+      JSON.parse(stdout);
     assert.match(systemMessage, /3 retro-worthy sessions/);
     assert.match(additionalContext, /Do not start it unprompted/);
   }
+});
+
+// The offer only reaches a human if `systemMessage` sits at the payload root;
+// nested under hookSpecificOutput, Claude Code drops it silently.
+test("the EOD offer's systemMessage is at the payload root", async (t) => {
+  const tmp = mkTmp();
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeThreeWorthy(tmp);
+
+  const { code, stdout } = await run(
+    JSON.stringify({ session_id: "test-eod-root" }),
+    env(tmp),
+  );
+  assert.equal(code, 0);
+  const parsed = JSON.parse(stdout);
+  assert.match(parsed.systemMessage, /retro-worthy sessions have accrued/);
+  assert.equal(parsed.hookSpecificOutput.systemMessage, undefined);
 });

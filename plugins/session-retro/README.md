@@ -55,9 +55,9 @@ On first load, Claude Code will prompt you to approve the hooks. This is normal 
 
 ### When the hook offers you a retro
 
-Individual retro-worthy sessions never nudge you — they accumulate silently, compactions included. Once enough have piled up, the first prompt you send after 16:00 gets a Claude-authored line like:
+Individual retro-worthy sessions never nudge you — they accumulate silently, compactions included. Once enough have piled up, the first prompt you send after 16:00 gets a line from the hook like:
 
-> "[session-retro] End of day: 3 retro-worthy sessions accrued (8+ days since the last retro). Run the session-retro:retro skill now to batch-capture the learnings, unless the user objects."
+> [session-retro] 3 retro-worthy sessions have accrued (8+ days since the last retro). Want me to run the retro now and batch-capture what they taught? It reads the recorded events, not the full transcripts, so it is quick. Say no and I'll drop it until the next batch.
 
 The agent will offer to run the retro directly. Decline it and nothing more comes until tomorrow evening.
 
