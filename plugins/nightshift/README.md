@@ -42,7 +42,8 @@ bash and runs anywhere).
 ```
 
 Everything project-specific is in `loop/config`; the journal is in
-`~/.local/state/nightshift/<repo>/journal.md`.
+`~/.local/state/nightshift/<repo>/journal.md`, with one
+`YYYY-MM-DD-HHMMSS-<plan>-tN/` directory per run of a task beside it.
 
 ## The three skills
 
