@@ -504,3 +504,31 @@ test("a repo whose scripts/check is a committed symlink still passes the launche
   const lg = readFileSync(join(r.state, "outcomes", "01-a", "u1-logs", "launcher-check.log"), "utf8").trim().split("\n");
   assert.deepEqual(lg.slice(-2), ["CHECK OK", "exit=0"]);
 });
+
+test("a background process the unit leaves behind dies with the unit, so it cannot rewrite the config afterwards", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  const check = genCheck(join(r.root, "gen"), "check", "echo CHECK OK");
+  const stateDir = writeConfig(r.home, "r", { CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: check.path, CHECK_SHA: check.sha });
+  const before = readFileSync(join(stateDir, "config"), "utf8");
+  const orphan = [
+    `(sleep 3; sed -i '' -e 's#^CHECK_SHA=.*#CHECK_SHA=deadbeef#' "${join(stateDir, "config")}") >/dev/null 2>&1 &`,
+    PASS_UNIT,
+  ].join("\n");
+  const out = runNightwatch(r, { positional: ["r"], stateName: "r", env: { FAKE_NW_SCRIPT: orphan } });
+  execFileSync("sleep", ["4"]);
+
+  assert.equal(out.code, 0, out.stderr);
+  assert.match(out.journal, /01-a: PASS, landed on/);
+  assert.equal(readFileSync(join(stateDir, "config"), "utf8"), before, "the orphan never got to write");
+});
+
+test("the launcher's own check is also bounded by the deadline, not only by UNIT_TIMEOUT", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  const check = genCheck(join(r.root, "gen"), "check", "sleep 30; echo CHECK OK");
+  writeConfig(r.home, "r", { CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: check.path, CHECK_SHA: check.sha });
+  const t0 = Date.now();
+  const out = runNightwatch(r, { positional: ["r"], stateName: "r", env: { FAKE_NW_SCRIPT: PASS_UNIT, DEADLINE: "2s", UNIT_TIMEOUT: "3m", CHECK_GRACE_S: "1" }, timeout: 60000 });
+
+  assert.match(out.journal, /01-a: launcher check: exit=124/);
+  assert.ok(Date.now() - t0 < 20000, `took ${Date.now() - t0} ms`);
+});

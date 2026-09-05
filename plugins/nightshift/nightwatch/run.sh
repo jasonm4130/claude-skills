@@ -411,6 +411,11 @@ unit_run() { # unit_run <spec-path> <unit-index> <check-verified 0|1> → writes
     fi
   done
   wait "$pid" 2>/dev/null
+  # The unit ran in its own process group (set -m). Anything it left running in the
+  # background dies here, so a straggler cannot write the state dir after the launcher
+  # has judged the unit. A worker that setsid()s out of the group is past this trust
+  # boundary; that is what the container (v1 item 8) is for.
+  kill -KILL -- "-$pid" 2>/dev/null; sleep 1
   endedAt=$(date -u +%FT%TZ); t_end=$(date +%s)
   local cost turns commits
   cost=$(jq -r '.total_cost_usd // 0' "$out" 2>/dev/null || echo 0)
@@ -456,7 +461,15 @@ unit_run() { # unit_run <spec-path> <unit-index> <check-verified 0|1> → writes
 # from anywhere else would silently change what it checks.
 # Under UNIT_TIMEOUT when `timeout` exists (coreutils on macOS; init's preflight requires it), so a
 # check that hangs cannot hold the launcher past the deadline and the kill switch.
-bounded() { if command -v timeout >/dev/null 2>&1; then timeout "$(secs "$UNIT_TIMEOUT")" "$@"; else "$@"; fi; }
+# The bound is UNIT_TIMEOUT or what is left of the deadline plus CHECK_GRACE_S, whichever is less.
+: "${CHECK_GRACE_S:=60}"
+bounded() {
+  local lim rem
+  lim=$(secs "$UNIT_TIMEOUT"); rem=$(( deadline - ($(date +%s) - started) + CHECK_GRACE_S ))
+  [ "$rem" -lt "$CHECK_GRACE_S" ] && rem=$CHECK_GRACE_S
+  [ "$rem" -lt "$lim" ] && lim=$rem
+  if command -v timeout >/dev/null 2>&1; then timeout "$lim" "$@"; else "$@"; fi
+}
 launcher_check_reason=""
 launcher_check() { # launcher_check <slug> <unit>
   local slug=$1 logdir=$STATE/outcomes/$1/u$2-logs
