@@ -19,6 +19,8 @@ Live record of the first unattended Nightwatch v0 run (ambient, six specs), kept
 | 22:55–23:15 | ui-api unit 1, "One dispatcher: src/api.rs behind ambient mcp": CONTINUE, $6.46, commit `6545df3`. `scripts/check` green, 16 mcp tests green. Eval: three low concerns (see below). |
 | 23:16 | ui-api unit 2 Reconcile: clean at `6545df3`; the planner read the done unit-1 brief and correctly chose unit 2, "`search` across every transcript". |
 | 23:22 | unit 2 Implement started. First unit to run under the launcher-owned command logs (`u2-logs/reconcile-{1..4}.log`, each ending `exit=0`). |
+| 23:35 | ui-api unit 2, "`search` across every transcript": commit `e8003cd`, check green, Eval four low concerns. |
+| 23:38 | Spec fix while running: acceptance lines in specs 01 and 02 said `cargo run -- <verb>`, which exits 101 (15 binaries, no `default-run`), so those outcomes could never reach PASS. Rewritten to `cargo run --bin ambient -- <verb>`; the launcher re-reads the spec each unit. |
 
 ## Fixed before launch (all in the engine now)
 
@@ -38,6 +40,8 @@ Live record of the first unattended Nightwatch v0 run (ambient, six specs), kept
 ## Eval concerns so far (all low, none blocking)
 
 Unit 1: two error-message strings drifted on `-32602` paths no test pins (`no such method` vs `no such tool`; missing `arguments` wording); `docs/developing/api.md`'s `sessions` example omits the `dir` field that `SessionSummary` always serialises; the spec's "every method has a JSON example and a test that feeds it" constraint is only met via the mcp tests for `sessions` and `transcript`. Later units inherit the third.
+
+Unit 2: `search` is callable over MCP even though `tools/list` hides it, because `tools/call` routes any name into `api::call` without checking `MCP_TOOLS` (the comment claims otherwise); `limit: 0` returns one hit (push before the length check); the `search` reply example in `docs/developing/api.md` shows `index: 3` where the test fixture yields 0; and the bare `cargo run --` acceptance form (fixed in the spec, above). The first two are real small bugs worth a fix-up commit before the PR.
 
 ## Observations and what to change (v1 candidates, ranked)
 
