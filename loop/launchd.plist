@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Nightshift at 02:00. Install with the sed line in docs/developing/landing.md,
-     which fills /private/tmp/claude-501/-Users-jasonmatthew-Work-Git-claude-skills/7c70b045-5571-4242-966a-af5b619b865f/scratchpad/wt-pr4 and /Users/jasonmatthew/.local/bin:/Users/jasonmatthew/.bun/bin:/Users/jasonmatthew/google-cloud-sdk/bin:/Users/jasonmatthew/.local/share/mise/installs/node/24/bin:/Users/jasonmatthew/.local/share/mise/installs/pnpm/latest:/Users/jasonmatthew/.local/share/mise/installs/python/3.13/bin:/Users/jasonmatthew/.cargo/bin:/Users/jasonmatthew/.local/share/mise/installs/yarn/latest/bin:/Users/jasonmatthew/.local/share/mise/installs/npm-pyright/latest/node_modules/.bin:/Users/jasonmatthew/.local/share/mise/shims:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Users/jasonmatthew/.local/share/mise/shims:/Applications/Ghostty.app/Contents/MacOS:/Users/jasonmatthew/.cache/lm-studio/bin:/Users/jasonmatthew/.claude/plugins/cache/claude-plugins-official/commit-commands/1dd995193ba2/bin:/Users/jasonmatthew/.claude/plugins/cache/claude-plugins-official/typescript-lsp/1.0.0/bin:/Users/jasonmatthew/.claude/plugins/cache/claude-plugins-official/pyright-lsp/1.0.0/bin:/Users/jasonmatthew/.claude/plugins/cache/claude-plugins-official/rust-analyzer-lsp/1.0.0/bin:/Users/jasonmatthew/.claude/plugins/cache/claude-plugins-official/context7/1dd995193ba2/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/handoff/0.11.1/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/session-retro/0.9.0/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/gates/0.2.0/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.12.0/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/adr/0.5.1/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/ship-gate/0.1.2/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/codex-review/0.5.4/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/superpowers-core/0.7.1/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/frontend-design/0.3.1/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/writing-artifacts/0.1.1/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/domain-modeling/0.4.0/bin:/Users/jasonmatthew/.claude/plugins/cache/claude-plugins-official/claude-code-setup/1.0.0/bin. caffeinate -i keeps the Mac awake while
+     which fills /Users/jasonmatthew/Work/Git/claude-skills and /Users/jasonmatthew/.local/bin:/Users/jasonmatthew/.bun/bin:/Users/jasonmatthew/google-cloud-sdk/bin:/Users/jasonmatthew/.local/share/mise/installs/node/24/bin:/Users/jasonmatthew/.local/share/mise/installs/pnpm/latest:/Users/jasonmatthew/.local/share/mise/installs/python/3.13/bin:/Users/jasonmatthew/.cargo/bin:/Users/jasonmatthew/.local/share/mise/installs/yarn/latest/bin:/Users/jasonmatthew/.local/share/mise/installs/npm-pyright/latest/node_modules/.bin:/Users/jasonmatthew/.local/share/mise/shims:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Users/jasonmatthew/.local/share/mise/shims:/Applications/Ghostty.app/Contents/MacOS:/Users/jasonmatthew/.cache/lm-studio/bin:/Users/jasonmatthew/.claude/plugins/cache/claude-plugins-official/commit-commands/1dd995193ba2/bin:/Users/jasonmatthew/.claude/plugins/cache/claude-plugins-official/typescript-lsp/1.0.0/bin:/Users/jasonmatthew/.claude/plugins/cache/claude-plugins-official/pyright-lsp/1.0.0/bin:/Users/jasonmatthew/.claude/plugins/cache/claude-plugins-official/rust-analyzer-lsp/1.0.0/bin:/Users/jasonmatthew/.claude/plugins/cache/claude-plugins-official/context7/1dd995193ba2/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/handoff/0.11.1/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/session-retro/0.9.0/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/gates/0.2.0/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.12.0/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/adr/0.5.1/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/ship-gate/0.1.2/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/codex-review/0.5.4/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/superpowers-core/0.7.1/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/frontend-design/0.3.1/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/writing-artifacts/0.1.1/bin:/Users/jasonmatthew/.claude/plugins/cache/jasonm4130-claude-skills/domain-modeling/0.4.0/bin:/Users/jasonmatthew/.claude/plugins/cache/claude-plugins-official/claude-code-setup/1.0.0/bin. caffeinate -i keeps the Mac awake while
      the loop runs; it goes back to sleep when the loop exits. -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>dev.nightshift.wt-pr4</string>
+  <string>dev.nightshift.claude-skills</string>
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/caffeinate</string>
     <string>-i</string>
-    <string>/private/tmp/claude-501/-Users-jasonmatthew-Work-Git-claude-skills/7c70b045-5571-4242-966a-af5b619b865f/scratchpad/wt-pr4/loop/land.sh</string>
+    <string>/Users/jasonmatthew/Work/Git/claude-skills/loop/land.sh</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/private/tmp/claude-501/-Users-jasonmatthew-Work-Git-claude-skills/7c70b045-5571-4242-966a-af5b619b865f/scratchpad/wt-pr4</string>
+  <string>/Users/jasonmatthew/Work/Git/claude-skills</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
@@ -30,8 +30,8 @@
     <integer>0</integer>
   </dict>
   <key>StandardOutPath</key>
-  <string>/Users/jasonmatthew/.local/state/nightshift/wt-pr4/launchd.log</string>
+  <string>/Users/jasonmatthew/.local/state/nightshift/claude-skills/launchd.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/jasonmatthew/.local/state/nightshift/wt-pr4/launchd.log</string>
+  <string>/Users/jasonmatthew/.local/state/nightshift/claude-skills/launchd.log</string>
 </dict>
 </plist>

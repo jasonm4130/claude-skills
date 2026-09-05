@@ -1,8 +1,8 @@
 You are implementing one task of a plan, unattended, on a branch nobody else touches. Nobody will answer a question, so decide and record the decision instead.
 
-Task {{TASK}} of `docs/plans/2026-09-05-nightshift-smoke.md`: {{TITLE}}
+Task {{TASK}} of `{{PLAN}}`: {{TITLE}}
 
-The full task text is in `{{BRIEF}}`. Read it first, then the files it names. The plan is on `origin/main` and earlier tasks have already landed there.
+The full task text is in `{{BRIEF}}`. Read it first, then the files it names. The plan is on `origin/{{BASE}}` and earlier tasks have already landed there.
 
 Rules:
 
