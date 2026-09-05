@@ -1,20 +1,21 @@
 # adr
 
-Front-end for **`adr → sdd`**. Turns an intent into one *grounded, cited,
+Front-end for **`adr → nightshift`**. Turns an intent into one *grounded, cited,
 build-ready* ADR at `docs/adr/YYYY-MM-DD-<slug>.md` — every claim cited,
-load-bearing decisions surfaced to the human — then hands it to the
-`subagent-driven-development` loop. This collapses the
-`brainstorm → spec → writing-plans → sdd` chain into `adr → sdd` for "I know what
-I want, build it" work, while `brainstorming` stays for exploratory work.
+load-bearing decisions surfaced to the human — then hands it to
+`nightshift:plan`'s landing step. This collapses the
+`brainstorm → spec → writing-plans → nightshift` chain into `adr → nightshift`
+for "I know what I want, build it" work, while `brainstorming` stays for
+exploratory work.
 
 ## The arc
 
 ```
-intent → GROUND → ADR (you approve) → SDD loop → you ratify
+intent → GROUND → ADR (you approve) → plan PR → Nightshift lands it → you ratify
 ```
 
-The skill stays thin — a four-phase orchestrator. The determinism lives in the
-SDD `sdd.mjs` workflow, not in this prose.
+The skill stays thin — a four-phase orchestrator. The determinism lives in
+Nightshift's `loop/`, not in this prose.
 
 ## The four phases
 
@@ -29,11 +30,11 @@ SDD `sdd.mjs` workflow, not in this prose.
 3. **Tiered decision gate.** Load-bearing decisions (new dependency, public-API
    change, schema/data-model change, architecture-shaping choice) block on the
    human before anything builds; reversible ones become overridable defaults.
-4. **Handoff.** On approval, resolve `sdd.mjs` and invoke the Workflow with the
-   ADR; the loop runs per-task implement → review → fix and judges the branch
-   against the ADR's Success criteria. Merge stays human-gated.
+4. **Handoff.** On approval, commit the ADR, prove every task extracts with
+   `loop/task-brief`, then set `PLAN` in `loop/config` to the ADR path and open
+   the branch as a PR for Nightshift to land overnight. Merge stays human-gated.
 
 ## See also
 
 - Design spec: [`2026-06-27-adr-driven-development-design.md`](https://github.com/jasonm4130/claude-skills/blob/main/docs/superpowers/specs/2026-06-27-adr-driven-development-design.md)
-- The loop it drives: the `subagent-driven-development` plugin
+- The loop it drives: the `nightshift` plugin

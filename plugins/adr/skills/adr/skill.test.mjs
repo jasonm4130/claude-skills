@@ -27,11 +27,10 @@ test("enforces grounding citations and surfaces load-bearing decisions", () => {
   assert.match(s, /schema/i);
 });
 
-test("hands off to the subagent-driven-development workflow with the ADR", () => {
-  assert.match(s, /subagent-driven-development|sdd\.mjs/i);
-  assert.match(s, /adrPath/);
-  assert.match(s, /successCriteria/);
-  assert.match(s, /subagent-driven-development\/\d+\.\d+\.\d+\/workflows\/sdd\.mjs/);
-  assert.match(s, /MISSING: subagent-driven-development/);
-  assert.match(s, /parseable|stop and fix|do not hand off/i);
+test("hands off to nightshift:plan's landing step with the ADR", () => {
+  assert.match(s, /nightshift/i);
+  assert.match(s, /loop\/task-brief/);
+  assert.match(s, /loop\/config/);
+  assert.match(s, /PLAN/);
+  assert.match(s, /do not hand off/i);
 });

@@ -23,4 +23,8 @@ opted into. The migration stays manual — the table below says what to run.
 | `docs-sync-guard` | 2026-08-26 | `gates` | Uninstall, then `/plugin install gates@jasonm4130-claude-skills`. Both mechanisms moved across unchanged: the commit gate (still `docs-sync:ack`) and the consolidation trigger, whose `/docs-consolidate` skill is now `gates:docs-consolidate`. The `.docs-sync` record and the `.git/docs-sync-defer` marker are per-repo and keep working as they are. |
 | `design-gate-guard` | 2026-08-26 | `gates` | Uninstall, then install `gates`. The scaffold gate moved across unchanged, `design-gate:ack` included. |
 | `workflow-model-guard` | 2026-08-26 | `gates` | Uninstall, then install `gates`. Both hooks moved across unchanged, `model-guard:ack` included. |
+| `subagent-driven-development` | 2026-09-05 | `nightshift` | Uninstall. The inner loop never pushed, opened a PR or merged, and its resume died with the session; Nightshift lands one task per CI-gated PR overnight (`/nightshift:init`, `/nightshift:plan`, `/nightshift:morning`). |
+| `landing-loop` | 2026-09-05 | `nightshift` | Uninstall. Replaced the day it merged; same shape (one task per PR, CI as the only gate) now lives in the target repo's `loop/`. |
+| `superpowers-core` (brainstorming, writing-plans) | 2026-09-05 | `nightshift:plan` | Uninstall. `plan` carries brainstorming's size gate and writing-plans' task format in one skill. |
+| `superpowers-core` (test-driven-development, systematic-debugging, writing-skills) | 2026-09-05 | Nothing | Uninstall. The conventions writing-skills enforced already live in `scripts/repo-consistency.test.mjs` and `scripts/skill-frontmatter.test.mjs`; TDD and systematic-debugging were never invoked by a hook and are ordinary practice. |
 

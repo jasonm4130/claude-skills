@@ -1,6 +1,6 @@
 ---
 name: codex-plan-review
-description: 'Cross-provider adversarial review of a finalized plan, spec, design doc, ADR, or code diff using OpenAI Codex (GPT-5.6 Terra). AUTO-TRIGGER at plan gates — invoke immediately after any of: (1) a brainstorming spec is written and user-approved, (2) a writing-plans implementation plan is finalized, (3) an ADR draft is completed, (4) an SDD plan is confirmed at its gate. AUTO-TRIGGER for code: after implementing a Codex-reviewed plan, run diff mode on the branch range before opening the PR — a reviewed plan is NOT a reviewed diff. Also invoke on request — "codex review this plan", "codex review this diff", "get a second opinion on this design", "terra review". Do NOT re-run on an artifact already reviewed without an explicit user ask; each chain burns paid quota.'
+description: 'Cross-provider adversarial review of a finalized plan, spec, design doc, ADR, or code diff using OpenAI Codex (GPT-5.6 Terra). AUTO-TRIGGER at plan gates — invoke immediately after any of: (1) a plan written by `nightshift:plan` is finalized, (2) an ADR draft is completed. AUTO-TRIGGER for code: after implementing a Codex-reviewed plan, run diff mode on the branch range before opening the PR — a reviewed plan is NOT a reviewed diff. Also invoke on request — "codex review this plan", "codex review this diff", "get a second opinion on this design", "terra review". Do NOT re-run on an artifact already reviewed without an explicit user ask; each chain burns paid quota.'
 ---
 
 # Codex Plan Review

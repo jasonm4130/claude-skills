@@ -1,25 +1,25 @@
 ---
 name: adr
-description: Use when the user knows what they want built and says "/adr", "write an ADR for X", "decide and build X", or "ADR-driven". Turns an intent into a grounded, cited, build-ready ADR at docs/adr/YYYY-MM-DD-<slug>.md — load-bearing decisions surfaced to the human — then hands off to the subagent-driven-development loop. For exploratory "not sure what I want yet" work use brainstorming first. Do NOT use for domain vocabulary (use domain-modeling) or for prose mechanics on an existing document (use writing-artifacts).
+description: Use when the user knows what they want built and says "/adr", "write an ADR for X", "decide and build X", or "ADR-driven". Turns an intent into a grounded, cited, build-ready ADR at docs/adr/YYYY-MM-DD-<slug>.md — load-bearing decisions surfaced to the human — then hands off to `nightshift:plan`'s landing step (the plan is opened as a PR and Nightshift lands it overnight). For exploratory "not sure what I want yet" work use brainstorming first. Do NOT use for domain vocabulary (use domain-modeling) or for prose mechanics on an existing document (use writing-artifacts).
 ---
 
-# ADR-Driven Development (front-end for `adr → sdd`)
+# ADR-Driven Development (front-end for `adr → nightshift`)
 
-Turn an intent into one **grounded, cited, build-ready ADR**, then hand it to the
-deterministic `subagent-driven-development` (SDD) loop. This collapses
-`brainstorm → spec → writing-plans → sdd` into **`adr → sdd`** for "I know what I
-want, build it" work.
+Turn an intent into one **grounded, cited, build-ready ADR**, then hand it to
+`nightshift:plan`'s landing step. This collapses
+`brainstorm → spec → writing-plans → nightshift` into **`adr → nightshift`** for
+"I know what I want, build it" work.
 
 The arc:
 
 ```
-intent → GROUND → ADR (you approve) → SDD loop → you ratify
+intent → GROUND → ADR (you approve) → plan PR → Nightshift lands it → you ratify
 ```
 
 **Stay thin.** This skill is a four-phase orchestrator — prose plus the two
-embedded blocks below. The determinism lives in `sdd.mjs`, not here. One ADR doc,
-not a multi-file apparatus. For exploratory "not sure what I want yet" work use
-`brainstorming` first.
+embedded blocks below. The determinism lives in Nightshift's `loop/`, not here.
+One ADR doc, not a multi-file apparatus. For exploratory "not sure what I want
+yet" work use `brainstorming` first.
 
 ## Phase 1 — Ground (scaled)
 
@@ -96,70 +96,16 @@ isn't settled yet — go back to Phase 1 rather than writing longer.
 
 ## Phase 4 — Handoff
 
-On approval, resolve `sdd.mjs` by literal path — pinned to the version of
-**`subagent-driven-development`**, not this plugin's own version — and invoke
-the Workflow with the ADR.
-
-**Loud-fail guard:** if the Decomposition has no parseable `### Task N` entries,
-**stop and fix the ADR — do not hand off** (mirrors `task-brief`'s "task N not
-found" guard). Nothing builds from an ADR the loop can't read.
-
-**Commit the ADR before you hand off.** The loop's wave-0 preflight halts on any
-uncommitted change in the workdir — the ADR you just wrote is one — because wave
-worktrees are seeded from the committed tip and cannot see it. Commit (or stash)
-first, then resolve `branchTip` from the resulting HEAD:
-
-```bash
-git status --porcelain     # must be empty
-git rev-parse HEAD         # this is branchTip
-```
-
-Resolve the loop and invoke it:
-
-```bash
-P="$HOME/.claude/plugins/cache/jasonm4130-claude-skills/subagent-driven-development/0.12.0/workflows/sdd.mjs"
-[ -f "$P" ] && echo "$P" || echo "MISSING: subagent-driven-development 0.12.0 is not installed at $P — run /plugin marketplace update jasonm4130-claude-skills, or /plugin install subagent-driven-development@jasonm4130-claude-skills if it was never installed"
-```
-
-If it reports `MISSING`, **stop and tell the user to update the plugin.** Do not
-glob the cache for another version: superseded and rolled-back versions stay on
-disk, so picking the highest cached one silently runs a loop whose `args`
-contract this skill no longer matches.
-
-```
-Workflow({ scriptPath: "<resolved sdd.mjs>", args: {
-  adrPath: "<abs path to docs/adr/YYYY-MM-DD-<slug>.md>",
-  workdir: "<worktree root>",
-  pluginDir: "<plugin root containing workflows/ prompts/ scripts/>",
-  globalConstraints: "<the ADR Decisions, verbatim>",
-  successCriteria: "<the ADR Success criteria block, verbatim>",
-  mergeBase: "<git merge-base main HEAD>",
-  branchTip: "<git rev-parse HEAD in the workdir>",
-  tasks: [ { n: 1, title: "...", tier: "opus", effort: "medium", deps: [] }, ... ],  // from the Decomposition
-  limits: { fixRounds: 2, escalateAttempts: 2 }
-}})
-```
-
-`branchTip` is not optional in practice: omitting it seeds wave 0 from `mergeBase`,
-which is a stale tree the moment the branch has any commits — and the ADR you just
-committed is one. Tiering follows `subagent-driven-development`'s own table (its
-SKILL.md, § "Model tiering at a glance"); the floor is `opus`/`medium`, with `effort`
-as the cost lever rather than a cheaper model.
-
-`pluginDir` is the directory **containing** `workflows/`, `prompts/`, and
-`scripts/`. The loop runs per-task implement → review → fix (model-tiered,
-ponytail-lensed) — Decomposition tasks whose `deps` allow it run as parallel
-waves with a per-wave merge gate, so mark deps honestly there — then judges
-the whole branch against the ADR's Success criteria (oracle gates + a checker
-agent). It converges only when oracles pass and the checker is satisfied;
-**merge stays human-gated in your session** — the loop never merges.
+1. **Commit the ADR** on its own branch (`git add docs/adr/<file> && git commit`). Nothing lands from an uncommitted file.
+2. **Prove every task extracts.** For each `### Task N` in the Decomposition run `loop/task-brief docs/adr/<file> N "$(mktemp)"`; a non-zero exit means the loop cannot read that task — fix the ADR, do not hand off. If the repo has no `loop/` yet, say `/nightshift:init` comes first and stop here.
+3. **Hand to `nightshift:plan`'s landing step:** set `PLAN` in `loop/config` to the ADR path (a `loop/config` change is a PR like any other), open the branch as a PR, and tell the user the daylight recipe: merge the PR, `gh variable set LANDING_STATE --body run`, `MAX=1 loop/land.sh`, refreeze. Never merge, never flip the switch yourself.
 
 ## Scope guard
 
-The loop is for **bounded, test-covered work**. Large ambiguous brownfield → break
+Nightshift is for **bounded, test-covered work**. Large ambiguous brownfield → break
 into smaller ADRs or run manually; don't force it through one ADR.
 
 ## See also
 
 - Design spec: [`2026-06-27-adr-driven-development-design.md`](https://github.com/jasonm4130/claude-skills/blob/main/docs/superpowers/specs/2026-06-27-adr-driven-development-design.md)
-- The loop it drives: the `subagent-driven-development` skill
+- The loop it drives: the `nightshift` plugin

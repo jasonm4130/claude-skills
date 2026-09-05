@@ -11,8 +11,8 @@
     {
       "name": "adr",
       "source": "./plugins/adr",
-      "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to the subagent-driven-development loop. Front-end for adr \u2192 sdd.",
-      "version": "0.5.1",
+      "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to nightshift:plan's landing step. Front-end for adr \u2192 nightshift.",
+      "version": "0.6.0",
       "author": {
         "name": "Jason Matthew"
       },
@@ -21,8 +21,7 @@
         "adr",
         "architecture-decision-record",
         "grounding",
-        "subagent-driven-development",
-        "sdd"
+        "nightshift"
       ],
       "category": "productivity"
     },
@@ -30,7 +29,7 @@
       "name": "codex-review",
       "source": "./plugins/codex-review",
       "description": "Cross-provider adversarial plan/design-doc review via OpenAI Codex (GPT-5.6 Terra): verdict-loop protocol, atomic chain guard, cross-repo decision-gate log.",
-      "version": "0.5.4",
+      "version": "0.5.5",
       "author": {
         "name": "Jason Matthew"
       },
@@ -119,25 +118,6 @@
       "category": "productivity"
     },
     {
-      "name": "landing-loop",
-      "source": "./plugins/landing-loop",
-      "description": "Outer loop for unattended delivery: lands every task of a human-approved plan on main \u2014 one PR per task, CI as the only gate, the repo's own merge command, a ledger in git. Drives subagent-driven-development per task.",
-      "version": "0.1.0",
-      "author": {
-        "name": "Jason Matthew"
-      },
-      "license": "MIT",
-      "keywords": [
-        "unattended",
-        "autonomous",
-        "landing",
-        "pull-request",
-        "ci-gate",
-        "subagent-driven-development"
-      ],
-      "category": "productivity"
-    },
-    {
       "name": "nightshift",
       "source": "./plugins/nightshift",
       "description": "Plan by day, land by night, triage in the morning: scaffolds an overnight landing loop (one task per CI-gated PR, generator + verifier + skeptic, PreToolUse guards, kill switch) into a repo, plus the plan and morning skills around it.",
@@ -187,42 +167,6 @@
         "stop-hook",
         "code-review",
         "finishing"
-      ],
-      "category": "productivity"
-    },
-    {
-      "name": "subagent-driven-development",
-      "source": "./plugins/subagent-driven-development",
-      "description": "Deterministic workflow-driven subagent development loop \u2014 plan/confirm in the controller, then a background Workflow enforces per-task implement/review/fix with tiered models and codified ponytail discipline.",
-      "version": "0.12.0",
-      "author": {
-        "name": "Jason Matthew"
-      },
-      "license": "MIT",
-      "keywords": [
-        "subagent-driven-development",
-        "sdd",
-        "workflow",
-        "code-review",
-        "ponytail"
-      ],
-      "category": "productivity"
-    },
-    {
-      "name": "superpowers-core",
-      "source": "./plugins/superpowers-core",
-      "description": "Owned fork of the superpowers process skills: brainstorming, systematic-debugging, writing-plans, writing-skills, test-driven-development.",
-      "version": "0.7.1",
-      "author": {
-        "name": "Jason Matthew"
-      },
-      "license": "MIT",
-      "keywords": [
-        "skills",
-        "process",
-        "brainstorming",
-        "tdd",
-        "claude-code"
       ],
       "category": "productivity"
     },
