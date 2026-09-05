@@ -5,7 +5,7 @@
 # PLAN is the one line that changes: the plan being landed, relative to the
 # repo root, with `# Task N` headings. Changing it is a pull request, so what
 # the loop works on tonight is always something a human committed.
-: "${PLAN:=docs/plans/2026-09-05-nightshift-smoke.md}"
+: "${PLAN:=docs/plans/2026-09-05-audit-code-fixes.md}"
 : "${BASE:=main}"
 
 # The verifier. Must print CHECK OK as its last line on success.
