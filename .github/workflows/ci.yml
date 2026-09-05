@@ -59,16 +59,6 @@ jobs:
             claude plugin validate "$p"
           done
 
-  bash-tests:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run SDD bash helper smoke tests
-        run: bash plugins/subagent-driven-development/scripts/scripts.test.sh
-
   go-guards:
     # macOS-only by design: the committed binary is a macOS universal build, and
     # `macos-latest` is the one runner where scripts/ccguard-differential.test.mjs

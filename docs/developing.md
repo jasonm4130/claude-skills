@@ -50,7 +50,7 @@ rather than references anyone can follow.
 CI (`.github/workflows/ci.yml`) validates all JSON manifests, runs `claude plugin
 validate` against every `plugins/<name>/` directory (catches malformed skill
 frontmatter that the JSON check above doesn't reach), runs the node test suite
-on ubuntu+macos (Node 24), runs the SDD bash smoke tests, runs `go-guards`
+on ubuntu+macos (Node 24), runs `go-guards`
 (the `plugins/gates/go/` unit tests, a rebuild-and-compare against the committed
 binary, plus the differential test), and runs `version-bump-check` (see Releasing).
 

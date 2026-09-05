@@ -27,18 +27,15 @@ references one machine's paths, prose calibration, or state, it belongs in dotfi
 
 | Plugin | Description | Requirements | Install command |
 |---|---|---|---|
-| `adr` | Intent → grounded, cited, build-ready ADR, handed to the SDD loop | – | `/plugin install adr@jasonm4130-claude-skills` |
+| `adr` | Intent → grounded, cited, build-ready ADR, handed to Nightshift's landing step | – | `/plugin install adr@jasonm4130-claude-skills` |
 | `codex-review` | Cross-provider plan/design review via OpenAI Codex (Terra) | Node 18+ · [Codex CLI](https://github.com/openai/codex) | `/plugin install codex-review@jasonm4130-claude-skills` |
 | `domain-modeling` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms; offers one once per repo that lacks it | Node 18+ | `/plugin install domain-modeling@jasonm4130-claude-skills` |
 | `frontend-design` | Light-inline design guidance, or a paste-ready browser brief for wide/detailed work | – | `/plugin install frontend-design@jasonm4130-claude-skills` |
 | `gates` | Four PreToolUse gates — docs-drift commit gate, scaffold-before-design gate, Workflow and Agent model tiering — plus a non-blocking docs-consolidation nudge | Node 18+ | `/plugin install gates@jasonm4130-claude-skills` |
 | `handoff` | On-demand `/handoff` resume doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
-| `landing-loop` | Outer loop for unattended delivery: lands every task of an approved plan as one PR each, CI-gated, merged through the repo's merge command | `subagent-driven-development` · `gh` | `/plugin install landing-loop@jasonm4130-claude-skills` |
 | `nightshift` | Plan by day, land by night, triage in the morning — scaffolds the overnight landing loop (one task per CI-gated PR, guards the generator cannot loosen, kill switch) into a repo | `gh` · Node 18+ · `timeout` · macOS for launchd | `/plugin install nightshift@jasonm4130-claude-skills` |
 | `session-retro` | Session retrospectives that capture learnings to memory | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
-| `subagent-driven-development` | Deterministic workflow-driven implement/review/fix loop | – | `/plugin install subagent-driven-development@jasonm4130-claude-skills` |
-| `superpowers-core` | Owned fork of the superpowers process skills (brainstorming, writing-plans, TDD, systematic-debugging, writing-skills) | – | `/plugin install superpowers-core@jasonm4130-claude-skills` |
 | `writing-artifacts` | Positive writing system for durable artifacts (READMEs, ADRs, docs, runbooks) | – | `/plugin install writing-artifacts@jasonm4130-claude-skills` |
 
 Full details per plugin: see `plugins/<name>/README.md`.

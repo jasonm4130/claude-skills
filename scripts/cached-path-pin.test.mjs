@@ -115,10 +115,8 @@ for (const file of skillFiles()) {
 
 test("the scan finds the known cached-path resolvers", () => {
   const files = filesWithRefs.map((f) => f.file);
-  for (const expected of [
-    "plugins/adr/skills/adr/SKILL.md",
-    "plugins/subagent-driven-development/skills/subagent-driven-development/SKILL.md",
-  ]) {
+  // No shipped skill resolves a cached path today; nightshift's skills use ${CLAUDE_PLUGIN_ROOT}. Add entries here when one does.
+  for (const expected of []) {
     assert.ok(
       files.includes(expected),
       `${expected} has no cached-path snippet — did the scan break, or was the resolver removed?`,
