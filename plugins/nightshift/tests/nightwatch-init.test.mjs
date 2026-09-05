@@ -371,3 +371,17 @@ test("a generated check behind a space is quoted once, and the launcher runs tha
   assert.equal(lc.pop(), "exit=0");
   assert.equal(lc.pop(), "CHECK OK");
 });
+
+test("a check path with a single quote is refused by both rendering rules, since bash -c '…' cannot carry it", async () => {
+  const { checkCmd } = await import("../nightwatch/init.mjs");
+  assert.throws(() => checkCmd("/Users/O'Connor/.local/state/nightwatch/r/check"), /cannot be quoted/);
+  assert.equal(checkCmd("/tmp/a b/check"), '"/tmp/a b/check"');
+
+  const r = workingRepo(undefined, { check: false });
+  const res = spawnSync("bash", [join(HERE, "..", "nightwatch", "run.sh"), r.repo, r.repo, "--print-settings"], {
+    encoding: "utf8",
+    env: { ...initEnv(r), CHECK: "/Users/O'Connor/check", HOME: r.home },
+  });
+  assert.equal(res.status, 1);
+  assert.match(res.stderr, /STOP: check path cannot be quoted/);
+});

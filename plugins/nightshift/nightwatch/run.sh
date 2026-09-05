@@ -136,7 +136,7 @@ CHECK_SHA=${cfg_CHECK_SHA:-}                                 # set only for a ch
 # quotes, not single, because the engine wraps each command in `bash -c '…'`.
 case "$CHECK" in
   *[!A-Za-z0-9_./-]*)
-    case "$CHECK" in *[\"\$\`\\]*) echo "STOP: check path cannot be quoted" >&2; exit 1 ;; esac
+    case "$CHECK" in *[\"\'\$\`\\]*) echo "STOP: check path cannot be quoted" >&2; exit 1 ;; esac
     CHECK_CMD="\"$CHECK\"" ;;
   *) CHECK_CMD=$CHECK ;;
 esac

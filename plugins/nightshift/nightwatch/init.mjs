@@ -87,7 +87,8 @@ function onPath(name) {
  */
 export function checkCmd(check) {
   if (/^[A-Za-z0-9_./-]+$/.test(check)) return check;
-  if (/["$`\\]/.test(check)) throw new Error("STOP: check path cannot be quoted");
+  // A single quote would end the engine's `bash -c '…'` wrapper early, so it is refused too.
+  if (/["'$`\\]/.test(check)) throw new Error("STOP: check path cannot be quoted (it contains a quote, $, ` or \\); pass --clone-root and a HOME without them");
   return `"${check}"`;
 }
 
