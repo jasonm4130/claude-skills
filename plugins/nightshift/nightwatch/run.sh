@@ -97,16 +97,19 @@ unit_run() { # unit_run <spec-path> <unit-index> <check-verified 0|1> → writes
   local out=$RUN/$slug-u$n.json
   local argsjson prompt
   argsjson=$(jq -nc --arg repo "$CLONE" --arg spec "$spec" --arg branch "$branch" --arg landing "$LANDING" \
-    --argjson unit "$n" --argjson max "$MAX_UNITS" --arg runDir "$RUN/$slug" --argjson cv "$( [ "$cv" = 1 ] && echo true || echo false )" --argjson dry "$( [ $dry = 1 ] && echo true || echo false )" \
+    --argjson unit "$n" --argjson max "$MAX_UNITS" --arg runDir "$STATE/outcomes/$slug" --argjson cv "$( [ "$cv" = 1 ] && echo true || echo false )" --argjson dry "$( [ $dry = 1 ] && echo true || echo false )" \
     '{repo:$repo, spec:$spec, branch:$branch, landingBranch:$landing, unit:$unit, maxUnits:$max, runDir:$runDir, checkVerified:$cv, dryRun:$dry}')
-  mkdir -p "$RUN/$slug"
+  # The brief and the result files live per outcome, not per launch, so a relaunch
+  # after a kill sees the unit that was in flight. A stale result from an earlier
+  # launch must not be mistaken for this unit's, so it is removed first.
+  mkdir -p "$STATE/outcomes/$slug"; rm -f "$STATE/outcomes/$slug/u$n.result.json"
   prompt="Run the Workflow tool with scriptPath \"$here/nightwatch.mjs\" and args $argsjson (pass args as a JSON object, not a string). The workflow runs in the background and can take over an hour: do not answer while it is still running, and never invent its result. When it has returned, reply with the object it returned, as JSON, unchanged. If it throws or is aborted, reply with {\"state\":\"FAILED\",\"unitTitle\":\"\",\"summary\":\"<the error text>\",\"blockedReason\":\"\",\"commits\":[]}."
   # The child gets its own process group (set -m) so the watchdog can kill the
   # whole tree mid-unit: on the wall-clock cap, or when the repo variable stops
   # saying run. That is the phone kill; nothing in the old loop had it.
   set -m
   (env "${scrub[@]}" "${unsigned[@]}" "${noscrub[@]}" claude -p "$prompt" \
-      --permission-mode auto --permission-prompts none --add-dir "$RUN" --add-dir "$SPECS" --add-dir "$here" \
+      --permission-mode auto --permission-prompts none --add-dir "$STATE" --add-dir "$SPECS" --add-dir "$here" \
       --allowedTools "Workflow,Agent,Read,Write,Edit,Bash,Glob,Grep,ToolSearch,Skill,WebFetch,WebSearch,StructuredOutput,advisor" \
       --setting-sources "$SETTING_SOURCES" --settings '{"env":{"CLAUDE_CODE_SUBPROCESS_ENV_SCRUB":"0"}}' --no-session-persistence \
       --max-budget-usd "$UNIT_BUDGET" --model "$MAIN_MODEL" --output-format json --json-schema "$UNIT_SCHEMA" \
@@ -130,7 +133,7 @@ unit_run() { # unit_run <spec-path> <unit-index> <check-verified 0|1> → writes
   turns=$(jq -r '.num_turns // 0' "$out" 2>/dev/null || echo 0)
   # The unit's own record, written by the workflow's last agent; the driver's reply
   # is only a fallback for cost and turns. No file means the workflow never finished.
-  local res=$RUN/$slug/u$n.result.json
+  local res=$STATE/outcomes/$slug/u$n.result.json
   if [ -s "$res" ]; then
     state=$(jq -r '.state // empty' "$res" 2>/dev/null)
     title=$(jq -r '.unitTitle // ""' "$res" 2>/dev/null)

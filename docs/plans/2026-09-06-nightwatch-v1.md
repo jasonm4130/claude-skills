@@ -12,13 +12,13 @@ Written 2026-09-05 23:10 while the first unattended run (ambient, six specs) was
 
 ## 1. Morning tooling
 
-**Outcome.** One command reads the night: journal since the last `start:` line, every outcome's state and branch, commits ahead of `origin/main` on the integration branch, cost, and the two commands to push and open the PR. It also records Jason's verdict per outcome (merged, reverted, overridden an eval concern, discarded) into `decisions.jsonl`, which is what makes the override rate measurable.
-**Acceptance.** `nightwatch/morning.sh <clone>` prints the report for last night's run in under a second; `nightwatch/morning.sh <clone> --verdict <slug> <merged|reverted|overridden|discarded>` appends one line to `decisions.jsonl`; `node --test plugins/nightshift/nightwatch/*.test.mjs` covers both against a fixture journal.
+**Outcome.** One command reads the night: journal since the last `start:` line, every outcome's state and branch, commits ahead of `origin/main` on the integration branch, cost, and the two commands to push and open the PR. It also writes the batch PR body: one section per landed outcome with the spec title, the acceptance commands and their captured output from the unit result files, and the commit range. It also records Jason's verdict per outcome (merged, reverted, overridden an eval concern, discarded) into `decisions.jsonl`, which is what makes the override rate measurable.
+**Acceptance.** `nightwatch/morning.sh <clone>` prints the report for last night's run in under a second and writes `pr-body.md` beside the journal; `nightwatch/morning.sh <clone> --verdict <slug> <merged|reverted|overridden|discarded>` appends one line to `decisions.jsonl`; `node --test plugins/nightshift/nightwatch/*.test.mjs` covers both against a fixture journal.
 **Non-goals.** No merging; the push and the PR stay Jason's.
 
 ## 2. Parallel outcomes
 
-**Outcome.** Independent specs run at the same time. A spec may carry `Depends: <slug>[, <slug>]` under its title line; the launcher runs up to `SLOTS` specs whose dependencies have landed, each in its own clone (`<clone>`, `<clone>-2`, …) on its own outcome branch, and lands each onto the integration branch by rebasing the outcome branch onto it first, then fast-forwarding. A rebase conflict marks the outcome BLOCKED with the conflicting paths in the journal.
+**Outcome.** Independent specs run at the same time. A spec may carry `Depends: <slug>[, <slug>]` under its title line; the launcher runs up to `SLOTS` specs whose dependencies have landed, each in its own clone (`<clone>`, `<clone>-2`, …) on its own outcome branch, and lands each onto the integration branch by rebasing the outcome branch onto it first, then fast-forwarding. A rebase conflict marks the outcome BLOCKED with the conflicting paths in the journal. A spec is claimed by a lock file `~/.local/state/nightwatch/<repo>/locks/<slug>` holding the launcher pid; a launcher that finds a live lock skips the spec and says so.
 **Acceptance.** With `SLOTS=2` and three specs where the third depends on the first, the launcher starts specs 1 and 2 together and starts 3 only after 1 lands (checked with stub specs whose acceptance is `true` and a fake `claude` on PATH that commits one file); `shellcheck -S warning run.sh` clean.
 **Non-goals.** No parallelism inside a unit yet (item 6). No shared cargo target directory: each clone builds its own, which is the price of isolation and bounds `SLOTS` at 2 or 3 on the M5 Max.
 
@@ -58,7 +58,7 @@ Written 2026-09-05 23:10 while the first unattended run (ambient, six specs) was
 
 ## 9. Retire the old loop
 
-**Outcome.** `land.sh`, `task-brief`, `PROMPT.md`, `SKEPTIC.md`, the launchd plist and `nightshift:morning` are deleted from the plugin templates, consumers take the deletion through `init.mjs --update`, and the plugin is renamed Nightwatch across `plugins/`, `docs/` and the marketplace manifest.
+**Outcome.** `land.sh`, `task-brief`, `PROMPT.md`, `SKEPTIC.md`, the launchd plist and `nightshift:morning` are deleted from the plugin templates; `init.mjs` gains a removal list and a Nightwatch install path (today it never deletes and renders a fixed `LOOP_FILES` list); consumers take the deletion through `init.mjs --update`, and the plugin is renamed Nightwatch across `plugins/`, `docs/` and the marketplace manifest.
 **Acceptance.** `init.mjs --check` in ambient and claude-skills reports nothing to update; `grep -ri nightshift docs plugins` returns only the changelog; the ambient `nightshift-*` worktrees are gone (landed or abandoned by Jason first).
 **Non-goals.** Not before ambient's seven in-flight worktrees are drained, per decision 13.
 
