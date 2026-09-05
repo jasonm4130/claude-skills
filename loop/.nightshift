@@ -1,23 +1,23 @@
 {
-  "version": "0.1.0",
+  "version": "0.1.2",
   "vars": {
     "PLAN": "docs/plans/2026-09-05-nightshift-smoke.md",
     "MERGE_MODE": "protected",
     "BASE": "main",
-    "NAME": "wt-pr4"
+    "NAME": "claude-skills"
   },
   "files": {
-    "loop/land.sh": "8d4a859184c4a6b4fb45abefc4909f2d676d8bec550890098f621354b87000b4",
+    "loop/land.sh": "9904ab4d338ee018dc2f5fd47b82aef311925f24d55f77761e9982baa0b504e8",
     "loop/config": "a9881b04434363da1946086afbf99928d59e2c26f241d9871c64ded2ddce9854",
-    "loop/PROMPT.md": "b652c0c12e0e9f38329f7e6216f67bb15dc96186160b68d46718b38d9c464630",
+    "loop/PROMPT.md": "56d9db86dbf8a42d598d449aa56d78773041a7eda7cf735484fa76f9f090ecb4",
     "loop/SKEPTIC.md": "0388ffa5e1f97a5771d97e6ac1a4f4bf520f8c0b7a4053533326ef8d07fd2b95",
     "loop/task-brief": "572c44861dda267be159f71368cbe9b8bc5ed3680ab17307dd9344a951f2fd16",
     "loop/merge-pr.sh": "03612dd4ae66c4c4a798594c26045a24cc6acf32949ccf849dcf2f7968225843",
-    "loop/launchd.plist": "95181ece4825fa4defae767960739b797c1a6ab5ec66352cf75c82cdc5f3c56e",
+    "loop/launchd.plist": "751e31e1468a84e48f3e9719c7eb8638eceaee23dba20f6cb4650f132bdface9",
     ".claude/hooks/no-route-around-ci.mjs": "dd47fd7941ef3c91ae9830d446cb62fbbc78821580e3c2a4f1974cac7ea8f104",
     ".claude/hooks/tests-are-readonly.mjs": "f073053adf9326334f89445f39b5c8f5e8333da23d0bb5f8029e0d2b09c5403b",
     ".claude/hooks/hooks.test.mjs": "1e1f8e46c720b96f8397cd1dfe831c77d620f53638f1812974c627472ed390b7",
     "scripts/check": "01ba77babd8315fbebd7ce96ce25084ab125596d3f159ff4978956f256e80900",
-    "docs/nightshift.md": "a1864a0e77d3657b195767f96436442bb692b685d9614b16f1182f1d1f0be65f"
+    "docs/nightshift.md": "61850228276a034e7e7e967a67b6b0b9c2130b34d45ea72390182c20b59a5d0d"
   }
 }

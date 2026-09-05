@@ -48,6 +48,7 @@ repo=$(cd "$here/.." && pwd)
 : "${BRANCH_PREFIX:=land}"
 : "${LABEL:=land}"
 : "${BLOCKED_LABEL:=land:blocked}"
+: "${RETRY_LABEL:=land:retry}"
 : "${STATE_VAR:=LANDING_STATE}"
 : "${SETTING_SOURCES:=project}"
 : "${WORKTREE:=$repo/../$(basename "$repo")-nightshift}"
@@ -119,9 +120,16 @@ open_pr() {
   gh pr list --state open --head "$(branch_for "$1")" --base "$BASE" \
     --json number,isDraft,labels --jq '.[] | "\(.number)\t\(.isDraft)\t\([.labels[].name] | join(","))"' 2>/dev/null | head -1
 }
+# A closed, unmerged PR means a human declined the task, unless they labelled
+# it with the retry label, which says "run it again from scratch".
 closed_unmerged_pr() {
   gh pr list --state closed --head "$(branch_for "$1")" --base "$BASE" \
-    --json number,mergedAt --jq '.[] | select(.mergedAt == null) | .number' 2>/dev/null | head -1
+    --json number,mergedAt,labels --jq ".[] | select(.mergedAt == null) | select([.labels[].name] | index(\"$RETRY_LABEL\") | not) | .number" 2>/dev/null | head -1
+}
+# Any closed PR on the branch, retry-labelled or not: its commits live on in
+# the PR, so the remote branch can be freed without losing anything.
+any_closed_pr() {
+  gh pr list --state closed --head "$(branch_for "$1")" --base "$BASE" --json number --jq '.[0].number' 2>/dev/null
 }
 
 fill() { # fill <template-file> KEY=VALUE...  ({{KEY}} → VALUE, values may be multi-line)
@@ -131,16 +139,32 @@ fill() { # fill <template-file> KEY=VALUE...  ({{KEY}} → VALUE, values may be 
   printf '%s\n' "$text"
 }
 
+# A claude launched from inside another Claude Code session inherits that
+# session's environment, and the CLI then forces default permission mode as a
+# hardening step, which turns every edit into a prompt nobody can answer. The
+# loop must behave the same from launchd, a terminal, or a session, so those
+# variables are dropped for the child. --add-dir lets it read the brief, which
+# lives outside the worktree on purpose.
+# Commits are unsigned: a signing key behind an agent (1Password, gpg-agent)
+# answers only while unlocked, and at 02:00 it is not. The merge commit is
+# GitHub's and the PR is the audit trail.
+unsigned=(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=commit.gpgsign GIT_CONFIG_VALUE_0=false)
+scrub=(-u CLAUDECODE -u CLAUDE_CODE_SUBPROCESS_ENV_SCRUB -u CLAUDE_CODE_CHILD_SESSION
+  -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_CODE_MESSAGING_SOCKET
+  -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_PID -u CLAUDE_EFFORT)
+
 # One claude -p call. Writes the JSON envelope and the text result to run_dir,
 # logs the cost, and prints the result text. Never fails the script: the caller
-# judges by what is in git, not by the exit code.
+# judges by what is in git, not by the exit code. stdin is /dev/null: claude -p
+# reads stdin even with a prompt argument, and the task list is on stdin while
+# the night loop runs, so a generator once ate the remaining tasks.
 ask() { # ask <name> <permission-mode> <budget> <timeout> <prompt>
   local name=$1 mode=$2 budget=$3 t=$4 prompt=$5
   local out=$run_dir/$name.json
-  (cd "$WORKTREE" && bounded "$t" claude -p "$prompt" \
-      --permission-mode "$mode" --permission-prompts none \
+  (cd "$WORKTREE" && bounded "$t" env "${scrub[@]}" "${unsigned[@]}" claude -p "$prompt" \
+      --permission-mode "$mode" --permission-prompts none --add-dir "$run_dir" \
       --setting-sources "$SETTING_SOURCES" --no-session-persistence \
-      --max-budget-usd "$budget" --model "$MODEL" --output-format json) >"$out" 2>"$run_dir/$name.stderr" || true
+      --max-budget-usd "$budget" --model "$MODEL" --output-format json </dev/null) >"$out" 2>"$run_dir/$name.stderr" || true
   jq -r '.result // empty' "$out" 2>/dev/null >"$run_dir/$name.md" || true
   local cost turns
   cost=$(jq -r '.total_cost_usd // 0' "$out" 2>/dev/null || echo 0)
@@ -162,15 +186,22 @@ ensure_worktree() {
 fresh_branch() { # fresh_branch <branch>: the branch at origin/<base>, no leftovers
   gw switch -q --detach "origin/$BASE"
   gw branch -q -D "$1" 2>/dev/null || true
-  # Only reached when GitHub has no PR for this task, so a remote branch here is
-  # a run that died between push and `gh pr create`. Its commits are kept under
-  # a dated name (a human may want them) and the name is freed; without this the
-  # fresh branch's push is rejected as non-fast-forward and the night stops.
-  if git -C "$repo" show-ref -q --verify "refs/remotes/origin/$1"; then
-    local keep="$1-stranded-$(date +%Y%m%d%H%M%S)"
-    gw push -q origin "refs/remotes/origin/$1:refs/heads/$keep" 2>/dev/null \
-      || die "stranded remote branch $1 (no PR) could not be kept as $keep; a human decides what to do with it"
-    log "  stranded remote branch $1 (no PR); kept as $keep, name freed"
+  # Only reached when no PR is open for this task. A remote branch here is
+  # either a retry after a closed PR (GitHub deletes branches only on merge; the
+  # PR keeps the commits, so the branch is simply freed) or a run that died
+  # between push and `gh pr create` (no PR at all: the commits are kept under a
+  # dated name first). Without this the fresh branch's push is rejected as
+  # non-fast-forward and the night stops.
+  if gw ls-remote --exit-code --heads origin "$1" >/dev/null 2>&1; then
+    local n=${1##*-t}
+    if [ -n "$(any_closed_pr "$n")" ]; then
+      log "  deleting remote branch $1 left by a closed PR"
+    else
+      local keep="$1-stranded-$(date +%Y%m%d%H%M%S)"
+      gw push -q origin "refs/remotes/origin/$1:refs/heads/$keep" 2>/dev/null \
+        || die "stranded remote branch $1 (no PR) could not be kept as $keep; a human decides what to do with it"
+      log "  stranded remote branch $1 (no PR); kept as $keep"
+    fi
     gw push -q origin --delete "$1" 2>/dev/null || die "could not free branch name $1"
   fi
   gw switch -q -c "$1" "origin/$BASE"
@@ -180,6 +211,15 @@ run_check() { # run_check <round>: 0 if CHECK_CMD ends with CHECK OK
   local logf=$run_dir/check-$1.log
   (cd "$WORKTREE" && bounded "$CHECK_TIMEOUT" bash -c "$CHECK_CMD") >"$logf" 2>&1
   [ "$(tail -1 "$logf")" = "CHECK OK" ]
+}
+
+# gh pr create prints the PR's URL and has no --json; the number is the last
+# path segment. Falls back to looking the branch up, for a PR that already
+# exists from a killed run.
+open_pr_number() { # open_pr_number <gh pr create flags...>
+  local url
+  url=$(gh pr create --base "$BASE" --head "$branch" "$@" 2>&1 | grep -oE 'https://[^ ]+/pull/[0-9]+' | tail -1)
+  if [ -n "$url" ]; then echo "${url##*/}"; else gh pr view "$branch" --json number --jq .number; fi
 }
 
 pr_body() { # pr_body <n> <title> <status-line>
@@ -210,7 +250,7 @@ land_pr() { # land_pr <n> <pr>
   if [ -n "$MERGE_CMD" ]; then
     # NIGHTSHIFT=1 tells merge-pr.sh to re-read the kill switch after the wait.
     # shellcheck disable=SC2086
-    (cd "$WORKTREE" && NIGHTSHIFT=1 bounded "$MERGE_TIMEOUT" $MERGE_CMD "$pr") >"$run_dir/merge.log" 2>&1 || rc=$?
+    (cd "$WORKTREE" && NIGHTSHIFT=1 bounded "$MERGE_TIMEOUT" $MERGE_CMD "$pr" </dev/null) >"$run_dir/merge.log" 2>&1 || rc=$?
   else
     local waited=0 st
     while :; do
@@ -284,9 +324,8 @@ $(tail -60 "$run_dir/check-$round.log")"
     fi
     if [ "$round" -ge "$REPAIR_ROUNDS" ]; then
       gw push -q -u origin "$branch" || die "push failed"
-      pr=$(gh pr create --draft --base "$BASE" --head "$branch" --label "$BLOCKED_LABEL" \
-        --title "[task $n] $title" --body "$(pr_body "$n" "$title" "blocked: $( [ -z "$verdict" ] && echo "verifier red" || echo "$verdict")")" \
-        --json number --jq .number 2>/dev/null || gh pr view "$branch" --json number --jq .number)
+      pr=$(open_pr_number --draft --label "$BLOCKED_LABEL" --title "[task $n] $title" \
+        --body "$(pr_body "$n" "$title" "blocked: $( [ -z "$verdict" ] && echo "verifier red" || echo "$verdict")")")
       log "task $n: blocked after $((round + 1)) round(s); draft PR #$pr carries the evidence"
       return 1
     fi
@@ -294,9 +333,7 @@ $(tail -60 "$run_dir/check-$round.log")"
   done
 
   gw push -q -u origin "$branch" || die "push failed"
-  pr=$(gh pr create --base "$BASE" --head "$branch" --label "$LABEL" \
-    --title "[task $n] $title" --body "$(pr_body "$n" "$title" "$verdict")" \
-    --json number --jq .number 2>/dev/null || gh pr view "$branch" --json number --jq .number)
+  pr=$(open_pr_number --label "$LABEL" --title "[task $n] $title" --body "$(pr_body "$n" "$title" "$verdict")")
   log "task $n: PR #$pr open, handing to the gate"
   land_pr "$n" "$pr"
 }

@@ -19,12 +19,14 @@ says where it stopped.
    (repository variable `LANDING_STATE` must be `run`), and finds the first
    `# Task N` that has not landed. Landed means a merge commit on `main` names
    the branch `land/<plan>-tN`; nothing is stored anywhere else.
-2. In its own worktree (`../wt-pr4-nightshift`) it branches from `origin/main`,
+2. In its own worktree (`../claude-skills-nightshift`) it branches from `origin/main`,
    extracts the task's section with `loop/task-brief`, and runs a
    budget-capped `claude -p` in auto mode with `loop/PROMPT.md`. The generator
    commits and never pushes. Only the repository's own `.claude/settings.json`
    loads, so the allow rules and the two hooks under `.claude/hooks/` are the
-   whole permission surface.
+   whole permission surface. Its commits are unsigned: a signing key behind an
+   agent (1Password, gpg-agent) answers only while unlocked, and at 02:00 it is
+   not. The merge commit is GitHub's and the PR is the audit trail.
 3. `scripts/check` must end with `CHECK OK`. Then a read-only `claude -p` with
    `loop/SKEPTIC.md` reads the diff and the task and ends with `VERDICT: OK` or
    `VERDICT: REFUTED`.
@@ -43,7 +45,7 @@ human-closed PR on any task stops the plan until someone acts.
 
 ## Reading the morning
 
-- `~/.local/state/nightshift/wt-pr4/journal.md` is one line per event, and
+- `~/.local/state/nightshift/claude-skills/journal.md` is one line per event, and
   every stop says why: `STOP: frozen`, `STOP: task 3 is blocked`,
   `STOP: done: 2 task(s) landed tonight`.
 - Each task's run has a directory beside it, `YYYY-MM-DD-tN/`, holding the
@@ -59,7 +61,7 @@ human-closed PR on any task stops the plan until someone acts.
 | --- | --- | --- |
 | `LANDING_STATE` is not `run` | `gh variable set LANDING_STATE --body frozen` | setting it back to `run` |
 | `land:blocked` draft PR on a task | the loop, on a second red or a refutation | a human fixing or closing the PR |
-| A closed, unmerged PR on a task | a human | deleting it from the plan or reopening |
+| A closed, unmerged PR on a task | a human | labelling that PR `land:retry` (run it again from scratch) or removing the task from the plan |
 | `MAX` tasks, or `DEADLINE` | `loop/config` | the next night |
 | Budget | `--max-budget-usd` on each `claude -p` | nothing; a task that runs out of money produces no commits and the night stops |
 
@@ -100,12 +102,18 @@ night is capped at `MAX` tasks. CI cost is the usual per-PR run.
 3. Install the schedule:
 
    ```sh
-   sed -e "s|__REPO__|$PWD|g" -e "s|__HOME__|$HOME|g" -e "s|__NAME__|wt-pr4|g" \
+   sed -e "s|__REPO__|$PWD|g" -e "s|__HOME__|$HOME|g" -e "s|__NAME__|claude-skills|g" \
        -e "s|__PATH__|$PATH|g" loop/launchd.plist \
-       > ~/Library/LaunchAgents/dev.nightshift.wt-pr4.plist
-   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.nightshift.wt-pr4.plist
-   launchctl kickstart gui/$(id -u)/dev.nightshift.wt-pr4   # run it now, once
+       > ~/Library/LaunchAgents/dev.nightshift.claude-skills.plist
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.nightshift.claude-skills.plist
+   launchctl kickstart gui/$(id -u)/dev.nightshift.claude-skills   # run it now, once
    ```
+
+   A free proof that the launchd environment works: add `MAX` set to `0`
+   under `EnvironmentVariables` in the installed plist, kickstart, and read
+   `launchd.log` in the state directory. It should fetch, check the switch,
+   and stop with `0 task(s) landed` in a few seconds. Remove the key and
+   reload before the night.
 
    The Mac must be logged in: `claude` and `gh` use this user's credentials,
    and `caffeinate -i` only holds off idle sleep.
