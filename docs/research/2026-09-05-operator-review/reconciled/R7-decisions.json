@@ -1,0 +1,136 @@
+{
+  "label": "R7-decisions",
+  "findings": [
+    {
+      "title": "Position moves Jason more than the \"(Recommended)\" label, and he refuses the menu one time in five",
+      "claim": "Jason takes the agent's \"(Recommended)\" option on 76.5% of local and 84.9% of archive AskUserQuestion answers (88.1% / 90.6% counting only questions he answered by picking an option at all). But ordering, not the label, carries most of that: on 280 unlabelled archive questions he still picked the first-listed option 72.1% of the time against a ~34% chance baseline, so the label is worth roughly 18pp over position in the larger sample. He also declines the menu outright — free text or a clarify-rejection — on about one question in five, which is direct counter-evidence to the idea that the decision is settled in the option-framing step before he sees it. The operator lesson survives in weaker form: option framing is influential but not decisive, so the fix is to change how options are ordered and argued, not to assume agency has been surrendered.",
+      "evidence": "AskUserQuestion tool_use/tool_result pairs parsed from raw transcripts selected via REVIEW/local.sessions.jsonl and archive.sessions.jsonl; verifier re-parse at REVIEW/out/refute-R7-decisions/auq2.py. Local: 52 of 68 answered questions took the recommendation (76.5%); archive 163 of 192 (84.9%). Unlabelled archive control: 202 of 280 first-listed (72.1%), mean 2.9 options. Local unlabelled control disagrees at 35 of 81 (43.2%). Refusals: 31 local + 34 archive answers matched no offered option, plus 5 local + 21 archive clarify-rejections. Mechanism source narrowed on verification: Romeo & Conti, AI & Society 41(1):259-278, July 2025 (DOI 10.1007/s00146-025-02422-7) is a PRISMA review of 35 studies, not a measurement, and its headline is that explanations fail to fix automation bias; Le & Kunz, Journal of Service Management 37(6), six experiments N=1,370, is the genuinely empirical source on complacency under concurrent load.",
+      "classification": "operator failure",
+      "confidence": "medium",
+      "action": "Add one line to ~/.claude/CLAUDE.md: in AskUserQuestion, never label an option \"(Recommended)\", state the strongest argument against the preferred option inside the question body, and put the favoured option last. Because position is the larger effect, the ordering half is the part that matters. Re-measure acceptance in two weeks; if it holds at 76%, framing was not the lever.",
+      "status": "corrected",
+      "question": "Q3 operator gaps"
+    },
+    {
+      "title": "Run a 2-minute pre-mortem at the plan gate, not a review after",
+      "claim": "Jason approves plans and long runs without a structured failure-generation step. Prospective hindsight — assume it already failed, then list why — is the one technique measured to beat critique and pro-con lists at puncturing plan overconfidence, and it costs one prompt. It attaches to a moment Jason already has, the plan gate his own CLAUDE.md mandates. Scope limit carried from verification: the measured outcome is lower plan confidence and better-identified reasons, not better plans or fewer failures.",
+      "evidence": "Klein, \"Performing a Project Premortem\", HBR September 2007, verbatim: prospective hindsight \"increases the ability to correctly identify reasons for future outcomes by 30%\" (Mitchell, Russo & Pennington 1989; that study did not assess reason quality). Veinott, Klein & Wiggins, 7th ISCRAM Conference, Seattle 2010: n=178, five conditions (baseline, critique, pro/con, con-only, premortem); premortem cut confidence ratings ~25 points, significantly more than PRO-CON and CON-only, p<.0001 (the ISCRAM PDF now 503s; record verified via ISCRAM/Semantic Scholar). Exposure replicates from REVIEW/local.sessions.jsonl: plan mode in 8 of 78 local sessions, 31 of 1,391 archive.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "At every plan gate, before approving: \"Assume we shipped this and it failed. Write the three most likely causes and what each would have looked like at this moment.\" Wire it into the plan-gate prompt of the SDD/nightshift flow so it fires without willpower.",
+      "status": "confirmed",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Jason's context-loading hypothesis is not supported by his own correction data",
+      "claim": "Jason suspects he fires off work without loading context. The first half is measurably true: 46% of local sessions open under 150 characters, up from 17% in the archive, and nine of those short-opener sessions each burned over 100k output tokens. The predicted consequence does not appear. Short-opener sessions show 0.040 flagged corrections per prompt against 0.054 for long openers locally, and the archive is flat in the opposite direction (0.029 vs 0.028). Read this as no evidence of an effect in either direction, not as proof that thin openers are safe: 7 correction events against 24 is far from significance. The cost of a thin opener, if any, is in which problem gets chosen, not in rework, so \"write longer prompts\" is the wrong prescription.",
+      "evidence": "REVIEW/local.prompts.jsonl and archive.prompts.jsonl with <bash-stdout>, <command-message> and system-reminder wrappers excluded (the unfiltered 72% archive figure is a /code-review slash-command artifact). Local 21 of 46 sessions under 150 chars vs archive 139 of 796; corrections 7/176 vs 24/445 local, 54/1868 vs 69/2484 archive; verifier replicated to the digit. Example: session d005accb (2026-08-30) opens \"Can you look at codebase-memory-mcp and do a deep dive into if it is actually useful etc?\" and runs 24 prompts, 1,427,045 output tokens. Vendor contrast verbatim on https://code.claude.com/docs/en/best-practices (retrieved 2026-09-05): \"Letting Claude jump straight to coding can produce code that solves the wrong problem\".",
+      "classification": "cost only",
+      "confidence": "medium",
+      "action": "Stop optimising opener length. Keep the short opener and make the second turn mandatory: \"Before you touch anything, interview me.\"",
+      "status": "confirmed",
+      "question": "Q3 operator gaps"
+    },
+    {
+      "title": "The interview-first opener is vendor-documented and Jason has no ritual that fires it",
+      "claim": "Anthropic documents the interview-first protocol verbatim, including the paste that runs it, and Jason has no ritual that triggers it. His agents now elect to ask 5x more often per session than in the archive period (1.33 vs 0.27 AskUserQuestion calls per session), so the question step exists but is model-initiated. The supporting research is narrower than it first looked: value comes from a structured, trained clarification policy, not from asking more. An off-the-shelf clarifier — the arm that most resembles \"paste this and interview me\" — measurably lost ground in the same paper.",
+      "evidence": "https://code.claude.com/docs/en/best-practices (retrieved 2026-09-05), section \"Let Claude interview you\", verbatim, plus \"Time spent making the spec precise pays off more than time spent watching the implementation.\" Usage replicated by me from the index: local 104 AskUserQuestion calls over 78 main-loop sessions = 1.333/session, 17 sessions with any; archive 374 over 1,391 = 0.269/session, 98 sessions with any. arXiv:2606.03135 (Deng et al., 2 June 2026): a DAPO-trained information-gain clarification policy gains +3.7pp on tau-Bench (23.6%->27.3%) at 1.3 clarification turns, but an off-the-shelf Qwen3-8B clarifier scores -0.6pp average and -6.3pp on the out-of-distribution airline split, and LLM-as-a-judge clarification -2.2pp.",
+      "classification": "operator failure",
+      "confidence": "medium",
+      "action": "Keep the vendor interview paste as turn two of any session expected to run over ten minutes, but treat it as a structured protocol with a written spec as its output, not as \"ask me more questions\". Execute the spec in a fresh session, as the same page recommends.",
+      "status": "corrected",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Two open PRs from July are the measurable proof that Jason does not close loops",
+      "claim": "The clearest instance of not consuming results is PR #49, an offline eval harness built to measure whether the reviewer tooling works: 7,444 added lines across 38 commits, opened 2026-07-18, last touched the same day, still open 49 days later, with benchmarks/ absent from main and no baselines.json. The repo's own memory note records the run killed at a usage rollover with roughly two hours of compute left and gives the exact resume command. PR #50, a productivity roadmap for measurable agent improvement, has sat open since 2026-07-19. Both artifacts exist to answer the same question this review is being run to answer. The work was done; the last two hours and the merge were not.",
+      "evidence": "gh pr view 49 (verifier re-ran 2026-09-05): createdAt 2026-07-18T09:47:27Z, updatedAt 2026-07-18T17:31:06Z, additions 7444, commits 38, state OPEN; gh pr list --state open returns only #49 and #50 (created 2026-07-19T09:17:06Z); benchmarks/ absent from main and from the working tree. Memory note /Users/jasonmatthew/.claude/projects/-Users-jasonmatthew-Work-Git-claude-skills/memory/project_benchmark_first_run_in_flight.md carries \"~2h remaining\", \"just relaunch node benchmarks/harness/run.mjs\" and \"No scorecard was produced\" verbatim. Provenance nits that do not touch the claim: the note's own text dates the kill to ~2026-07-19 mid-morning, and its file mtime is 2026-08-27 from the laptop copy. DORA 2025 confirmed on dora.dev: \"AI's primary role is as an amplifier, magnifying an organization's existing strengths and weaknesses\" (the \"accelerated chaos\" phrasing is paraphrase, not DORA's words).",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Book a recurring 10-minute Friday sweep: for every open PR and every research doc older than 14 days, choose merge, close, or schedule, and write the choice down. Start by resuming run.mjs and either merging or closing #49 and #50.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Sessions close on an assumption, not on evidence",
+      "claim": "Jason's closing prompts repeatedly ask the agent to confirm success rather than to show it, which hands verification to the party that did the work. Anthropic names this exact pattern as a top failure mode. The fix is a fixed closing phrase, not more diligence.",
+      "evidence": "Final human prompts, verbatim in REVIEW/local.sessions.jsonl with matching metadata (verifier confirmed all three): c9762ff5 (2026-09-04, brok-stacks worktree, 22 prompts, 837,411 output tokens) \"Cool lets stop here I assume it'll work from here on out since we are back in the tested path right?\"; d005accb (2026-08-30, 24 prompts, 1,427,045) \"Hmm ok everything pushed right? might call it here for the evening\"; 00b357e7 (2026-08-23, transcoder, 33 prompts, 1,109,673) \"Great we good to deploy now?\". Vendor guidance verbatim on https://code.claude.com/docs/en/best-practices: \"The trust-then-verify gap... Always provide verification (tests, scripts, screenshots). If you can't verify it, don't ship it\" and \"Reviewing evidence is faster than re-running the verification yourself, and it works for sessions you weren't watching.\"",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Replace the closing question with a closing demand, verbatim every time: \"Before I go: paste the command you ran and its output for each thing you say is done. Anything you did not run, list as unverified.\"",
+      "status": "confirmed",
+      "question": "Q3 operator gaps, Q1 usage"
+    },
+    {
+      "title": "Structured planning-skill use fell to zero; what went missing is the written spec, not the question step",
+      "claim": "Rate-normalised, structured planning-skill use fell from 0.107 invocations per session across 1,391 archive sessions (brainstorming 75, writing-plans 74) to zero across 78 local sessions, about eight expected and none observed, while the plugin stayed enabled until 2026-09-05. The headline \"149 to zero\" overstates it by setting a four-month total against a two-week window. And the interrogation step did not vanish with the skills: AskUserQuestion rose 5x per session over the same transition. The gap is a missing artifact — a written spec that outlives the session — not a missing question.",
+      "evidence": "Skill totals summed over REVIEW/archive.sessions.jsonl, re-run by me: superpowers:brainstorming 75, superpowers:writing-plans 74 (plus 4 under superpowers-core:), subagent-driven-development 43+30, systematic-debugging 19; no superpowers entries at all in REVIEW/local.sessions.jsonl. AskUserQuestion per session 0.269 archive (374/1,391) vs 1.333 local (104/78), re-computed by me from the same files. Plan mode 31/1,391 archive vs 8/78 local. Verifier checked the obvious refutation and it fails: chezmoi commit a1b45ce (2026-09-05 15:51) is the first to remove superpowers-core from enabledPlugins, so the skills were available throughout the local window. Verifier's skill recount differs on two local numbers: artifact-design 4 (not 5), deep-dive 1 (not 3).",
+      "classification": "skill/hook failure",
+      "confidence": "medium",
+      "action": "Own the artifact, not the ritual: whatever asks the questions, require it to end in a written spec file. Either keep a minimal interview-and-spec skill in the marketplace or put the vendor interview paste in CLAUDE.md with \"write the spec to SPEC.md\" attached.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Write the decision, not the discussion: one decision record per session that changed something",
+      "claim": "Jason has an adr skill and used it once in the local period. The decisions actually made — which option was picked, which deferred, what would have to be true to revisit — dissolve into 675 prompts and a memory index. That is how a July decision to build a benchmark harness evaporated without anyone noticing. A five-line decision record is the cheapest mechanism that turns a report into a commitment. Label this practitioner consensus, not measurement.",
+      "evidence": "Skill counts replicated by the verifier from REVIEW/local.sessions.jsonl: adr 1, domain-modeling 1, writing-artifacts 3 across 78 sessions. arXiv:2604.27333 (Nogueira, Silva & Conte, submitted 30 April 2026) verified: compares Tyree/Akerman, Nygard, arc42, Y-statements and MADR via DESMET expert screening plus a controlled experiment on undergraduates; it measures comprehension and usability, not outcomes. adr.github.io is a project site, not evidence. The Bezos six-page-memo article (cnbc.com, 23 April 2018) returned 403 to the verifier and is journalism carrying load; treat both the ADR and the memo claims as practitioner consensus.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "End any session that changed a decision with: \"Write a five-line decision record: what we decided, the option we rejected and why, what would make us revisit, what is still open.\" Append it to the daily note that already exists. Five lines, not an ADR.",
+      "status": "confirmed",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Do not read a long report cold; make it end in a forced choice",
+      "claim": "A 75KB audit has no decision surface, so make every research report end in a numbered decision list and read the body only for what would change an answer. The evidence for the cost is thin for a solo operator: the workslop survey measures the time one person spends fixing a colleague's AI output, not the cost of reading a report your own agent wrote you. Treat this as a practice recommendation, not a measured one. It becomes directly evidenced the moment the work team starts circulating agent-written docs.",
+      "evidence": "File sizes exact (ls, 2026-09-05, verifier confirmed): /Users/jasonmatthew/Work/Git/claude-skills/docs/research/2026-09-04-marketplace-audit.md 75,002 bytes; 2026-09-04-landing-loop-design-synthesis.md 32,075 bytes — I re-listed the directory and both match. BetterUp Labs with Stanford Social Media Lab, 1,150 US full-time workers, 41% received workslop in the preceding month, average 1h56m per incident, HBR 22 September 2025 — a self-report survey about receiving low-substance AI output from a colleague, and 42% rate the sender less trustworthy, which is the social finding, not a productivity measurement.",
+      "classification": "practice",
+      "confidence": "low",
+      "action": "Two changes to the research output contract: every report ends with a numbered decision list where each item is answerable in one word, and Jason reads that list first, then asks \"what in the body would make me answer the opposite way?\" and reads only that.",
+      "status": "corrected",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Oversight by watching does not work, so encode rituals as gates, with one mechanical caveat",
+      "claim": "Human oversight by watching fails: Green surveys 41 policies mandating human oversight of algorithms and finds people cannot perform the oversight functions asked of them and that the mandate provides a false sense of security while legitimising the system. Jason already builds the alternative — PreToolUse guards, CI-gated nightshift PRs, cross-vendor diff review — so the decision-hygiene rituals above belong in machinery, not in resolutions. The caveat is mechanical: Anthropic documents that Claude Code overrides a Stop hook and ends the turn after 8 consecutive blocks, so a Stop hook enforces a check without guaranteeing it.",
+      "evidence": "Green, \"The flaws of policies requiring human oversight of government algorithms\", Computer Law & Security Review vol 45 (2022): 41 policies, \"people are unable to perform the desired oversight functions\", policies \"provide a false sense of security\". Gaube et al., arXiv:2605.16278, dated 9 April 2026 (the finder wrote 2025). https://code.claude.com/docs/en/best-practices: a Stop hook \"runs your check as a script and blocks the turn from ending until it passes\", and the same page states the 8-consecutive-block override. Correction applied: Bainbridge's thirty-minute vigilance figure is real but comes from the 1983 Automatica paper citing Mackworth on visual-display monitoring, not from the Wikipedia article the finder cited.",
+      "classification": "strength",
+      "confidence": "high",
+      "action": "Convert two rituals into machinery: the closing evidence demand becomes a Stop hook or a /goal condition (accepting the 8-block ceiling), and the option-ordering rule becomes a CLAUDE.md line re-measured in two weeks. Keep human judgement for the pre-mortem and the decision record.",
+      "status": "corrected",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Before firing a long run, price it: agent runs are 4-15x a chat and Jason launches them from one line",
+      "claim": "Not a failure, a cost. Nine local sessions opened with a sub-150-character prompt and produced over 100k output tokens; the largest single session produced 3.9M. Anthropic's own numbers put agents at ~4x a chat and multi-agent systems at ~15x, viable only where task value covers it. On a Max plan the marginal cash cost is zero, but the constraint is real: the July benchmark run was killed at a usage rollover and never resumed, so quota exhaustion has already cost a finished measurement. Applicability note: the 4x/15x ratios describe Anthropic's own multi-agent Research product against chat, and they are a consumption ratio, not a cost-effectiveness result for Jason's runs.",
+      "evidence": "REVIEW/local.sessions.jsonl, verifier replicated: 35 sessions exceeded 50k output tokens, top session 3,900,804, 9 short-opener sessions over 100k. Anthropic Engineering, \"How we built our multi-agent research system\", 13 June 2025, verbatim: \"agents typically use about 4x more tokens than chat interactions, and multi-agent systems use about 15x more tokens as chats\" and \"multi-agent systems require tasks where the value of the task is high enough to pay for the increased performance\". Quota consequence: memory note project_benchmark_first_run_in_flight.md plus PR #49 still open on 2026-09-05.",
+      "classification": "cost only",
+      "confidence": "medium",
+      "action": "One sentence before any fan-out or overnight run: \"What is this expected to cost in wall-clock and quota, and what decision will its output let me make?\" No decision on the other side, no launch.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "METR's 19% result stands as published; what was retired is the follow-up experiment",
+      "claim": "The original METR finding still stands: 16 developers, 246 tasks, ~19% slower with AI while believing they were 20% faster. What METR retired on 2026-02-24 is its second experiment. Selection effects — developers refusing to work without AI, and 30-50% of tasks withheld — made that study's estimate an unreliable lower bound, and METR is redesigning. The finder's claim that the authors withdrew the 2025 design is false; the page restates the 2025 result plainly. The durable point is unchanged and stronger for being correctly attributed: self-report about agent productivity is unreliable in both directions, which is the argument for finishing PR #49 rather than trusting a sense of how things are going.",
+      "evidence": "METR, 10 July 2025, https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/ — 16 developers, 246 tasks, mature repos, Cursor Pro with Claude 3.5/3.7 Sonnet. METR, 24 February 2026, https://metr.org/blog/2026-02-24-uplift-update/ — verifier read the full page: it restates \"our early 2025 study found the use of AI causes tasks to take 19% longer, with a confidence interval between +2% and +39%\", and every problem it describes (participation refusals, 30-50% of tasks withheld, unreliable timing under concurrent agents, the pay cut) belongs to the second experiment begun August 2025 with 57 developers across 143 repos and 800+ tasks. Developer-level randomisation appears there as one of six candidate directions, noted as making selection worse with lower power.",
+      "classification": "tool",
+      "confidence": "medium",
+      "action": "Cite the 19% figure with the 2026-02-24 update alongside it, and use it only for the perception-reality point. Do not describe METR as having withdrawn the 2025 study.",
+      "status": "corrected",
+      "question": "Q2 team and best-in-class, Q1 usage"
+    },
+    {
+      "title": "The adversarial-review calibration problem already has a documented answer in Jason's own memory; PR #49 is the missing measurement",
+      "claim": "The verifier's strongest missed item is that the vendor page Jason's rituals lean on already prescribes an adversarial review step and warns in the same breath that \"a reviewer prompted to find gaps will usually report some, even when the work is sound\". That is not new information to this setup: Jason's own July 2026 deep dive established that LLM reviewers over-reject correct code at a false-negative rate of 26-88%, that adding explain-and-propose-fix scaffolding makes it worse (GPT-4o 26% to 73%), and that the real gap is a respected clean pass rather than loop termination. Two consequences. First, any ritual added by this review that ends in \"have a fresh agent find the gaps\" inherits a known bias and must grant an explicit valid-zero-findings outcome. Second, the harness that would calibrate it is the same PR #49 sitting unmerged, which is why closing that loop outranks adding rituals.",
+      "evidence": "Pack files I checked directly: /Users/jasonmatthew/.claude/projects/-Users-jasonmatthew-Work-Git-claude-skills/memory/research_llm_reviewer_overcorrection_and_gate_placement.md (3,897 B, deep research 2026-07-15) states the FNR 26-88% over-rejection finding (Springer ASE 2026 s10515-026-00638-5, replicated arXiv 2508.12358), the scaffolding backfire, LLM-judge verdict swings of ~84 points on unchanged code from framing (arXiv 2604.16790), and the conclusion \"the gap is NOT loop termination... it's the missing respected clean-pass; stop scoring reviewer health by finding-count\". Backing report: /Users/jasonmatthew/Work/Git/claude-skills/docs/research/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md (9,470 B). Same direction in brief2's surviving external evidence: frontier reviewers detect 15-31% of human-flagged issues diff-only and more context can degrade them. Harness state: PR #49 open since 2026-07-18, benchmarks/ absent from main.",
+      "classification": "skill/hook failure",
+      "confidence": "medium",
+      "action": "Before adding any adversarial-review ritual, add the clean-pass clause to the reviewer prompts already in use (zero findings is a valid, expected result; do not score reviewer health by finding count), and treat resuming PR #49 as the prerequisite for claiming any reviewer works.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q4 tools"
+    }
+  ],
+  "dropped": []
+}

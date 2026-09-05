@@ -1,0 +1,166 @@
+{
+  "label": "R4-operator",
+  "findings": [
+    {
+      "title": "The frontier moved from \"instruct harder\" to \"instruct less\", and this setup is the maximal old pattern",
+      "claim": "Anthropic removed over 80% of Claude Code's own system prompt for Claude 5 generation models with no measurable loss on their coding evals, and now lists \"repeat instructions\", \"comprehensive CLAUDE.md files\", \"front-load all information\" and \"include redundant instructions across multiple contexts\" as things to stop doing. Jason's session loads ~8,700 tokens of standing instruction before any work: ~3,580 from ~/.claude/CLAUDE.md (14,320 B), ~1,590 from ~/Work/Git/CLAUDE.md (6,367 B), ~1,160 from an unscoped rules file (4,655 B), and 2,374 measured tokens of plugin descriptions (the complete always-on figure: the four LSP/context7 plugins the finder omitted cost ~0). Two fidelity limits: the 80% is a vendor-reported internal result nobody outside can reproduce, and the blog's CLAUDE.md advice targets content Claude can infer from the codebase, which is not what most of Jason's 14 KB is (it is corrections and standards), so a /doctor trim will cut less than the headline implies.",
+      "evidence": "https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models (published 2026-07-24), verbatim: \"We removed over 80% of Claude Code's system prompt for models like Claude Opus 5 and Claude Fable 5 with no measurable loss on our coding evaluations\". https://code.claude.com/docs/en/memory (fetched 2026-09-05): \"Size: target under 200 lines per CLAUDE.md file. Longer files consume more context and reduce adherence.\" Local: wc -c = 14320 / 6367 / 4655; the repo's own claude-md-guard hook printed \"14320B is over the 12288B green band (~3580 tokens)\" and \"8 line(s) over 400 chars\"; plugin always-on costs sum 232+281+126+199+184+702+207+0+197+105+141 = 2374 tok (verifier re-summed).",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Set a hard budget and cut to it: global CLAUDE.md under 8 KB, code CLAUDE.md under 4 KB. Delete anything a hook already enforces. Run /doctor's CLAUDE.md trim check first, but expect it to cut less than the budget needs, because most of the file is standards rather than derivable facts.",
+      "status": "confirmed",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "The tiering rule is stated twice in prose plus a deny message; the LSP rule is not duplicated",
+      "claim": "The model-tiering rule is stated in two CLAUDE.md files and again in the gates deny message; the blog's \"stop including redundant instructions across multiple contexts\" applies, and the overlapping half of the two prose copies can go. The LSP-first rule is not duplicated: grep -in lsp across all three standing-instruction files hits only ~/Work/Git/CLAUDE.md lines 5-9, and the part that survives is precisely the part the hook cannot say (\"Nothing catches 'read the whole file instead of hover'\"). The Explore.md HTML comment is not a fourth statement of the rule; it is provenance for that file's model: sonnet pin, paid only inside Explore subagents.",
+      "evidence": "https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models (2026-07-24), stop-doing item \"Include redundant instructions across multiple contexts\". Local: /Users/jasonmatthew/.claude/CLAUDE.md \"Delegate volume, keep judgment (Claude Code only)\"; /Users/jasonmatthew/Work/Git/CLAUDE.md \"Delegate with an explicit model tier\"; verifier's grep -in lsp returning hits in one file only. The memory-docs \"Claude may pick one arbitrarily\" line is about contradictory rules and does not apply here (verifier correction).",
+      "classification": "operator failure",
+      "confidence": "medium",
+      "action": "Keep the hook and delete the overlapping half of the two tiering paragraphs, leaving one statement of what to delegate. Leave the LSP paragraph alone.",
+      "status": "corrected",
+      "question": "Q3 operator gaps"
+    },
+    {
+      "title": "`claude plugin eval` is still early-access gated, and nine plugins ship zero eval cases",
+      "claim": "On v2.1.261 `claude plugin eval` still exits with \"`plugin eval` is currently in early access\" unless CLAUDE_CODE_WALNUT_SPIRE=1 is set, exactly as the stored memory records; the memory note is neither stale nor contradicted, and the ablation arm was already used in the 2026-09-04 pilot, where meanDelta 0 was correctly diagnosed as a rubric that the no-plugin baseline also passed. What survives from the original finding is that no owned plugin ships eval cases at all.",
+      "evidence": "Verifier probe 2026-09-05 on v2.1.261: `env -u CLAUDE_CODE_WALNUT_SPIRE claude plugin eval /nonexistent-plugin-xyz` prints only \"`plugin eval` is currently in early access\"; with CLAUDE_CODE_WALNUT_SPIRE=1 the same command reaches \"✗ /nonexistent-plugin-xyz: no such file or directory\" and a results table. Memory: reference_plugin_eval_early_access.md, \"one case, ablation with-without, exit 0, 44 s, $0.22, meanDelta 0 because the no-plugin baseline passed the same rubric\". Local: `find plugins -name evals` returns nothing.",
+      "classification": "tool",
+      "confidence": "medium",
+      "action": "Keep the memory note. Add evals/ to the two plugins whose value is most disputed (codex-review, session-retro), three to five cases each, and run them with CLAUDE_CODE_WALNUT_SPIRE=1 and --ablation with-without, writing each llm rubric so the no-plugin baseline fails it.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Subagent prompt-cache efficiency is 4x worse than the main loop, and the cause is mostly structural",
+      "claim": "Subagent cache efficiency is 12.5:1 against the main loop's 53.8:1, and subagents and workflow agents get a five-minute TTL by default even on a subscription. The gap is mostly structural: 1,425 short-lived agents each write a prefix once and none of them reads the parent's cache. So `subagentPromptCacheTtl: 1h` is one lever among several, to be measured against a week's baseline rather than assumed to close a 4x gap. The relevant caveat is not the API's higher 1h write rate but that Claude Code ignores a 1h TTL while the subscription is spending usage credits.",
+      "evidence": "Local aggregation of REVIEW/local.sessions.jsonl (2026-08-22..2026-09-05), reproduced by the verifier: main cache_create 67,755,419 / cache_read 3,647,282,624; sidechain cache_create 244,332,750 / cache_read 3,044,727,576; settings.json contains neither TTL key. https://code.claude.com/docs/en/prompt-caching (fetched 2026-09-05): \"Main conversation: One hour / Everything else: Five minutes\"; `subagentPromptCacheTtl` requires v2.1.242+, per-agent `experimental.cacheTtl` v2.1.248+. https://code.claude.com/docs/en/sub-agents: \"A subagent starts its own conversation with its own system prompt and tool set... Its first request doesn't read the parent's cache.\"",
+      "classification": "cost only",
+      "confidence": "medium",
+      "action": "Set `subagentPromptCacheTtl: 1h`, then re-measure the sidechain read:write ratio after a week against this fortnight's 12.5:1. Treat it as an experiment; the fan-out prefix-sharing finding below is the larger lever on the same tokens.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "71% of subagent runs land on Opus, concentrated in workflow fan-outs, not in the guarded Agent path",
+      "claim": "1,011 of 1,425 subagent transcripts ran on Opus 5 and Opus produced 2,058,590 of 2,776,106 subagent output tokens (74%), concentrated in wf_* workflow fan-outs (972 of 1,293) while the Agent-tool path runs 68% Sonnet (85 sonnet / 39 opus / 1 fable). This is not comparable to the 73%-untiered pre-hook baseline, which counted dispatches that set no model: at all, not the share that ran on Opus, so \"the guard has not moved the number\" is not a measurement. Both paths are guarded (gates registers a Workflow matcher as well as an Agent one), and worker.md pins model: opus deliberately. The index records no dispatch site, so the source of the wf_* Opus is open.",
+      "evidence": "Local aggregation of REVIEW/local.sessions.jsonl: sidechain models Counter({'claude-opus-5': 1011, 'claude-sonnet-5': 401}); buckets [('wf_6ba193c9-488', 307), ('wf_12575914-043', 221), ('subagents', 125), ('wf_cdc23c2d-21c', 123), ...]; main tool counts Agent 91, Workflow 49. Memory: reference_agent_dispatch_guard_facts.md, \"73% of 477 Agent dispatches untiered\". Local: /Users/jasonmatthew/Work/Git/claude-skills/plugins/gates/hooks/hooks.json line 29 registers pretooluse-guard-workflow-model.mjs (re-checked in this pass).",
+      "classification": "cost only",
+      "confidence": "medium",
+      "action": "Decide the question the index cannot: log the dispatch site for one week, or simply set the intent explicitly. For unattended runs, CLAUDE_CODE_SUBAGENT_MODEL=sonnet plus CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1 (v2.1.257+) overrides every per-spawn and frontmatter model in one place; a settings deny rule Agent(model:opus) is the cheaper expression of the same intent.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "/insights and /skill-doctor have never been run, and this review is a hand-rolled version of them",
+      "claim": "Claude Code ships /insights, which analyses up to 200 previously unseen local sessions per run and writes an HTML report on what you work on, friction points such as misunderstood requests, and suggestions for using Claude Code better. Its output directory does not exist on this machine, which proves no run inside the 30-day retention window rather than literally never. /skill-doctor, added 2026-09-04, reports which loaded skills go unused and what they cost in context, against 15 enabled plugins and ~40 loaded skills of which six were invoked in two weeks.",
+      "evidence": "https://code.claude.com/docs/en/costs (fetched 2026-09-05): \"A single run analyzes up to 200 sessions it hasn't seen before\", \"Claude Code writes the latest report to ~/.claude/usage-data/report.html\", and the cleanupPeriodDays 30-day default. Local: `ls ~/.claude/usage-data/` → \"No such file or directory\". CHANGELOG ## 2.1.261 (feed.xml updated 2026-09-04T19:58:03Z): \"Added /skill-doctor to show which loaded skills go unused and what they cost in context, so you can prune them\". Skill invocations, local period: codex-plan-review 5, writing-artifacts 3, deep-dive 3, domain-modeling 1, adr 1, frontend-design 0.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Run /insights and /skill-doctor before the next round of skill authoring and diff them against this review. Agreement means the hand-rolled transcript index is redundant maintenance; disagreement is the interesting result.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "The advisor tool is the harness-enforced version of the escalation doctrine Jason wrote as prose",
+      "claim": "Claude Code ships a server-side advisor: a stronger model consulted at decision points with the full conversation. Anthropic's own benchmark (a vendor measurement) reports Sonnet with an Opus advisor beating Sonnet solo by 2.7 points on SWE-bench Multilingual at 11.9% lower cost per agentic task, and Haiku with an Opus advisor at 41.2% on BrowseComp against 19.7% solo. Jason's settings have no advisorModel. Two applicability corrections: it is available on subscription accounts, unavailable only on Bedrock, Claude Platform on AWS, Google Cloud Agent Platform and Microsoft Foundry (which matters for the work team, not here); and because subagents inherit the configured advisor and run the same pairing check against their own model, the measured Sonnet-main/Opus-advisor configuration is deployable to the 1,011 Opus subagents without dropping the Fable session model. Unpriced cost: the advisor's read of the conversation is never cached, so each call reprocesses the full transcript against plan usage.",
+      "evidence": "https://claude.com/blog/the-advisor-strategy (published 2026-04-09): \"a 2.7 percentage point increase on SWE-bench Multilingual over Sonnet alone, while reducing cost per agentic task by 11.9%\"; \"Haiku with an Opus advisor scored 41.2%, more than double its solo score of 19.7%\". https://code.claude.com/docs/en/advisor (fetched 2026-09-05): \"Fable 5.1 or Fable 5 → ... An Opus or Sonnet advisor is rejected\"; \"Subagents inherit the configured advisor and apply the same pairing check against their own model\"; \"The advisor model's own read of the conversation is not cached\"; \"Enabling or disabling the advisor mid-session does not invalidate your main model's prompt cache\". Local: settings.json has no advisorModel and \"model\": \"claude-fable-5-1[1m]\".",
+      "classification": "tool",
+      "confidence": "medium",
+      "action": "Do not drop the session model. Point the advisor at the subagent tier instead: configure an Opus advisor and run the fan-out workers on Sonnet for one week on a non-critical repo, comparing correction rate and output tokens. It is same-family and does not replace the codex cross-vendor pass.",
+      "status": "confirmed",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Agent definitions use two of seventeen frontmatter fields and enforce read-only in prose, not in the harness",
+      "claim": "Explore.md instructs \"READ-ONLY. Do not create, edit, delete, or move files.\" in its body while the frontmatter supports tools: and disallowedTools: allowlists the harness enforces regardless of what the model decides. Explore.md sets name/description/model; worker.md sets name/description/model/effort. Neither sets tools, disallowedTools, maxTurns, memory, skills or experimental.cacheTtl — two of seventeen documented fields. memory: would give a recurring worker role cross-session learning that no subagent has today, since the main conversation's auto memory is explicitly not loaded into subagents.",
+      "evidence": "https://code.claude.com/docs/en/sub-agents (fetched 2026-09-05): 17 frontmatter fields incl. tools, disallowedTools, maxTurns (\"requires Claude Code v2.1.246 or later\"), memory (user/project/local scopes, first 200 lines / 25 KB), skills, experimental.cacheTtl (v2.1.248+); \"The main conversation's auto memory is NOT loaded into subagents.\" Local: /Users/jasonmatthew/.claude/agents/Explore.md and worker.md frontmatter as described.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Add `disallowedTools: Write, Edit, NotebookEdit` to Explore.md and delete the prose paragraph it replaces. Add `memory: project` to worker.md if the nightly loops keep running.",
+      "status": "confirmed",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Nine plugins use one plugin component type and one hook handler type",
+      "claim": "All 20 hook entries across the marketplace are `command` handlers, and no plugin ships agents/, workflows/, monitors/, .lsp.json or a plugin settings.json. Eight of the nine ship skills (ship-gate ships none). Plugins can ship background monitors that push state into a session unprompted, dynamic workflows as namespaced slash commands, agent definitions, and a main-thread agent via settings.json; hooks support command/http/mcp_tool/prompt/agent handlers and an `if:` condition using permission-rule syntax (one rule, evaluated on tool events only). gates already ships a bin/ shim (ccguard), so Node startup per Bash call is already addressed there.",
+      "evidence": "Local: `grep -rhoE '\"type\": \"[a-z_]+\"' plugins/*/hooks/hooks.json | sort | uniq -c` → 20 command, nothing else; find turns up no agents/, workflows/, monitors/, evals/, .lsp.json or plugin settings.json; hooks.json line 29 invokes \"${CLAUDE_PLUGIN_ROOT}/bin/ccguard\" with a node fallback (re-checked this pass). https://code.claude.com/docs/en/plugins and /hooks (fetched 2026-09-05) for the component and handler lists and the `if:` syntax; CHANGELOG v2.1.105 for plugin monitors.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Two concrete wins: a monitors/ entry for nightshift that tails the loop journal and pushes state into the morning session, replacing the manual triage step; and `if:` conditions on the gates hooks that currently run to decide they do not apply.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Nightshift leads on adversarial verification and CI gating, and trails on isolation and operator controls",
+      "claim": "Routines, desktop scheduled tasks and GitHub Actions ship no adversarial verification, no one-task-per-PR granularity and no CI merge gate; that is nightshift's real lead. They do ship controls nightshift lacks: a per-routine pause plus an org-wide toggle that stops existing routines, a daily run cap, protected-branch push rejection (including branches carrying someone else's commits or an open PR), a trusted-network allowlist that 403s unlisted hosts, and fire-payload text wrapped as untrusted data. On isolation nightshift is behind: it runs on a laptop rather than a network-scoped cloud environment that works while the lid is closed.",
+      "evidence": "https://code.claude.com/docs/en/workflows (fetched 2026-09-05): \"it can have independent agents adversarially review each other's findings before they're reported... so you get a more trustworthy result than a single pass\" — offered as a capability with no shipped instance beyond /deep-research. https://code.claude.com/docs/en/routines (opened by the verifier) for the pause/org toggle, daily run cap, protected-branch rejection and network allowlist. Local: plugins/nightshift/README.md documents the generator, CHECK OK verifier, refute-only skeptic, one repair round, land:blocked draft PR and LANDING_STATE kill switch.",
+      "classification": "strength",
+      "confidence": "medium",
+      "action": "Borrow the two fail-closed flags that fit without redesign: `--permission-prompts none` (v2.1.259, 2026-09-02) and `--max-budget-usd`. Then borrow routines' missing controls in order of blast radius: a daily run cap and protected-branch push rejection.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "A rule mandating plan mode shows compliance in 8 of 78 sessions, and this is a setup failure, not a model failure",
+      "claim": "~/.claude/CLAUDE.md mandates a plan for anything taking more than one sentence to describe. Plan mode was active in 8 of 78 interactive sessions over two weeks, across 675 human prompts. The index flags plan mode per session while the rule is per change, so 8/78 is a floor on non-compliance rather than an exact rate. The classification is setup, not model: the docs the finding quotes say CLAUDE.md is context delivered as a user message with no guarantee of strict compliance, and name hooks as the mechanism for anything that must run at a fixed point.",
+      "evidence": "https://code.claude.com/docs/en/memory (fetched 2026-09-05): \"CLAUDE.md content is delivered as a user message after the system prompt... there's no guarantee of strict compliance\"; \"If the instruction is something that must run at a specific point... write it as a hook instead. Hooks execute as shell commands at fixed lifecycle events and apply regardless of what Claude decides to do.\" Local aggregation of REVIEW/local.sessions.jsonl, reproduced by the verifier: plan_mode true in 8 of 78 main sessions.",
+      "classification": "operator failure",
+      "confidence": "medium",
+      "action": "Pick one: delete the rule, or make it a UserPromptSubmit hook that injects a plan-mode reminder when the prompt exceeds a length threshold and the session is not already planning. An unenforced mandate costs tokens every session and buys 10% compliance.",
+      "status": "corrected",
+      "question": "Q3 operator gaps"
+    },
+    {
+      "title": "An unscoped rules file loads everywhere, and Tool(param:value) can express part of what a hook was built for",
+      "claim": "harness-behaviours.md carries no `paths:` frontmatter, so all 4,655 bytes load in every session in every project, including its codex-exec-stdin, worktree-isolation and sandboxed-git-commit facts, which only matter in code repos. Splitting it needs a real extension or directory scope; `paths: [\"**/*\"]` defeats the purpose because it matches everything Claude reads. Separately, `Tool(param:value)` permission rules (v2.1.178) can express `Agent(model:opus)` as a deny rule — the changelog's own example, and a cheaper answer to the Opus concentration than a new hook — but cannot express \"deny a dispatch that omits model\", so the gates hook stays.",
+      "evidence": "https://code.claude.com/docs/en/memory (fetched 2026-09-05): \"Rules can also be scoped to specific file paths, so they only load into context when Claude works with matching files, reducing noise and saving context space.\" CHANGELOG ## 2.1.178: \"Added `Tool(param:value)` syntax for permission rules to match a tool's input parameters (with `*` wildcard), e.g. `Agent(model:opus)` to block Opus subagents\". Local: head -5 of /Users/jasonmatthew/.claude/rules/harness-behaviours.md shows only a description: field.",
+      "classification": "operator failure",
+      "confidence": "medium",
+      "action": "Split harness-behaviours.md: keep the genuinely global facts (GUI automation, Gmail thread truncation, WebFetch bot protection) unscoped and scope the code-repo half to real patterns such as `**/*.{ts,tsx,py,rs,go,mjs}`. Stop describing the guards in prose once the deny messages carry them.",
+      "status": "corrected",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "The workflow-model guard may be forfeiting fan-out prefix sharing, which is the better explanation for 244M cache-creation tokens",
+      "claim": "Agents in a fan-out share a prompt prefix only when they match on model, effort level, agent type, tools, output schema and working directory, and Claude Code deliberately staggers matching siblings until the first response begins (CLAUDE_CODE_WORKFLOW_PREFIX_STAGGER_MS, 5000 ms default). The gates workflow-model guard denies a high-fan-out script with no per-agent model: override, which pushes scripts toward heterogeneous per-agent models and so splits fan-outs into non-matching prefixes. That is a more plausible driver of the 244.3M sidechain cache-creation tokens concentrated in wf_* buckets than the five-minute TTL, and it means the cache fix and the tiering guard are working against each other. It is testable in one night.",
+      "evidence": "https://code.claude.com/docs/en/workflows (fetched 2026-09-05), \"Prompt caching in a fan-out\" section, for the matching criteria, the stagger variable and default, the 16-concurrent / 1,000-per-run caps, workflowSizeGuideline (medium, under 15 agents) and the \"Large workflow\" warning at 25 agents or 1.5M projected tokens. Local: hooks.json line 29 registers pretooluse-guard-workflow-model.mjs, whose shipped description is \"denies a high-fan-out Workflow script with no per-agent model: override\" (re-checked this pass). Local aggregation: sidechain cache_create 244,332,750 tokens, top buckets wf_6ba193c9-488 (307), wf_12575914-043 (221), wf_cdc23c2d-21c (123).",
+      "classification": "skill/hook failure",
+      "confidence": "medium",
+      "action": "Run one fan-out with every agent on the same model, effort, tools and cwd, and one with mixed models, and compare cache_create per agent. If uniform prefixes win, change the guard from \"every agent names a model\" to \"the fan-out names one model for the phase\".",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "The cost argument is in the wrong currency, and the first-party attribution tool was never used",
+      "claim": "On a Max plan the session cost figure is not billing-relevant, so every dollar total in this review is opportunity cost. The instrument that answers the real question is the /usage plan-usage breakdown, which attributes recent usage to skills, subagents, plugins and individual MCP servers as percentages, flags any behaviour (long context, cache misses) at 10% or more, and since v2.1.242 lists the heaviest /loop and scheduled tasks by total tokens. No finding in this pack used it; the whole spend picture was hand-derived from a transcript index, and its first pass overstated every dollar figure by 2.2 to 2.4x.",
+      "evidence": "https://code.claude.com/docs/en/costs (fetched 2026-09-05): on Max \"the session cost figure isn't relevant for billing purposes\"; the /usage breakdown attributes usage to skills, subagents, plugins and MCP servers and flags behaviours at 10% or more. Pack: brief2.md records that every E1 dollar figure was inflated 2.2-2.4x because the index summed usage once per content block, corrected to ~$2,510 local and ~$10,677 archive, ~$175-179 per active day at list price (opportunity cost, not a bill).",
+      "classification": "operator failure",
+      "confidence": "medium",
+      "action": "Open /usage and read the plan-usage breakdown before acting on any cost finding here. If it names the same heavy contributors as the index, prefer it and retire the hand-rolled cost aggregation.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "30 of 78 main sessions ran Opus against a Fable default, and inheritance was never tested as the cause",
+      "claim": "The settings default is claude-fable-5-1, but Opus 5 appears in 30 of 78 main sessions (Fable 5.1 in 24, Sonnet 5 in 10, Fable 5 in 8). Subagents dispatched without an explicit model inherit the session model, so main-loop model choice is a candidate explanation for the 71% Opus subagent share that no finding tested, and it is a one-line join on the index already built.",
+      "evidence": "Own aggregation of REVIEW/local.sessions.jsonl this pass: main-session models Counter({'claude-opus-5': 30, 'claude-fable-5-1': 24, 'claude-sonnet-5': 10, 'claude-fable-5': 8, 'claude-haiku-4-5': 6, '<synthetic>': 5, 'claude-opus-4-8': 1}) over 78 non-sidechain sessions; sidechain Counter({'claude-opus-5': 1011, 'claude-sonnet-5': 401}). Local: settings.json \"model\": \"claude-fable-5-1[1m]\".",
+      "classification": "cost only",
+      "confidence": "medium",
+      "action": "Join sidechain rows to their parent session's model before spending anything on the tiering guard. If Opus sessions account for the Opus subagents, the fix is the session-model habit, not the hook.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Most of this review does not survive the work team's environment, and the mechanisms that do travel are different ones",
+      "claim": "The advisor is unavailable on Amazon Bedrock, Claude Platform on AWS, Google Cloud's Agent Platform and Microsoft Foundry; effort changes stop preserving the prompt cache under a HIPAA configuration; routines require a claude.ai subscription login and are refused with a Console API key or a cloud-provider login; and DISABLE_TELEMETRY silently disables the advisor because it stops feature-flag fetching, which matters in hardened environments. For an Effect TS / AWS healthcare team on a scribe product, that reverses several actionables above. The mechanisms that do travel are team-shaped rather than personal: the claudeMd managed setting plus permissions.deny in managed settings so standards ship centrally instead of each engineer curating a file, plugin marketplaces for distributing gates and codex-review, .claude/rules/ with real paths: scopes plus claudeMdExcludes for a monorepo, and the analytics dashboard plus the Teams spend report to test whether adoption is real.",
+      "evidence": "https://code.claude.com/docs/en/advisor (fetched 2026-09-05): not available on Amazon Bedrock, Claude Platform on AWS, Google Cloud's Agent Platform or Microsoft Foundry. https://code.claude.com/docs/en/prompt-caching: effort changes stop preserving the cache under a HIPAA configuration. https://code.claude.com/docs/en/routines: subscription login required. Docs pages named: /memory and /managed-settings (claudeMd, permissions.deny), /plugin-marketplaces, /large-codebases (claudeMdExcludes), /analytics. Corroborating pack fact (brief2.md): Claude Sonnet 5 on Bedrock has no in-region option and the au. vs global. model-id prefix is the entire residency control.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Filter every recommendation through the deployment target before it reaches the team playbook: advisor, routines and the TTL keys are home-machine only. Ship the team version as managed settings plus a plugin marketplace, and measure adoption with the analytics dashboard rather than assuming it.",
+      "status": "new-from-verifier",
+      "question": "Q2 team, Q4 tools"
+    }
+  ],
+  "dropped": []
+}

@@ -1,0 +1,168 @@
+{
+  "label": "E2-corrections",
+  "findings": [
+    {
+      "title": "The lsp-first guard fired 295 times locally and converted to zero LSP calls",
+      "claim": "The largest single source of tool denials in the local period is Jason's own lsp-first hook, at a 0% conversion rate. 276 of the 295 firings (94%) landed in Opus-5 workflow subagents where LSP is a deferred tool the deny message never tells them to load, so the instruction is unactionable there. 153 of the 288 follow-up Bash calls re-ran the identical search through the guard's own documented `(?:)` escape hatch: one wasted frontier-tier round-trip each, no behaviour change. The spike is not defiance of Jason's 2026-08-26 removal request; the guard was removed then deliberately reinstated and widened to Bash searches on 2026-08-30 (commit 136097b), which is what put it in front of every subagent grep.",
+      "evidence": "Verifier's walk of every toolDenialKind event: local guards lsp-first 295, docs-sync-guard 87, automode 45, user-rejected 16, agent-model-guard 13, workflow-model-guard 8, secrets-scan 4. Next tool after denial: Bash 288, ToolSearch 3, LSP 0. By day: zero firings 2026-08-22 to 08-29, first on 08-30 (the day of 136097b), then 2026-09-02 169, 09-04 92, 09-05 23. One workflow (brok-stacks session 82565888, wf_12575914-043) took 112. Deferred-tool defect proven positively: agent-afbaa75016a0cf71b.jsonl in that workflow carries a deferred_tools_delta listing \"LSP\". Escape hatch is the guard's own: plugins/gates/go/lspfirst.go allows `\\(\\?:\\)$` and prints it in the deny text. Only 12 follow-ups used the undocumented `[x]` bracket trick.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Scope lsp-first to the main loop, or delete it. In a subagent it cannot be complied with and costs one Opus round-trip per firing. If the LSP preference is worth keeping, put it in the agent prompt where the model sees it before choosing a tool, not in a PreToolUse denial it meets afterwards.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Corrections rose on every denominator; the counter still overstates the absolute level of failure",
+      "claim": "39-53% of corr=true prompts follow an assistant question and 36% of the 134 hand-coded items are genuine non-failures, so the raw counter overstates how much is going wrong. It does not overstate the regression. Correcting for question-answers makes the per-prompt rise 3.2x rather than 2.2x, and the four denominators disagree by an order of magnitude about the size: +27% per 1k main-session assistant messages, +115% per prompt, +411% per session, 7% to 36% of sessions carrying at least one correction. The defensible reading: the correction rate per unit of model work barely moved; what changed is session length and unattended reach, so corrections cluster into 5x longer sessions and into 5x as many of them.",
+      "evidence": "Reconciler's own recount of the index (main sessions only): local 47 sessions, 675 prompts, 31 corrections = 0.66/session, 4.59% of prompts, 1.68 per 1k assistant messages, 36.2% of sessions with at least one; archive 954 sessions, 5,783 prompts, 123 corrections = 0.129/session, 2.13% of prompts, 1.32 per 1k, 7.0% of sessions. Verifier: strict end-of-turn question test gives 60/154 (39%) not the finder's loose 81/154 (53%). Hand-coding of 134 opened items: no-failure 48, model failure 32, direction change 25, missing context 15, permission friction 5, skill/hook 4, tool bug 4. Pure false positives: archive 2026-04-19 session 11634735 \"No I really enjoy the structured exploration\"; local 2026-08-24 session b2ab8180 \"No going tomorrow with Briana\".",
+      "classification": "operator failure",
+      "confidence": "medium",
+      "action": "Do not use the corrections counter as a quality metric, and do not quote a single correction ratio without its denominator. If a failure metric is wanted, count the model's own next-turn admissions (16/154, 10%) or interrupt-preceded prompts (22/154); neither fires on \"No, Tuesday\". The number worth watching is sessions-with-a-correction, 7% to 36%, because it tracks unattended reach rather than model quality.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Confident negatives after an incomplete search are the most persistent genuine model failure",
+      "claim": "The most repeated genuine model failure across both periods is asserting that something does not exist after a search that could not have found it. It appears in every month sampled, on both sides of the archive/local boundary, despite Jason's global CLAUDE.md carrying the rule 'A confident negative needs a positive proof' verbatim. The 'no improvement' comparison is a qualitative judgement over five hand-picked instances, not a count.",
+      "evidence": "All five quotes reproduce verbatim in the raw transcripts. Local 2026-08-22 session c69c8882 07:29:08 \"No that transcoder stack is from a transcoder repo we want to pull down here\" then 07:29:17 \"My search only covered repos *owned* by `jasonm4130` — it wouldn't have found anything in an org\". Local 2026-09-05 session 7c70b045 05:46 \"the only filesystem the probe saw is a 32 GB root\" then \"Right, Unraid's root is a RAM disk, so the probe looked in the wrong place\". Archive 2026-07-20 a68314e5 \"correct my earlier claim (I only grepped `jasonm4130-cf`)\"; archive 2026-06-29 419949a7 SABnzbd built-in test download; archive 2026-04-18 aff5f28b \"No look at the other workers and their build please\".",
+      "classification": "model failure",
+      "confidence": "high",
+      "action": "The prose rule is not working; make it mechanical. Before any 'X does not exist / is not there / is unsupported' claim about the estate, require the enumerating command to have run and be quoted (ls /mnt/user, gh repo list --org, the vendor CHANGELOG). This is a better use of the hook budget than lsp-first.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Goal drift on long autonomous stretches, caught only by Jason",
+      "claim": "Local sessions are 2.4x longer (14.4 prompts per session against 6.1) and the model finishes the thing it started rather than the thing that was agreed, noticing only when Jason asks. Two instances, one in each period, so this is a mechanism worth fixing rather than a measured local-period regression. Drift over an hour of unattended work is at least as much an operator failure (nobody in the chair) as a model one.",
+      "evidence": "Session counts exact: 47 local main sessions with prompts / 675 prompts = 14.36; 954 / 5,783 = 6.06. Local 2026-08-30T00:19 session 68e1fc37 (ambient): \"Wait we were meant to be swapping the ambient docs to nimbus / cumulious right?\" then \"You're right, and I drifted. The Nimbus swap never landed in ambient\". Archive 2026-04-06T10:50 session fc38d897: \"we added blog articles without review by me\" then \"I should have walked through each one with you before writing\".",
+      "classification": "model failure plus operator failure",
+      "confidence": "low",
+      "action": "Past roughly an hour of autonomous work, restate the standing goal and the open deltas before starting the next unit. The handoff skill already renders that state; auto-fire stays off per memory, but a mid-session goal restatement is not a handoff.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Parallel workflows collide with the main loop and only Jason notices",
+      "claim": "The main loop starts building something a workflow it launched is already researching. Workflow calls per main session went 0.19 to 1.04 (5x) while workflow calls per 1k assistant messages stayed flat at ~0.8, so the collision risk comes from longer sessions holding more concurrent work, not from more delegation.",
+      "evidence": "Rates reproduce exactly: 49/47 = 1.043 local, 185/954 = 0.194 archive; per 1k assistant messages 0.79 vs 0.75. Local 2026-08-29T10:22 session 68e1fc37: \"Wait we have a workflow running across this right?\" then \"Yes — two, and one of them is researching exactly what I just started building. Fair catch; I should have waited.\" Local 2026-09-05T03:09 session 7c70b045, same class on GPU contention: \"Wait from a memory / contention point of view we should only do one at a time right?\" n=2 incidents.",
+      "classification": "model failure",
+      "confidence": "medium",
+      "action": "Before starting hands-on work while background tasks are live, list the running task outputs and check for overlap. The task files are on disk in the scratchpad; it is one stat call, not a judgement.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Workflows are fired before context is loaded and their output is not consumed",
+      "claim": "Jason's own hypothesis is confirmed, and the evidence is behavioural rather than lexical. Local session 82565888 (2026-09-02) received exactly one human prompt for the whole session, launched two workflows off it and generated 344 agent transcripts with no further steer. Local d005accb produced a 209-line document about Jason's own working style from 62 agents and 980 tool calls before he asked \"Wait can you interview me? I didn't answer any questions\".",
+      "evidence": "Index row for 82565888 (brok-stacks, 2026-09-02T10:20 to 12:24): human_prompts 1, tools {Bash 11, Workflow 2, Read 1}, skills [], main-loop model Fable 5.1; 344 sidechain rows under it, 221 in wf_12575914-043 and 123 in wf_cdc23c2d-21c. Local 2026-08-30T10:59 session d005accb: \"Interview saved to ~/Documents/Main/Projects/working-style-interview.md — 209 lines, built from 50 claims that survived adversarial verification (62 agents, 980 tool calls)\" then \"Right — the workflow produced the material; you haven't been asked anything yet.\" Dropped by the verifier: the workflow-authoring-skill-off-prompt-1 claim (neither session invoked it) and the 9.8% vs 6.6% workflow-language stat (flips sign with the term list).",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Use the ordering Jason himself specified on 2026-08-22 (session c69c8882) and which worked: \"Right order is 3 → 1 → 2: your answers determine what 'audit' even means.\" Any workflow whose output is about Jason, his preferences or his priorities collects those answers before fan-out, not after.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Ambiguous abbreviations get acted on rather than asked about, and one correction is not enough",
+      "claim": "A short prompt containing an abbreviation with two readings gets acted on rather than asked about, and it takes more than one correction to land. Local ffb9f3af needed three prompts before the model stopped guessing. The cost is turns, not gigabytes: the 42 GB of Qwen weights pulled in that session were the explicitly requested half of the same prompt and were kept.",
+      "evidence": "Opening prompt of local ffb9f3af (2026-08-28T10:49) is \"Hey can we look at setting up an optimized qwen / pi setup to run locally\" — Qwen was requested. Every hf download in the session up to the correction targets mlx-community/Qwen3.8 variants; no Bash call mentions Phi. The correction chain: \"no sorry pi harness no phi\" then \"no pi agent harness do a web serch please\"; replies \"Raspberry Pi hardware, not Phi. Pivoting\" then, a turn later, \"pi the agent harness, running against a local Qwen\". Closing prompt keeps the work: \"I think we can spin it down for now, will spin it up again later\". Same class, local 2026-08-27 session 3d08d7ef: a statusline-refresh measurement was run and written up before \"No I was talking about prompt caching, not usage limits\".",
+      "classification": "model failure",
+      "confidence": "medium",
+      "action": "One clarifying question when a prompt under about fifteen words names a tool, model or product by an abbreviation. Jason's global rule already permits exactly one question and his measured preference supports it.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Auto-mode gating burns whole turns on approvals and got worse locally",
+      "claim": "A recurring class of 'correction' is Jason spending a turn granting permission the classifier refused to infer: 45 local against 116 archive denials, 0.72 vs 0.47 per 1k assistant messages, and 6.7 vs 2.0 per 100 human prompts on the more natural denominator. This is not unavoidable cost. It is operator failure (the permission ask is not front-loaded at the plan gate, per an existing memory) plus skill/hook failure (the classifier reliably refuses deploy and merge commands Jason reliably approves).",
+      "evidence": "Verifier's denial walk: automode 45 local / 116 archive. Archive 2026-07-11 session 43fcf6e7 (sweeparr): \"The auto-mode classifier is refusing to let me run the production deploy no matter the phrasing\" then \"Nope please take this as explicit permission to run the production deploy\" — two turns, one deploy. Archive 2026-07-22 session 5e432702 has the same exchange twice consecutively. Local 2026-08-23 session 00b357e7 \"No explicit permission for doing that debugging\"; local 2026-09-04 session b764415d \"No explicit permission to run that if something goes wrong!\" after \"The kill switch is human-only, and my own hook just proved it by refusing me.\"",
+      "classification": "operator failure plus skill/hook failure",
+      "confidence": "high",
+      "action": "Front-load the permission ask at the plan gate by naming the exact commands. This is already in memory as a prior correction and is not being applied. Name the deploy and merge cases explicitly, since those are where the classifier reliably refuses and Jason reliably approves.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Diagnosis is still asserted before it is probed, with no measurable improvement",
+      "claim": "Both periods contain confident causal stories that the next message falsifies, and there is no measured improvement. Repeat-failure prompts run at 0.30% of local prompts against 0.19-0.29% of archive prompts (flat to slightly worse), and the drop in back-to-back corrections within 30 minutes (25% to 19%) is 1.8 events at n=31. The qualitative signal — the model increasingly saying it will verify rather than answer from memory — is real but uncounted.",
+      "evidence": "Archive 2026-04-05 session 88bf38e9: \"This looks like a GitHub rendering cache issue. Try hard refreshing… it could be a GitHub dark mode font bug with the backtick character\" then \"Hmm nope still broken\"; the real cause was non-ASCII characters. Local 2026-08-29 session 68e1fc37: a transcription recorded as a hallucination, \"No I am watching youtube factorio that is the audio from the video on the TV\" then \"That changes the finding, and my conclusion was wrong\". Improvement quote, local 2026-09-05 session c9762ff5: \"I want to verify its status in current Unraid rather than answer from memory\". Verifier's normalisation: 2 genuine local hits in 675 prompts against 11-17 in 5,783 archive prompts; back-to-back corrections archive 31/123, local 6/31.",
+      "classification": "model failure",
+      "confidence": "medium",
+      "action": "Keep the existing 'reading a thing is not running it' rule. Do not add a second rule about it and do not claim it is working — the improvement is qualitative only.",
+      "status": "corrected",
+      "question": "Q1 usage"
+    },
+    {
+      "title": "Build-before-agreement may have improved, but n is too small to say",
+      "claim": "No build-before-agreement interrupt appears in the 50 local corr items opened, against clear archive instances. Interrupt-preceded corrections are flat: 16% local (5/31), 14% archive (17/123). Treat this as a plausible improvement with n too small to measure, not a demonstrated one; the finder's 35/4,276 to 1/600 rate is not reproducible from any prompt set in the pack.",
+      "evidence": "Archive 2026-07-13 session 291f6c79: a .mmd file already written when Jason interrupted with \"Wait lets talk through the changes first please\", then \"(One file exists so far: scripts/diagrams/skopia-architecture.mmd, uncommitted)\". Archive 2026-04-03 session 6b38bc0e: backup.sh written and the chmod rejected mid-call, \"Wait can we talk through it first please\". Verifier's regex over main-session prompts: 10 archive (0.17%), 0 local; the finder's denominators 4,276 and 600 match neither the main-session sets (5,783 / 675) nor the raw prompt rows (9,849 / 2,101).",
+      "classification": "no failure (unproven strength)",
+      "confidence": "low",
+      "action": "None. Do not cite this as a fixed problem in the review.",
+      "status": "corrected",
+      "question": "Q1 usage"
+    },
+    {
+      "title": "The main loop stopped delegating: Agent dispatches fell 70% per message while Bash rose 68%",
+      "claim": "Against Jason's standing instruction that an Opus session is a conductor not a laborer, Agent dispatches fell 7.3 to 2.2 per 1k assistant messages, Bash rose 251 to 423, and Grep fell to literally zero. 82% of the 26,659 local Bash calls were emitted by Opus 5 or Fable 5.1. This is operator/config failure, not model failure: auto mode's Bash-over-Read/Edit/Grep instruction and the session's delegation defaults set it, not a per-call model decision.",
+      "evidence": "Verifier recounted every tool_use from raw transcripts rather than the index (which truncates each session's tools dict to its top 12): Agent 138 local / 1,793 archive, Grep 0 / 1,567, Bash 26,659 / 61,672, LSP 13 / 103, Workflow 51 / 213, assistant messages 62,997 / 245,873. 21,868 of the 26,659 local Bash calls came from Opus 5 or Fable 5.1. Instruction violated: ~/Work/Git/CLAUDE.md 'Delegate volume, keep judgment'.",
+      "classification": "operator/config failure",
+      "confidence": "high",
+      "action": "Test whether auto mode's prefer-Bash instruction is worth its cost. It currently converts cheap structured searches into expensive main-loop Bash at frontier rates and is the plausible cause of both the Grep zero and the delegation collapse.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "The skill-invocation collapse is an inventory artifact, not a behaviour change",
+      "claim": "Skill invocations per 1k assistant messages fell 1.92 to 0.68, but 58% of the archive's invocations came from plugins retired since. On surviving inventory the rate is 0.80 to 0.68, a 15% drop within noise. There is no evidence the surviving skills are under-used relative to before, and no in-transcript evidence about them either way, because they barely fire.",
+      "evidence": "276 of 472 archive skill invocations belong to retired plugins: superpowers:brainstorming 75, superpowers:writing-plans 74, superpowers:subagent-driven-development 43, subagent-driven-development 30, superpowers:systematic-debugging 19, plus frontend-design and landing-loop. Like-for-like: archive 196/245,873 = 0.80 per 1k, local 43/62,997 = 0.68 per 1k. Local top invocations: workflow-authoring 8, artifact-design 5, codex-plan-review 5, writing-artifacts 3, deep-dive 3, domain-modeling 1. In-transcript skill failures found are all on retired skills: archive 1214387c \"No I don't think it is really doing what we want\" (session-retro); archive e1e51e78 \"Hmm not running\" (brainstorming preview server on a dead port); local b764415d \"Is SDD still in claude skills? I think we should drop it\".",
+      "classification": "no failure (measurement artifact)",
+      "confidence": "medium",
+      "action": "Do not read the invocation drop as evidence against the surviving skills, and do not cite the 61% figure. If evidence about the live skills is wanted, the cheapest source is a fortnight of deliberate use, not another audit of the same transcripts.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Auto mode was reported not taking effect twice on the same day, ten hours apart",
+      "claim": "One genuine harness bug recurs in the local period, reported by Jason rather than detected by any tooling: auto mode not taking effect at session start, twice on 2026-08-27 ten hours apart. Both were missed by the corrections regex. The chezmoi defaultMode: auto fix earlier that day did not hold across the gap, which points at settings precedence rather than the value itself.",
+      "evidence": "Local 2026-08-27T11:18 session 3d08d7ef: \"Hey 2 things: 1. auto mode setting isn't working sessions still start in approve\". Local 2026-08-27T22:01 session b30659ad: \"Hey! Auto mode definitly isn't working as intended if you can look at that.\" Fix attempt that day in session 14478dd8 edited the chezmoi source for defaultMode: auto and applied. ~/.claude/settings.json today carries \"defaultMode\": \"auto\". Neither prompt is corr-flagged; both surfaced only in the disguised sample.",
+      "classification": "tool",
+      "confidence": "medium",
+      "action": "Next recurrence, check settings precedence first (settings.local.json and project settings over the user file), not the value in the chezmoi source.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Delegated work inverted to the frontier tier: local subagents ran 65% Opus 5 and 0% Haiku",
+      "claim": "The local fortnight did not merely delegate less; what it did delegate it ran at the frontier tier, against the standing rule that every dispatch pins a model explicitly. Local subagent assistant messages: Opus 5 65.0%, Sonnet 5 34.7%, Haiku 0%. Archive: Sonnet 5 51.7%, Sonnet 4.6 15.7%, Opus family 21.2%, Haiku 8.7%. This is the cost story the finder said it could not measure: it was in the sidechain rows already read.",
+      "evidence": "Reconciler's own aggregation of the index's models field over sidechain rows. Local 43,630 sidechain assistant messages: claude-opus-5 28,359 (65.0%), claude-sonnet-5 15,154 (34.7%), claude-fable-5-1 105. Archive 146,545: claude-sonnet-5 75,831 (51.7%), claude-sonnet-4-6 23,075 (15.7%), claude-opus-4-8 16,909 (11.5%), claude-haiku-4-5 12,805 (8.7%), claude-opus-4-6 9,602, claude-opus-4-7 4,571. Compounding effect: 14,802 local Bash calls were emitted by Opus-5 subagents against 5,016 from the Opus-5 main loop, and 276 of the 295 lsp-first denials landed in those same subagents, so that guard's zero-conversion waste is priced at Opus inside workflows nobody is watching.",
+      "classification": "operator/config failure",
+      "confidence": "high",
+      "action": "Workflow scripts inherit the session model; the Agent-tool guard does not reach them. Pin model and effort per workflow agent, and set a Haiku/Sonnet floor for mechanical steps. This is the single highest-leverage cost change in this finder's evidence.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Session 82565888 is the fire-and-forget pattern as one measured row",
+      "claim": "One session carries Jason's whole hypothesis: one human prompt for the entire session, two Workflow calls fired off it, 344 agent transcripts, zero Skill invocations, 112 lsp-first denials inside the fan-out, and no second prompt at any point. It is a better exemplar of fire-and-forget than the working-style interview, which at least had Jason in the room afterwards.",
+      "evidence": "Index row (brok-stacks, 2026-09-02T10:20:51 to 12:24:51): human_prompts 1, assistant_msgs 34, tools {Bash 11, Workflow 2, Read 1}, skills [], models {claude-fable-5-1: 34}. 344 sidechain rows under the session file path, split 221 in wf_12575914-043 and 123 in wf_cdc23c2d-21c, carrying 7,480 Opus-5 assistant messages. The only prompt, 2026-09-02T10:21:57: \"Hey can you run a workflow here and dig into what we are doing well, any security / performance / correctness hardening for brok or the transcoder nodes (repo also local). happy to run ultracode and plan a long tail, wondering trafik instead of ngni\". The verifier's \"690 agent transcripts\" counts files on disk; the index counts 344 agent transcripts, which matches the brief's own figure.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Use this session as the worked example in the operator review. The fix is the same as finding 6: an interview or forced-choice round before fan-out, and a named owner for the output before the second workflow is allowed to start.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q3 operator gaps"
+    }
+  ],
+  "dropped": [
+    "Sub-claim of the lsp-first finding: '19 next-calls were regex-obfuscated greps written to dodge the matcher' — 153 of the 288 used `(?:)`, which is the guard's own documented escape hatch printed in its deny text; only 12 used the undocumented `[x]` trick.",
+    "Sub-claim of the lsp-first finding: 'Jason asked for it off on 2026-08-26 and it kept firing 289 times after' — it was removed then; firings are zero 08-22 to 08-29 and start on 08-30 with commit 136097b, which deliberately reinstated and widened it.",
+    "Headline of finding 2 as written: 'the corrections metric overstates the regression' — the question-answer adjustment enlarges the relative regression (2.2x to 3.2x); replaced by the denominator-dependent version.",
+    "Sub-claim of the ambiguous-terms finding: '42 GB of models pulled on a misread word' and 'the cheapest correction sat on top of the most expensive wasted work' — Qwen was explicitly requested in the same opening prompt and the weights were kept; the misread cost about two turns.",
+    "Sub-claim of the workflows-without-context finding: 'workflow-authoring loaded straight off the opening prompt in 7c70b045 and 82565888' — neither session invoked that skill; and the '9.8% local vs 6.6% archive workflow language' stat flips sign with the term list.",
+    "Headline of the skills finding: 'skill invocation collapsed 61%' — 58% of archive invocations belong to retired plugins; like-for-like is a 15% drop within noise.",
+    "'Prompts containing still broken / still not working fell from 11 to 2' as improvement evidence — unnormalised counts; as rates it is 0.30% local against 0.19-0.29% archive, flat to slightly worse.",
+    "'Talk it through first prompts fell 0.8% to 0.2%' — not reproducible; the finder's denominators match no prompt set in the pack.",
+    "'Auto mode reported broken twice, five days apart' — both reports are on 2026-08-27, ten hours apart.",
+    "Verifier's 'missed' item 2 (correction denominators) — not promoted as a separate finding; folded into the corrections finding, whose claim and evidence now carry all four denominators.",
+    "Verifier's '690 agent transcripts' for session 82565888 — not used; the index-checkable count is 344 across the two workflow directories."
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "label": "E1-quant",
+  "findings": [
+    {
+      "title": "Burn rate is flat at ~$177/active day; the Max plan is a ~20-26x arbitrage, so allocation is the lever, not cost",
+      "claim": "At list API prices the local period (2026-08-21..09-05) cost ~$2,510 and the archive period (2026-04-03..07-23) ~$10,677. Per active day the two are within 3% ($179 local vs $175 archive), so the Fable 5.1 / Opus 5 migration did not change the burn rate. A month of this behaviour is ~$3,900 (22 active days) to ~$5,400 (30 days) of list-price inference against a Max subscription: opportunity cost, not a bill. Judge every change below on what it buys per token, never on affording tokens.",
+      "evidence": "Deduped by `message.id` (max per field) then priced with claude.com/pricing fetched 2026-09-05 (Opus 5 $5/$6.25/$0.50/$25; Sonnet 5 $2/$2.50/$0.20/$10; Fable 5.1 $10/$12.50/$0.25/$50; Haiku 4.5 $1/$1.25/$0.10/$5). Local 63,391 assistant lines vs 29,281 unique message ids; archive 245,873 vs 109,783. Every dollar figure in the original E1 pass was 2.2-2.4x too high.",
+      "classification": "cost only",
+      "confidence": "medium",
+      "action": "Use $179/active day and the deduped $/commit numbers as the baseline for judging any efficiency change. Do not chase raw token reduction.",
+      "status": "corrected",
+      "question": "Q1 usage"
+    },
+    {
+      "title": "Cache read is 57% of spend and output 13% — the efficiency lever is context carried per turn, not verbosity",
+      "claim": "Local deduped cost splits fresh input <1% / cache write 30% / cache read 57% / output 13% (archive 1% / 25% / 55% / 20%). The main loop carries ~199K tokens of context on every assistant turn in both periods (local 199,418, archive 195,147); local subagents carry ~79K. Cutting verbosity or capping max_tokens moves ~13% of the bill; shrinking what each turn re-reads moves the other 87%. Cache hygiene itself is healthy (write:read 1:60 main loop, 1:16 subagent) — the cost is the size of a stable prefix, not thrashing.",
+      "evidence": "Deduped token totals, local: cache-create 312M / cache-read 6.69B / out 23.0M. `autoCompactWindow: 400000` is verbatim in ~/.claude/settings.json, so the main loop routinely runs at 200K+ per turn. Caveat established by the verifier: `output_tokens` on repeat JSONL lines is a growing streaming snapshot (observed 31,31,31,31,290 then 1,912 for one message id), so no per-turn output metric from this index is a final count.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Judge changes by context-per-turn. Lower `autoCompactWindow` to trade a few more compactions for a materially smaller prefix, and cut what subagents are handed (~79K each). Never quote subagent output-per-turn from this data.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Subagents moved to Opus 5 by explicit choice in Jason's own workflow scripts — the guard is working, the tier is the decision",
+      "claim": "Opus 5 is 84% of local subagent spend, Haiku is exactly zero, and subagent share of the period doubled from 26% to 47%. The cause is not a bypassed guard: 954 of 1,295 local workflow subagents are explicitly pinned to `opus` in their agent() opts, 317 to `sonnet`, only 24 unset, so `workflow-model-guard` correctly stays silent (it fired 8 times, on exactly the scripts that omitted the override). This is the opposite of the archive, where 3,057 of 3,795 subagent metas had no model at all — the archive's cheaper mix was inheritance from a cheaper session model, not discipline. Explicit tiering went from ~7% to ~98% of subagents; the tier chosen is the problem.",
+      "evidence": "`.meta.json` sidecars next to every subagent transcript. My own recount today across `*/subagents/workflows/**/*.meta.json`: opus 998, sonnet 317, unset 24 (n=1,339). The three biggest fan-outs are near-uniformly explicit opus: wf_6ba193c9-488 305/307, wf_12575914-043 217/221, wf_cdc23c2d-21c 121/123. Deduped, those three cost $454 total, so a Sonnet 5 swap saves ~$270 of the $2,510 period, not the $800 originally claimed.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Change the model argument in the workflow scripts: audit and research readers working from a settled spec are the Sonnet case the repo's own rule names. Optionally add a rule that a fan-out above N frontier-tier agents must state its reason. Do not tighten `workflow-model-guard` — it is behaving correctly.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "The lsp-first hook produced 297 denials, zero LSP calls, and taught the model a `(?:)` evasion",
+      "claim": "In 15 days the lsp-first guard denied 297 tool calls — 60% of all local denials and 4.8x the entire four-month archive — and changed nothing. The tool used on the very next call was Bash 290 times and LSP zero, against 13 LSP calls in the whole local corpus. The workaround is now dominant: the model appends an empty non-capturing group to the identifier (`grep -n 'isExempt(?:)'`) so the string no longer looks like a bare symbol while matching the same text. It also false-positives on non-symbols (`test(`, `IOKitDiagnostics`, `max_concurrent`). 276 of the 297 denials land inside subagents.",
+      "evidence": "Independent rescan of every `toolDenialKind` event: local lsp-first 297, archive 62. Next-tool after denial, all 297 local: Bash 290, ToolSearch 3, Edit 1, WebFetch 1, Write 1, tavily 1, LSP 0 (archive retry target was Grep 46 of 62). `(?:)` inside tool inputs: 756 occurrences across 137 local transcripts vs 84 across 43 archive. Denial body verbatim: `LSP-FIRST: \"IOKitDiagnostics\" looks like a code symbol.` Tool totals: LSP 13 local / 103 archive; Grep 0 local / 1,567 archive.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Stop denying on lsp-first. If the ~31% token win is still wanted, put LSP preference in agent prompts, not in a PreToolUse deny. See the scoping finding below for the retire-vs-scope call.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Two-thirds of denials now land on subagents, which cannot ask and just retry in a different shape",
+      "claim": "Local denials are 491 total, 318 (65%) inside subagent transcripts and 173 in the main loop — inverted from the archive, where 326 of 434 hit the interactive main loop. Per interactive session the rate went 0.23 to 2.2, a 9.5x rise. A main-loop denial surfaces to Jason and gets resolved; a denial inside one of 1,300 workflow agents is invisible and the agent's only move is another shape of the same command. Every `(?:)` retry came from an `agent-*` transcript; the 21 main-loop lsp-first denials were followed by ordinary unmangled greps.",
+      "evidence": "Independent rescan: local 491 denials (318 sub / 173 main), archive 434 (108 sub / 326 main). Denial kinds local: permission-rule 425, automode-blocked 42, user-rejected 21, automode-unavailable 3. lsp-first concentration is sharper still at 276/297 = 93% subagent. My own file-level check today: LSP-FIRST text appears in 150 subagent transcripts against 8 main-loop ones.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Scope deny-style guards to the main loop, where a human can act on them. In subagents make them advisory context, never denials.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Spend is concentrated in marathon sessions: 10 of 78 sessions are 40% of the period, and >12h sessions are 12% of sessions and 35% of spend",
+      "claim": "The money sits in a handful of multi-day sessions. Five ran over 24 hours wall-clock; with the 12-24h bucket that is 10 sessions (12%) and $862 (35%) of the $2,510 period. They do ship — 283 of 388 index-counted commits — and they are also where 26 of 34 compactions live, and where Jason's own 'split at milestones rather than run to exhaustion' rule is broken. Concentration: top-1 session 11%, top-5 26%, top-10 40%, top-20 48%.",
+      "evidence": "Recomputed on deduped costs; bucket shares identical to the original pass, dollars 2.2x lower. Session 68e1fc37 (2026-08-28 22:25, cwd /Users/jasonmatthew, ~62h): 110 human prompts, 41 commits, 9 compactions, 302 subagents, $264 own + $313 subagents = $577 all-in. Opening prompt: \"Yo! New project, ambient capture for mac? ... can we do a large workflow on what best in class looks like with this?\" Scope-defining constraints arrive as prompt 2 six minutes later (\"Wait I'd like it to run on base M5 too (work)\") and prompt 3 (\"can we make it portable for everyone on the team?\").",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Split at the seam after each landed milestone, and front-load the constraints that currently arrive as prompts 2 and 3 — 'must run on a base M5', 'must be portable for the team' are scope-defining and arrived after design work had started.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Fire-and-forget, measured: one prompt launched 344 Opus subagents and ~$266 of audit, and the launching session shipped nothing",
+      "claim": "Session 82565888 (2026-09-02, brok-stacks) contains exactly one human prompt. It launched two workflow rounds — wf_12575914-043 (221 agents) and wf_cdc23c2d-21c (123) — for ~$266 deduped, and ended with 0 commits, 0 pushes, 0 PRs and no further human turn. It was partially consumed the next morning by 573d625c, which opened with a triage question rather than a plan and produced 7 commits and 4 PRs in an hour. brok-stacks has 4 commits total in September against 224 in August. The same shape recurs: session 6f84c451 (2026-09-03T11:06) launches a research workflow and, 11 minutes later before any result is read, launches a second one.",
+      "evidence": "Launching prompt verbatim in local.prompts.jsonl at 2026-09-02T10:21: \"Hey can you run a workflow here and dig into what we are doing well, any security / performance / correctness hardening for brok or the transcoder nodes...\". Index row: 1 prompt, 0 commits/pushes/PRs, 344 parented subagent transcripts. Consumption trail 573d625c 2026-09-03T10:05: \"Hey we did that hardening pass here, is any of that critical to do right now?\" → 11 prompts, 7 commits, 4 PRs, two matched to commit subjects in git-summary.md. Of 21 local sessions that launched any subagent, 2 had <=3 human prompts and together account for $266 of subagent spend with 0 commits; the comparable archive figure is 21 of 164 parent sessions spending $133 and producing 18 commits.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Gate large fan-outs on consumption: before launching a >50-agent workflow, name in the prompt what the output feeds and when it gets read. Structurally cheaper: make the workflow's last step emit a ranked task list, so the next session's first prompt is 'do items 1-4' rather than 'is any of that critical'.",
+      "status": "corrected",
+      "question": "Q3 operator gaps, Q1 usage"
+    },
+    {
+      "title": "The genuine model-failure rate roughly doubled (~1.1% to ~2.1% of prompts) — it is not a regex artefact",
+      "claim": "Corrections per prompt went 2.13% to 4.59%. About a third of flagged prompts are Jason answering a clarifying question in BOTH periods (local 10 of 31 = 32%; a 45-prompt seeded sample of archive flags gives ~33%), so hand-cleaning scales both numerators alike and cannot close the gap. Cleaned: archive ~1.1%, local 2.1%. The 2.4x rise in AskUserQuestion is real but is not what moved the metric — if it were, the answering-a-question share of flags would have grown, and it did not. Recurring genuine failures locally: drift from an agreed plan, confident diagnosis before probing, measurements invalidated by unstated context.",
+      "evidence": "Denominators reproduce: local 78 interactive sessions, 675 prompts, 31 corrections, 2 frustration markers; archive 1,391 / 5,783 / 123 / 6. Genuine local failures verbatim include \"Wait we were meant to be swapping the ambient docs to nimbus / cumulious right?\" (68e1fc37, plan drift), \"Wait on OP I had to touchId when you were measuring there\" (c69c8882, invalidated a reported measurement), \"No I was talking about prompt caching, not usage limits\" (3d08d7ef). Archive sample genuine failures: \"Wait not quite, wrangler still deploys pages / workers\", \"No your still missing can you see https://...\".",
+      "classification": "model failure",
+      "confidence": "medium",
+      "action": "Track corrections as a real signal, but only after excluding prompts that answer an AskUserQuestion in the same turn. Do not repeat the original 'flat at 2%' reassurance — it compared a cleaned local numerator against a raw archive one.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Over-refusals persist: the model stops to ask permission for work already asked for, against a standing instruction not to",
+      "claim": "Two of the 14 genuine local model failures are the same class — the model stopped and asked permission for plainly in-scope work and Jason spent a turn saying yes. That pairs with 42 auto-mode classifier blocks in 14 active days (3.0/day, versus 1.6/day in the archive). It is a persistent behaviour, not a local-period regression: the archive carries the same class of prompt.",
+      "evidence": "Verbatim in local.prompts.jsonl: \"No explicit permission for doing that debugging, please go ahead and do it\" (00b357e7, 2026-08-23T05:01, transcoder); \"No explicit permission to run that if something goes wrong!\" (b764415d, 2026-09-04T19:57, ambient); archive equivalent \"No explicit permission to run this deployment yourself\" (5e432702, 2026-07-22T05:55). Denial text: \"Permission for this action was denied by the Claude Code auto mode classifier. Reason: Blocked by classifier.\" ~/.claude/CLAUDE.md says verbatim: \"Do not gate `git push`, PR merges, or commits. They are cheap to revert and asking about them is pure friction.\"",
+      "classification": "model failure",
+      "confidence": "medium",
+      "action": "Fix the auto-mode environment profile first (next finding) — it is the most likely upstream cause — then re-measure the classifier block rate.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "The auto-mode environment profile was generated from an empty $HOME and calls Jason a hobbyist with 'no software-development signal'",
+      "claim": "`autoMode.environment` in ~/.claude/settings.json — the profile the classifier consults on every action — was profiled from /Users/jasonmatthew, a directory with no tracked files and no remotes. That is the global trust baseline for someone who committed hundreds of times in the observed fortnight. Compounding it, 45% of local interactive sessions run with cwd == $HOME (against 1% in the archive, so this is a new habit), and ~/Work/Git/CLAUDE.md loads lazily 'when a session works in this tree' — so a third of local spend runs without the delegation, tiering, escalation and review rules loaded at all.",
+      "evidence": "Verbatim from settings.json: \"Primary use of Claude Code: personal/hobby use and system administration ... this checkout (`/Users/jasonmatthew`) has no tracked files and no remotes, so no software-development signal was found here\"; \"Trusted repo: This checkout at `/Users/jasonmatthew`, currently with 0 tracked files and no configured remotes\"; \"CI/CD deploy targets: None configured\". Session counts: 35 of 78 local (45%) vs 7 of 1,391 archive (1%). Home-dir sessions are $856 deduped = 34% of local spend, and include the period's most expensive session (68e1fc37) and the most-denied (d005accb, 22 denials).",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Two one-off fixes. (1) Regenerate `autoMode.environment` from a real repo, or hand-edit the 'Primary use' and 'Trusted repo' lines. (2) Either stop starting development sessions in $HOME, or move the delegation/tiering/escalation rules from ~/Work/Git/CLAUDE.md into ~/.claude/CLAUDE.md so they load everywhere.",
+      "status": "confirmed",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Bash is 79% of interactive tool calls and Grep is literally zero — auto mode routes everything through the shell",
+      "claim": "The tool mix inverted between periods. Interactive Bash went 41% to 79% of calls; Read 14% to 2%, Edit 16% to 5%, and the Grep tool went from 1,567 calls to 0. This is auto mode working as Jason configured it, but it has two costs: structured, size-bounded tool results are bypassed for raw shell output, and every symbol search now arrives as a shell grep, which is precisely the surface lsp-first polices.",
+      "evidence": "Recount of every tool_use block. Local main loop 9,037 calls: Bash 7,128 (79%), Edit 421, Write 266, Read 151, Grep 0, LSP 13 (whole corpus). Archive main loop 46,680: Bash 19,242 (41%), Edit 7,302 (16%), Read 6,647 (14%), Grep 611. Local subagents 26,795 calls, Bash 74%. Corroborating mechanism: the retry target after an lsp-first denial flipped from Grep (46 of 62 archive) to Bash (290 of 297 local). Auto mode is by request — 14478dd8, 2026-08-27T10:42: \"Hey can you fix my settings, opus 5, high, auto mode by default, concise wording etc.\"",
+      "classification": "tool",
+      "confidence": "high",
+      "action": "No change to auto mode. Note the interaction only: with Grep at 0, lsp-first is now a shell-command filter, which is why it fires ~20 times a day in subagents and why the evasion is a regex trick.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Cost per real commit spans ~12x, and brok-stacks is the expensive outlier — claude-skills is mid-pack",
+      "claim": "Against real git commits in the local window, cost per commit runs from Coach $0.93 to brok-stacks $11.24: ambient >=$3.28, claude-skills $4.53, transcoder $6.60. The cheap end is a repo where the model commits continuously during conversation with immediate feedback; the expensive end is infrastructure where a large fraction of spend goes into audits and research that never become commits. claude-skills rose ~1.5x period-over-period ($2.93 to $4.53), not 2.1x, and is not one of the two most expensive. 3d-printing spent $75 and the vault $46 with zero commits — design and note-taking conversation, correctly not producing code.",
+      "evidence": "The index's `commits` column counts Bash invocations and is wrong against git by -41% to +50% per repo (claude-skills index 45 / real 76 — I re-ran `git log --since=2026-08-21 --until=2026-09-06 --oneline | wc -l` in claude-skills today and got 76; Coach 117/176; ambient 54/109; transcoder 45/30; brok-stacks 35/33). Zero-ship shares reproduce: 60 of 78 local sessions ship nothing but are 8% of spend; filtered to >=10 prompts, 4 of 19 (21%) and 3% of spend — the '77% ship nothing' headline is a mirage.",
+      "classification": "cost only",
+      "confidence": "medium",
+      "action": "Look at brok-stacks specifically: the cost sits in all-Opus audit fan-outs that do not convert, not in interactive work. Never rank repos on the index's commit column without checking git.",
+      "status": "corrected",
+      "question": "Q1 usage"
+    },
+    {
+      "title": "The judgment skills have gone silent while volume tooling scaled: brainstorming, writing-plans, systematic-debugging and TDD all fell to zero",
+      "claim": "Skill calls per 100 interactive prompts fell from 7.8 to 5.6 and Agent dispatches per 100 prompts from 29.0 to 13.5, while subagent transcripts rose ~18x in rate. The orchestration layer relocated from in-conversation Skill and Agent calls to background Workflow scripts. The skills that encode judgment stopped firing entirely: brainstorming 75 to 0, writing-plans 74 to 0, systematic-debugging 19 to 0, TDD 8 to 0 — and none of the renamed superpowers-core equivalents fire either. Retirement does not explain it: those stacks were retired 2026-09-05, after the measured window, so they were available and unused. Plan mode ran in 8 of 78 sessions against a standing rule mandating it.",
+      "evidence": "Recount from the index skills arrays and raw tool_use blocks: archive 451 Skill calls / 5,783 prompts, local 38 / 675. AskUserQuestion per 100 prompts 6.5 to 15.6. Plan-mode sessions 8/78 (10%) local vs 31/1,391 (2%) archive; EnterPlanMode fired 8 times in 14 days. The one recorded skill failure in the corrections set is on this axis — d005accb, 2026-08-30T10:59: \"Wait can you interview me? I didn't answer any questions\".",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Re-arm brainstorming and writing-plans at the front of any session expected to run long — the marathons are exactly where requirements arrive as prompts 2 and 3. This is also the direct answer to Jason's Socratic hypothesis: the model already asks 2.4x more questions per prompt and it is not enough, because the questions come mid-work rather than before it.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Scope lsp-first to the main loop rather than retire it — 93% of its denials hit agents with nobody to appeal to",
+      "claim": "The retire-vs-scope call in the original pass went the wrong way. 276 of 297 lsp-first denials are inside subagents and 21 in the main loop. In the main loop it fires ~1.5 times a day and the model does not evade it — those 21 retries are plain greps. Every `(?:)` mangling came from a workflow agent that cannot ask a human and can only reshape the command. So the lsp-first finding and the denials-land-on-subagents finding are one finding with one fix: keep the guard where a human can act on it, make it advisory everywhere else. Opinion: this is the general shape for every deny-style guard, not just this one.",
+      "evidence": "Verifier's rescan: 276 subagent vs 21 main-loop denials of 297. My own file-level check today: the string LSP-FIRST appears in 150 subagent transcripts against 8 main-loop transcripts under ~/.claude/projects. Sampled `(?:)` retries all carry `agent-*` session ids under `/subagents/workflows/` paths.",
+      "classification": "skill/hook failure",
+      "confidence": "medium",
+      "action": "Add a main-loop-only condition to lsp-first instead of deleting it, and apply the same test to the other deny-style guards: if a guard fires mostly where no human can respond, it is generating evasions, not compliance.",
+      "status": "new-from-verifier",
+      "question": "Q4 tools, Q3 operator gaps"
+    },
+    {
+      "title": "The measurement substrate is unreliable: the transcript index overstates tokens 2.2-2.4x and misses commits by -41% to +50%",
+      "claim": "Claude Code writes one JSONL assistant line per content block of a single API response, each repeating `message.usage` verbatim, so any per-line sum double-counts by ~2.3x. `output_tokens` on those repeat lines is a growing streaming snapshot, not a final count, so output-token metrics read straight off transcripts are floors. And the index's commits/pushes/prs columns count Bash invocations, not landed work, missing real commits by up to 41% and overshooting by 50%. Anything Jason builds on this data must dedupe by `message.id` and cross-check ship counts against git.",
+      "evidence": "My own check on this session's transcript (7c70b045): 1,311 assistant lines carrying usage against 560 unique message ids, ratio 2.34, with single ids repeated up to 16 times. Corpus-wide: local 63,391 lines / 29,281 ids; archive 245,873 / 109,783. Cross-file id reuse is negligible (local 0, archive 1,062 ids = 1.6% of archive cache read). Commit check: `git log --since=2026-08-21 --until=2026-09-06 --oneline | wc -l` in claude-skills returns 76 against the index's 45.",
+      "classification": "measurement artefact",
+      "confidence": "high",
+      "action": "If any cost or productivity dashboard gets built from these transcripts, dedupe by message id (max per field) and take ship counts from git, not from Bash-call regexes. Treat output-token shares as floors.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q4 tools"
+    }
+  ],
+  "dropped": [
+    "No whole finding was dropped: both refuted findings carried a corrected_claim, so each survives in corrected form at reduced confidence.",
+    "Sub-claim dropped — 'local period cost $5,502, archive $25,680, ~$11,800/month, a ~50x arbitrage': every dollar was 2.2-2.4x too high because the index summed usage per JSONL content-block line; corrected to $2,510 / $10,677 / ~$3,900-5,400 per month / ~20-26x.",
+    "Sub-claim dropped — 'genuine model failures are flat at ~2%, the regex is counting answers to questions': the comparison put a hand-cleaned local numerator against a raw archive one; a 45-prompt archive sample shows the same ~33% non-correction share in both periods, so the cleaned rate roughly doubled (~1.1% to ~2.1%).",
+    "Sub-claim dropped — 'workflow scripts default to Opus 5 and the Agent-model guard never fires there': .meta.json sidecars show 954 of 1,295 local workflow subagents explicitly pinned to opus, and workflow-model-guard fired 8 times on exactly the scripts that omitted the override.",
+    "Sub-claim dropped — 'subagents carry 75K of context to emit 64 output tokens per turn': deduped it is ~79K context and 138 output, and even 138 is a streaming snapshot, so the metric is unusable.",
+    "Sub-claim dropped — 'claude-skills is one of the two most expensive repos per commit and doubled': against real git commits it is mid-pack at $4.53 and rose ~1.5x.",
+    "Sub-claim dropped — 'retire the lsp-first hook': replaced by scoping it to the main loop, since 93% of its denials land where no human can respond.",
+    "Sub-claim dropped — 'the ~$800 saving from moving the three big fan-outs to Sonnet 5': deduped those runs cost $454, so the saving is ~$270."
+  ]
+}

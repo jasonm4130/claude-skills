@@ -1,0 +1,153 @@
+{
+  "label": "E5-tooling",
+  "findings": [
+    {
+      "title": "lsp-first is being retired by its own data: LSP use peaked before the guard existed",
+      "claim": "The lsp-first guard produced 354 denials, 291 of them in the six days since commit 136097b (2026-08-30) extended it from the Grep matcher to Bash, with 169 on 2026-09-02 and 92 on 2026-09-04 alone. Across all 354 the model used the LSP tool within three calls 8 times (2.3%) and re-issued a text search 324 times, 268 of those carrying the guard's own documented `(?:)` escape hatch. The programme-level number is the stronger one: LSP tool_use peaked at 88 calls in 2026-04, before the guard existed, then ran 1 / 0 / 14 / 9 / 4 per month, 116 total across 23 of 6,705 transcripts against 88,346 Bash and 1,567 Grep tool_use calls. Retire on the April-peak evidence, not on a two-day denial spike.",
+      "evidence": "Verifier's independent extraction (REVIEW/out/refute-E5/den.py -> denials.json, 916 denial events over the same 416 flagged transcripts) reproduces every finder count: LSP-FIRST n=354 (local 292 / archive 62), first tool after deny Bash 287 / Grep 46 / LSP 1, LSP within 3 calls 8/354, text search re-issued 324/354, `(?:)` present 268 (283 on the looser [x]-split test), median deny message 614 chars. Monthly denials 2026-07 = 62 (all Grep matcher), 2026-08 = 1, 2026-09 = 291 (all Bash), caused by commit 136097b 2026-08-30 22:43 'gates: lsp-first reads Bash searches, not just Grep'. Escape hatch is deliberate: plugins/gates/go/lspfirst.go:31-37. My own recount of the index tools field: LSP 13 local + 103 archive = 116, matching. Sample pair (wf_6ba193c9-488): denied `grep -rn \"systemMessage\" --include=*.mjs .`, next call `grep -n \"emitOffer(?:)\" -A 30`.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Revert or narrow commit 136097b now (it is six days old and produced 291 denials). Then delete the lsp-first hook from plugins/gates/hooks/hooks.json and the 'LSP-First Code Navigation' section from ~/Work/Git/CLAUDE.md. If the token win is still wanted it must come from somewhere the model cannot route around: a search tool that returns LSP results, not a deny-and-hope gate.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "agent-model-guard is the one guard with a measured save; the honest post-rule leak is 6-12%",
+      "claim": "Untiered Agent dispatches fell from 69% of 227 dispatches on 2026-07-01-10 to 6% of 375 on 2026-07-11-23, the day the rule and hook landed, and sit at 12% across 2026-08-21 to 09-05. Of 33 guard denials, 22 are followed within three calls by a dispatch that sets `model`. Of 1,030 tiered dispatches, 793 went to Sonnet and 119 to Haiku, converting Opus-priced subagent work to Sonnet-priced work. The '0% in September' figure rests on n=33 and should not be quoted; 6-12% is the defensible post-rule rate. This is the acceptance test the other guards do not meet: it denies an action fixable in one field with no cheaper route around it.",
+      "evidence": "Verifier recomputed all 1,931 Agent tool_use events (REVIEW/out/refute-E5/agents.py): 2026-04 331/554 (63% leak), 05 124/75 (38%), 06 32/75 (70%), 07 422/180 (30%), 08 88/17 (16%), 09 33/0 (0%) - identical to the finder. Daily split: Jul 1-10 = 227 dispatches 69% leak, Jul 11-23 = 375 dispatches 6% leak. Model mix sonnet 793, haiku 119, opus 113, fable 5. Rule commit 23ffc8e 2026-07-11. Confound ruled out: 0 of the 513 post-rule dispatches come from wf_ (Workflow) transcripts, so this is not a workflow auto-tiering its own agents. Caveat carried from the verifier's missed list: the archive has a 47-day blackout 2026-05-03 to 06-19, so the April-to-July curve is not continuous - the July 1-10 vs 11-23 within-month split is the clean comparison.",
+      "classification": "strength",
+      "confidence": "high",
+      "action": "Keep the hook. Use its within-month behaviour curve as the acceptance test for every other guard: a guard that cannot show one is a tax. Delete the ~/Work/Git/CLAUDE.md prose about the 73% leak - the hook carries the rule and CLAUDE.md's own 'never state a rule twice' applies.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "docs-sync-guard's dominant outcome is a ritual ack, not a doc edit",
+      "claim": "docs-sync-guard fired 251 times. Classifying by what the next git commit within ten calls actually contained: 158 (63%) carried a `docs-sync:ack` override, 54 (22%) staged or edited a doc, 9 (4%) never re-committed, and at most 30 (12%) look like a route-around - several of which demonstrably did edit docs outside the detection window (one is a7bc901, whose own subject reads 'port ccguard from Rust to Go, and split the README into docs/'). The guard is not leaking a third of its cases; it is being acked past two times in three, so it functions as a compliance ritual costing ~115 tokens per fire.",
+      "evidence": "Verifier's reclassification of the same 416 transcripts with a 10-call window: ack 158, doc edit 54, no re-commit 9, possible route-around <=30. Median deny message 463 chars (~115 tokens). n=251 and the median reproduce from the finder; the finder's 73/85/85/8 split does not reproduce. Guard design: plugins/gates/README.md, 'each carries an ack marker so a deliberate override costs one token in history rather than a disabled hook'.",
+      "classification": "skill/hook failure",
+      "confidence": "low",
+      "action": "Do not spend effort plugging a leak that is at most 12%. Decide instead whether a 63% ack rate is the intended design or a signal the guard fires on commits it should not. Cheapest next step: have the guard write a one-line fire/ack/doc-edit record and re-read it in a month before changing anything.",
+      "status": "corrected",
+      "question": "Q4 tools"
+    },
+    {
+      "title": "secrets-scan has never caught a real secret in 4.5 months; all six blocks were on its own tests",
+      "claim": "The secrets-scan PreToolUse hook matches Edit, Write, MultiEdit, NotebookEdit and Bash, so it spawns a subprocess on the order of 100k+ times across the corpus. It produced six blocks in 4.5 months and every one is the hook testing itself or a placeholder: the claude-hooks/secrets-scan.js differential test harness, a Go rebuild of the hook, a deliberate self-test exporting a dummy AWS-shaped key with the echo 'if you see this, secrets-scan did NOT fire', the dirty/clean payload self-test, a Write of git_deploy_key.example whose body reads REPLACE_ME_WITH_A_REAL_READ_ONLY_ED25519_DEPLOY_KEY, and a Write of secrets-scan.test.mjs. Zero true positives against 88,346 Bash tool_use calls. It also blocked the write of this very reconciliation file for quoting its own fixture key, which is the seventh instance of the same pattern.",
+      "evidence": "Verifier independently extracted 6 secrets-scan denials (4 local, 2 archive) with denied_input matching the finder verbatim on all six. Hook config: ~/.claude/settings.json PreToolUse matcher 'Edit|Write|MultiEdit|NotebookEdit|Bash' -> ~/.local/bin/claude-hooks secrets-scan. Denominator corrected from the finder's ripgrep line count (90,065) to tool_use events: 88,346 Bash. Live observation, 2026-09-05: writing this file with the fixture key quoted verbatim was denied with 'SECRETS-SCAN: Detected potential secret(s) in tool input - blocking the write. Matches: AWS access key ID'.",
+      "classification": "cost only",
+      "confidence": "high",
+      "action": "Keep it - it is cheap catastrophic-event insurance and the 1Password rule is plausibly why it has nothing to catch. Stop treating it as evidence the setup is safe: it has never been demonstrated on a real secret. One deliberate red-team write per quarter converts it from unproven to proven.",
+      "status": "confirmed",
+      "question": "Q4 tools"
+    },
+    {
+      "title": "Standing instructions are ~4,700 tokens always-on; the cost is context crowding, not spend",
+      "claim": "The always-on load is ~/.claude/CLAUDE.md (14,320 B) plus ~/.claude/rules/harness-behaviours.md (4,655 B) = 18,975 B, about 4,700 tokens on every turn in every repo, rising to ~8,300 tokens in claude-skills where ~/Work/Git/CLAUDE.md (6,367 B) and MEMORY.md (7,945 B) also load. The finder's 8,300-everywhere figure double-counts: the Work/Git file loads for 63% of local turns and 89% of archive turns, and MEMORY.md in one repo. At ~7.6% of cache-read tokens, the cheapest tier, this is roughly 0.8% of an equivalent input-token bill, so the argument for cutting is context crowding and instruction drift, not money. Gate 5's '200 lines' test measures the wrong unit: the file is 142 lines and passes while being 14,320 B with 8 lines over 400 chars, and the chezmoi source went 10,596 B (2026-08-07) to 20,295 B (2026-08-30, +92% in 23 days) to a 21% cut the same day, still rendering over budget.",
+      "evidence": "`wc -c -l`: 14,320 B / 142 lines, 6,367, 4,655, 7,945. Cache-read attribution: 8,300 x 62,229 assistant turns = 516.5M of 6.692B local (7.7%); 8,300 x 245,873 = 2.041B of 27.101B archive (7.5%). claude-md-guard fired live in both the finder's and the verifier's sessions with the exact text '14320B is over the 12288B green band (~3580 tokens) / 8 line(s) over 400 chars - line count hides real size here'. Source sizes from `git show <sha>:dot_ai/AGENTS.md | wc -c` in ~/.local/share/chezmoi: ad9431b 2026-08-07 10,596 B; ab35ac4 2026-08-30 20,295 B; 1b5c360 2026-08-30 15,478 B.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Change gate 5's test from '200 lines' to the 12,288 B band the guard already enforces, so the gate and the hook agree. Then cut to fit, on crowding grounds - do not sell the cut as a spend saving.",
+      "status": "corrected",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Keep or cut standing rules by pre-rule base rate, not by 'zero violations since'",
+      "claim": "Nine rules show zero violations after their commit date, but the pre-rule base rates differ enormously and that, not the zero, should drive the keep/delete list. `--admin` was used routinely before its rule - about 12 `gh pr merge --admin` commands covering ~19 PRs from 2026-04-19 to the rule's own day, including one loop merging PRs 73-80 - making it the best-evidenced rule in the set, the opposite of the finder's 'all but one are the rule text'. `commit -a` has two real uses, both about 40 minutes before the 2026-07-09 rule commit that names that sweep. The third-party-tracker rule has two pre-rule violations (cloudflare/terraform-provider-cloudflare 2026-04-05, safishamsi/graphify 2026-04-30). The Gmail rules are commit f330e3c 2026-09-02, a three-day window with zero Gmail traffic, so their exposure test is vacuous rather than passing; Gmail volume is 192 calls in 8 transcripts (get_thread 106, search_threads 63, update_draft 1). The GUI-coordinate rule has zero real calls, but that negative rests on a self-authored grep - the exact move Jason's own standing rule forbids.",
+      "evidence": "Rule dates from `git log --date=short -- '*AGENTS.md'` in ~/.local/share/chezmoi: 4599b24 2026-07-16 (--admin), 55a6cb1 2026-07-09 21:23 +1000 (commit -a), ad3393c 2026-06-15 (merge commits), 8e65b84 2026-08-15 (upstream issues), 6d73ce4 2026-08-21 (GUI coordinates), f330e3c 2026-09-02 10:14 +1000 (Gmail). Verifier's ripgrep-then-JSON-parse of tool_use inputs: --admin ~12 real commands / ~19 PRs (formrecap #1 2026-04-19; a loop over PRs 73-80 on 2026-06-25; #81, #83, #85, #86, #101, #105 x2, #106, #107 on 2026-07-10; #124 on 2026-07-16); commit -am two real uses 2026-07-09 10:41:30Z and 10:42:33Z; merge --merge 274 vs --squash 1 (scan text) and --rebase 2; gh issue create 27 with two third-party. Two positive compliance traces for --admin: 'queue merge for when CI passes (no --admin, waits for green)' (larry 2026-07-17) and 'merge #144 (merge commit, no --admin)' (brok-stacks 2026-07-20).",
+      "classification": "operator failure",
+      "confidence": "medium",
+      "action": "Keep --admin, third-party-tracker and commit -a: all three have a demonstrated pre-rule base rate. Move the two Gmail rules and the GUI-coordinate rule out of the always-on ~/.claude/rules/ file on volume grounds (0.1% of transcripts), not on a no-violations claim the data cannot support, into the email-management and vault memory stores. Absence of violation still cannot distinguish 'the rule works' from 'the model would not have done it anyway' - weigh blast radius.",
+      "status": "corrected",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Front-loading gated permissions is the most-repeated failure in the corpus and has no rule and no hook",
+      "claim": "At least 30 human turns across 15 or more repos are spent purely unblocking the auto-mode classifier, from 2026-07-03 to 2026-09-05, behind 142 automode-blocked denials and 97 distinct denial-to-prompt pairs. Jason named the problem twice - 2026-07-04 endurebyte a1eeb318 'I am always being prompted and always say yes', and 2026-07-09 claude-skills 2689e189 'maybe we should ask up front when we know we will need things what the intended outcomes are (so you have permission before auto classifier flags it)' - and the fix was written to one repo's memory store, so it never loaded anywhere else. Nothing in ~/.claude/CLAUDE.md mentions permissions except gate 0 of the fact-routing policy.",
+      "evidence": "Verifier replaced the finder's prompt regex with a mechanism-grounded pass (REVIEW/out/refute-E5/perm.py): for every automode denial, the next human prompt in the same transcript - 127 denial-to-prompt pairs, 97 unique prompts, ~30 unambiguous unblocking turns. Quotes: 'Nope please take this as explicit permission to run the production deploy' (sweeparr 2026-07-11), 'No explicit permission to run this deployment yourself' (brok-stacks 2026-07-22), 'Ok explicit permission to update those please' (brok-stacks 2026-09-04), 'Prefer you to run that please (explicit permissions)' (brok-stacks 2026-09-05). Denials: automode-blocked 142, 'Blocked by classifier' 61. Memory file: ~/.claude/projects/-Users-jasonmatthew-Work-Git-claude-skills/memory/retro_feedback_frontload_gated_permissions.md. `grep -i permission` over the three instruction files returns only CLAUDE.md:128.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Promote it to one sentence in ~/.claude/CLAUDE.md next to 'What to confirm before doing': when a plan will need classifier-gated actions ($HOME config writes, installs, deploys, service restarts), name those exact commands in the plan-gate question so approval exists before the classifier evaluates them. It is cross-repo, so memory is the wrong home.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Cross-repo facts have nowhere to live, and that is measurably why the permissions failure recurs",
+      "claim": "MEMORY.md's own routing note states there is no global store, so a cross-repo fact routed to ~/.claude/memory/ never surfaces. The only global channel is ~/.claude/rules/, which is simultaneously over-full (it carries the near-dead Gmail and GUI rules) and unused for the facts that actually need it. The front-loading finding is the demonstration: a genuinely cross-repo behavioural fact went to one repo's store on 2026-07-09 and the same failure then recurred in brok-stacks, sweeparr, transcoder, ambient, content-ops and the plex worktrees. Jason asked for the missing mechanism directly on 2026-07-20.",
+      "evidence": "Gate 6 text in ~/.claude/CLAUDE.md:139, from chezmoi commit 0992bfd 2026-08-07 'correct the memory model - no global store, and the index cap is real', so the constraint has been documented for a month. Jason, brok-stacks a68314e5, 2026-07-20 (verbatim, verifier-confirmed): 'Hmm no router is in ../unifi or something similar we should probably save a map for this in global memory for this and other session in future'. 39 per-repo memory stores exist (ledgers.md); largest indexes brok-stacks 15,293 B and Obsidian-Vault 12,886 B, both at or over the 25 KB / 200-line injection cap where the remainder is silently dropped.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Treat ~/.claude/rules/ as the global memory store it already is and split it by domain, with `paths:` frontmatter where the harness supports it: one always-on file for universal behaviour, path-scoped files for Gmail, GUI and browser facts. Route cross-repo retro findings there instead of into whichever repo the session happened to be in.",
+      "status": "confirmed",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Rule 1's 'ask at most one question, never a list' runs against nine explicit asks for the opposite",
+      "claim": "Nine times across the corpus, five of them missed by the finder, Jason stops work to ask for a conversation or an interview before execution: 'Wait can we talk through it first please' (2026-04-03), 'Wait stop actually let's research is the split needed?' (2026-04-25), 'please ask me questions etc please!' (Obsidian-Vault 2026-04-13), 'Lets talk through the design choices first' (content-ops 2026-05-02), 'Wait lets talk through the changes first please' (2026-07-13), 'ok socratic quiz me to tease out options' (2026-08-28), 'Wait can you interview me? I didn't answer any questions' (2026-08-30), 'do you want to run a small research workflow and a socratic pass with me' (ambient 2026-09-04), 'maybe you can do a socratic pass with me' (claude-skills 2026-09-05). Plan mode ran in 8 of 78 local and 31 of 1,391 archive main sessions; AskUserQuestion in 17/78 and 98/1,391, both floors. The one-question clause dates to 2026-05-16, so it cannot explain the April asks: this is a strong correlational case for rewriting the clause, not a demonstrated cause.",
+      "evidence": "~/.claude/CLAUDE.md rule 1: 'Ask at most one question - never a list.', chezmoi commit 9717408 2026-05-16. Prompt quotes verified verbatim with sessions and dates by the verifier: 6b38bc0e 2026-04-03, 2f9959a7 2026-04-25, 291f6c79 2026-07-13, d005accb 2026-08-30, plus five more found on a wider search. Session-index aggregates reproduce to the row: plan_mode>0 in 31/1,391 archive and 8/78 local main sessions; AskUserQuestion in 98/1,391 and 17/78; EnterPlanMode 31 calls in 26 of 1,469 main sessions. Presence numbers are floors because the index keeps only each session's top 12 tools (90 transcripts hit that cap, my own recount: 14 local + 76 archive).",
+      "classification": "operator failure",
+      "confidence": "medium",
+      "action": "Rewrite rule 1's question clause: one question when the next step is obvious, a structured multi-option gate (AskUserQuestion) before any multi-step or irreversible work. Then re-measure plan-mode and AskUserQuestion rates in a month - the causal claim is unproven.",
+      "status": "confirmed",
+      "question": "Q3 operator gaps"
+    },
+    {
+      "title": "Four of Jason's own plugins produced zero skill invocations in the two-week local period",
+      "claim": "Only 16 of 78 local main sessions (21%) invoked any skill, 44 invocations in total. handoff, session-retro:retro, ship-gate and gates:docs-consolidate were invoked zero times. Anthropic's built-ins are 28 of the 44 (64%): workflow-authoring 8, artifact-design 5, design 3, artifact-capabilities 3, artifact-diagramming 2, schedule 2, claude-api 2, code-review 1, dataviz 1, loop 1. Jason's own plugins carry codex-plan-review 5-7, writing-artifacts 3, domain-modeling 1, adr 1. The process skills retired on 2026-09-05 had already gone to literal zero: brainstorming 75, writing-plans 74, SDD 43+30, systematic-debugging 19, TDD 8 in the archive, all zero locally. Per-session invocation rate rose (0.32 to 0.49) while the composition shifted off Jason's own tooling entirely.",
+      "evidence": "Verifier recounted every Skill tool_use across all 6,705 transcripts (REVIEW/out/refute-E5/tools.py): local 44 (finder said 43), archive 472. Sessions using any skill 16/78 local (21%) and 163/1,391 archive (12%), both exact. Archive process-skill counts reproduce exactly. Installed-plugin list from ledgers.md. Mechanical cause for three of the four zeros already documented: docs/research/2026-09-04-marketplace-audit.md section 1, emitOffer nests systemMessage inside hookSpecificOutput so no human has ever seen the offer.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "handoff is already deliberately off (HANDOFF_THRESHOLD_PCT=999, memory 2026-08-08): retire the plugin rather than leave it installed. For session-retro, ship-gate and docs-consolidate, fix the emitOffer nesting first, then re-measure before deciding to retire. Do not add a new skill until these four are working or gone.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "no-route-around-ci matches command text rather than intent, and the corpus indexer is obfuscated to get past it",
+      "claim": "no-route-around-ci fires on a string being searched or written as if it were being executed. On 2026-09-05 06:13:42Z it denied a pure scratch-file write, `cat > index.py <<'EOF'`, because the heredoc body contained the literal `gh pr merge`; the index.py that shipped now splits its own literals (`G=\"gi\"+\"t \"`, `H=\"g\"+\"h pr \"`) to get past it. It denied read-only `rg` scans in both the finder's and the verifier's review sessions, forcing string-splitting to complete a read-only measurement. The finder's parallel charge against lsp-first does not hold: 291 of its 292 Bash denials contain a real search binary - its problem is scope, not text-versus-intent. Heredoc-stripping prior art exists only in docs-sync-guard.",
+      "evidence": "Verifier reproduced the guard live and found the stronger case: the 2026-09-05 06:13:42Z deny on `cat > $SP/index.py <<'EOF'`, with the shipped index.py's split literals as the artefact. Verifier's pass over all 292 lsp-first Bash denials found 1 with no search-binary token, not the finder's 9 - the finder truncated compound commands at '; ...' and then asserted absence (the ambient command ends `grep -n 'fn version\\|CARGO_PKG_VERSION' src/*.rs | head -3`, quoted back in the deny message). Prior art: plugins/gates/README.md 'Heredoc bodies are stripped before any of this runs' - docs-sync only. Related memory: feedback_docs_sync_ack_heredoc.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Extend the docs-sync heredoc-stripping to no-route-around-ci, plus exemptions for quoted string literals and any command whose leading binary is a read-only search or pager (rg, grep, sed, awk, ls, cat, jq). Apply it in the ambient and claude-skills repo settings too - that guard currently blocks auditing itself.",
+      "status": "corrected",
+      "question": "Q4 tools"
+    },
+    {
+      "title": "Plugin hooks fail silently in three distinct ways and nothing detects it",
+      "claim": "The hookErrors field surfaces three silent-failure modes no monitoring catches: `/bin/sh: node: command not found` on 2026-08-21 (x5; the host does not provide Node, already in memory as a platform limit, and the hook simply stopped running); `Plugin directory does not exist: .../jasonm4130-session-retro/session-retro/0.3.0 - run /plugin to reinstall` (x3 on 2026-05-02, x2 for 0.5.0 on 2026-07-03); and `Hook JSON output validation failed - (root): Invalid input` on session-retro's Stop hook, whose payload is verbatim the emitOffer nesting defect the 2026-09-04 marketplace audit proved live. session-retro's nudge has been failing visibly in the log and invisibly to Jason for four months.",
+      "evidence": "Verifier extracted every hookErrors field independently and found all three modes as described, with counts x5 / x3 / x2 / x1 (finder said x4 for the node error). Payload verbatim: {\"hookSpecificOutput\":{\"hookEventName\":\"Stop\",\"additionalContext\":\"[session-retro] This session: 3 edits across 3 files ...}. Corroborated by docs/research/2026-09-04-marketplace-audit.md section 1 and memory reference_claude_code_plugin_platform_limits.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Add a startup or weekly self-check that runs each installed plugin's hooks against a fixture payload and reports invalid JSON, a missing interpreter, or a missing plugin directory. The marketplace audit's companion finding - the repo's behavioural test layer is zero, `grep -rn 'claude -p' scripts plugins/*/tests plugins/*/scripts` returns nothing - is the same gap from the CI side.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Grep tool_use is exactly zero locally: any hook whose matcher is Grep is dead",
+      "claim": "In the local period the Grep tool was called zero times against 26,268 Bash tool_use calls. Auto mode routes all discovery through the shell, so a PreToolUse hook matching on the Grep tool has nothing to fire on. This is the mechanism behind the lsp-first denial spike (commit 136097b moved the matcher to Bash and denials went from 1 in August to 291 in six days of September) and behind the text-versus-intent problem, since Bash command strings carry search patterns, heredoc bodies and quoted literals that a tool-name matcher never had to parse.",
+      "evidence": "My own recount over REVIEW/local.sessions.jsonl and archive.sessions.jsonl tools fields: local Grep absent from every row (0) and Glob absent, against Bash 26,268; archive Grep 1,562, Glob 587, Bash 61,672. Commit 136097b's own message states the same thing for its repo: 'Grep and Glob were called 0 times against 2,419 Bash calls'. Verifier's corpus-wide tool_use totals: Grep 1,567, Bash 88,346.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Audit every hook matcher for tool names that auto mode no longer produces (Grep, Glob). Where the intent must survive, the matcher has to be Bash plus a command parser - which is exactly the cost the no-route-around-ci finding prices. Where it cannot, retire the hook rather than port it.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Three instrumentation limits bound every count in this pack",
+      "claim": "First, the corpus has two blackouts: 47 days (2026-05-03 to 2026-06-19) inside the archive, and 29 days (2026-07-23 to 2026-08-21) between the archive's end and the local period's start. Any before-and-after-a-rule-date claim straddles one of them, so within-month comparisons beat month-to-month curves. Second, the session index keeps only each session's top 12 tools, so every tool-presence number - AskUserQuestion, EnterPlanMode, LSP, per-session skill rates - is a floor, not a measurement; 90 transcripts hit that cap. Third, `toolDenialKind` returns zero for April, May and June 2026 because the field did not exist in those Claude Code versions, so the apparent rise in denials from 0.15 per transcript in July to 0.44 in September is partly instrumentation and no denial trend crossing July is trustworthy.",
+      "evidence": "My own pass over the index: archive spans 2026-04-03 to 2026-07-23 with one gap over seven days, 2026-05-03 to 2026-06-19 (47 days); local spans 2026-08-21 to 2026-09-05, leaving 29 days uncovered between the two. Transcripts with 12 or more tool keys: 14 local + 76 archive = 90, matching the verifier's figure. The toolDenialKind gap is the finder's own gaps section, item 3.",
+      "classification": "evidence limitation, not a failure",
+      "confidence": "high",
+      "action": "When writing the final review, phrase every rule-effect claim as a within-window comparison (the agent-model-guard July 1-10 vs July 11-23 split is the model), mark tool-presence percentages as floors, and quote no denial trend that crosses July 2026.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage"
+    }
+  ],
+  "dropped": [
+    "docs-sync-guard 'leaks a third of its cases' (73 doc edits / 85 acks / 85 route-arounds / 8 abandoned) - refuted; the verifier's reclassification of the same transcripts gives 54 / 158 / <=30 / 9, inverting the finding into 'acked past two times in three'. The corrected form is filed above; the 34% route-around number must not be quoted.",
+    "'lsp-first denied 9 Bash commands containing no search binary' - refuted; both cited examples do contain grep, the finder truncated the compound commands at '; ...' before asserting absence, and the verifier finds 1 such command in 292, not 9.",
+    "'--admin has one real use ever, all other matches are rule text' - refuted; the verifier counts ~12 real commands over ~19 PRs from 2026-04-19 onward, which reverses the recommendation from trim to keep. The finder's derived advice to cut the --admin rule is dead.",
+    "Ripgrep line counts used as tool_use counts - dropped as figures: Grep is 1,567 not 1,902, Bash 88,346 not 90,065, Gmail 192 calls in 8 transcripts not 69 in 4. Any ratio built on the old denominators is void.",
+    "'Standing instructions cost ~8,300 tokens per turn everywhere' - dropped in that form; ~/Work/Git/CLAUDE.md loads for 63% of local turns and MEMORY.md for one repo, so always-on is ~4,700 tokens. The 8,300 figure survives only for claude-skills sessions.",
+    "'Gmail and GUI rules are safe to delete because they have zero violations' - dropped as reasoning; the Gmail rules are three days old with zero Gmail traffic in the window, so the test is vacuous, and the GUI negative rests on a self-authored grep. The move-on-volume recommendation survives, the no-violations justification does not."
+  ]
+}

@@ -1,0 +1,176 @@
+{
+  "label": "E4-operator",
+  "findings": [
+    {
+      "title": "Sessions open cold; the decline is not measurable",
+      "claim": "Jason opens almost every session cold - a short conversational one-liner with no goal, no artifact holding current state and no done condition. Whether this got worse over time is not measurable at this sample size, and part of the archive's apparent priming is not priming at all.",
+      "evidence": "Local period, 47 sessions: opening prompt median 153.5 chars, 35% are <=120 chars, 0 of 46 openings cite a local file path (regex over /Users/, docs/, src/, *.md, *.py, *.ts). Representative: 2026-09-04 c9762ff5 \"Yo! Patching!!!!!!  It's not been working, can you look at what we have, what best in class looks like here? Workflow it up.\"; 2026-09-02 82565888 \"Hey can you run a workflow here and dig into what we are doing well...\". Trend test fails: 2/47 local vs 34/268 archive substantial openings, Fisher p=0.133; path cites 0/46 vs 16/268, p=0.142. Of the 34 archive 'substantial' openings, 3 are auto-generated compaction-continuation text (b36be97c, d20e6fa1, 93798b3f), 4 are pasted recruiter emails, and 6 are one repeated model-written template.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Adopt a three-line opener: goal, the artifact or branch holding current state, done condition. Better, make it mechanical - a /prime <repo> skill that reads open PRs, the last plan doc and the memory index and states the situation back before answering the first prompt.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Clarification arrives after the work starts, and the cold open is half the cause",
+      "claim": "Clarification lands after the expensive work has already begun: 62% of sessions carry no AskUserQuestion at all and the first one arrives a median 39 minutes in, never within 2 minutes. The rate is stable across periods, and the absolute delay is inflated by local sessions running twice as long. It is a joint failure - a 153-char cold open gives the model nothing to ask about until it has read the repo.",
+      "evidence": "519 AskUserQuestion events over 315 transcripts. Local: 18 of 47 sessions (38.3%) contain any question; median first question 39 min; 5 within 10 min; 0 within 2 min; earliest 2.6 min. Archive: 39.9% of sessions, Fisher p=0.873 - no change. As a share of session duration the first question moves only from 6.0% (archive) to 9.2% (local); local ask-sessions run a median 618 min vs 318 min. Concretely 2026-09-02 82565888: prompt at [1m], 15-agent audit workflow at [6m], 99 findings, zero questions at any point.",
+      "classification": "skill/hook failure, operator failure (joint)",
+      "confidence": "high",
+      "action": "Put an intent gate in front of the first Workflow or Agent call of a session: state the goal, the done condition and the one decision about to be made on Jason's behalf, and ask which of the three is wrong. A PreToolUse hook on Workflow can enforce it the way the agent-model guard enforces tiering. Pair it with the /prime opener - the gate is worth little if the model still has nothing loaded to ask about.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "The deference is positional, not label-driven",
+      "claim": "Jason takes the model's recommended option 80% of the time, and on questions carrying no recommendation he still takes the first-listed option 64% of the time. Most of the deference is position anchoring, so removing the '(Recommended)' label would change little.",
+      "evidence": "255 questions carried a '(Recommended)' option; Jason took it 204 times (80.0%). The finder's 90% appeared only after excluding the 26 questions Jason answered in free text - the exclusion rule removed the counter-evidence. '(Recommended)' is the first option in 254 of 255 cases, so 'took the recommendation' and 'took the first option' are one statistic reported twice. On the 300 questions with no recommendation, first-option take rate is 64%. Prompt shape corroborates: median prompt 66 chars local / 64 archive; 39% local and 46% archive of prompts open with a bare approval word.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Randomise option order in your own skills' AskUserQuestion calls, and require the model to state the cost of the recommendation being wrong. Do not bother banning the label - the evidence says position, not the label, is doing the work.",
+      "status": "corrected",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Overrides run both ways - there is no one-way scope instinct",
+      "claim": "When Jason rejects the model's recommendation he cuts scope about as often as he expands it. The override set is small and mixed, and the 'never cuts scope' claim is false.",
+      "evidence": "25 non-recommended picks across both periods. Cuts, verbatim: 028a7521 2026-07-09 'Read-only UI' over 'Config arms, UI can only disarm (Recommended)'; 028a7521 'Post-deploy data only'; 028a7521 'Immediate delete' over 'Quarantine with TTL'; b2cfb7d0 2026-07-09 'Delete all, no rescue' and 'Private for now'; 4ee9491b 2026-07-02 'Retire permanently' over 'Keep all parked'; b30659ad 2026-08-28 'Leave it alone'. Expansions: 'Full - all 5 angles' (2026-08-22 b2ab8180), 'Router + Unraid too' (5c5ecdbc), 'Include Codex from day one' (c532b9f9). Roughly seven cuts against six expansions.",
+      "classification": "no failure",
+      "confidence": "medium",
+      "action": "Drop this as a diagnosis. Keep only the general habit worth having: answer 'what are we NOT doing this session' in one line at the plan gate.",
+      "status": "corrected",
+      "question": "Q3 operator gaps"
+    },
+    {
+      "title": "Backlog outruns drain, and the checkbox is the wrong meter",
+      "claim": "brok-stacks holds eight audit documents and produces findings faster than it retires them. Both available measures are lower bounds: commit-message references undercount, and audit checkboxes have a false-negative rate above 10%, so the direction survives but the ratio does not.",
+      "evidence": "/Users/jasonmatthew/Work/Git/brok-stacks/docs/HARDENING_AUDIT_2026-09-02.md is 105,605 bytes with 150 unique IDs (F001-F099, G001-G057); git log origin/master names exactly 5 (F058, F059, F060, F067, G040) after three days. docs/SECURITY_AUDIT_2026-05-04.md shows 38 of 38 boxes unticked four months on - but spot-checking against the repo, at least four are substantively done: .gitignore lines 6-7 carry `**/.env` and `!**/.env.example`; scripts/fix-permissions.sh line 17 reads \"NOTE: `secrets` is deliberately NOT in this list\"; swag/proxy-confs/gitea.subdomain.conf is 1,050 bytes and documents the deliberate Authelia exclusion (the audit calls it empty); DbBackupStale/FlashBackupStale exist in monitoring/ (telegraf.conf, backup-freshness-metrics.sh). Same directory also holds CODEBASE_REVIEW_2025-10-15, STACK_AUDIT_2026-05-15, STACK_REVIEW_2026-05-29, SECURITY_HARDENING_REVIEW_2026-05-31, SWAG_DMZ_ARCHITECTURE_REVIEW_2026-06-01, SWAG_HARDENING_REVIEW_2026-07-17.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "No audit without a drain queue booked at the same moment - Nightshift is that mechanism and already exists; enforce the rule at the point the audit workflow is dispatched. Stop reading checkbox state as drainage; measure by re-verifying findings against HEAD, which is what the 09-03 session did.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Only two of five research artifacts have a consumer outside their own production day",
+      "claim": "Workflow output is consumed sometimes, not always. Two of the five local research artifacts are demonstrably picked up by later independent sessions; the other three are named only by the session that produced them and by the concurrent session running this review.",
+      "evidence": "Genuine sequential consumption: 2026-08-26-hook-latency-benchmark.md (produced 8777f822 08-26, used d005accb 08-30, 23 and 22 mentions) and HARDENING_AUDIT_2026-09-02.md (82565888 09-02 -> 573d625c 09-03, d11e36a6 09-03, c9762ff5 09-04). Not consumed: 2026-09-04-unattended-agent-loops-research.md, -landing-loop-design-synthesis.md and -guards-packaging-verdict.md, whose only mentions come from b764415d (which first names the research file 22 minutes into its own run, i.e. it produced it) and 7c70b045 (the session hosting this review, naming it one minute after opening). The strongest chain is real and instructive: 573d625c opened \"Hey we did that hardening pass here, is any of that critical to do right now?\", re-verified against HEAD e8892a0, planned six findings and landed five - one day later, from a cold start.",
+      "classification": "operator failure",
+      "confidence": "medium",
+      "action": "Shorten the gap between an audit landing and a queue being built from it, in the same session. Do not rely on a later session rediscovering the artifact - it happened twice out of five.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "The plan gate works every time it is used, at a stable low rate",
+      "claim": "Every ExitPlanMode gate produces a substantial plan and the work lands. Jason uses it in 7 of 47 sessions, statistically unchanged from the archive - a stable low rate, not a regression, and not the only route to a written plan (SDD and workflow gates do the same job).",
+      "evidence": "Local: 18 gates across 7 of 47 sessions (14.9%), plans 6.2-14.4 KB, 15 approved; the 3 rejections were resubmitted and approved (7c70b045's rejected and approved plans are byte-identical at 13,569 chars). Archive: 53 gates across 33 of 268 (12.3%), 36 approved; local rate is higher, p=0.636. Landing evidence: the 2026-09-03 573d625c plan (12,680 chars, opening \"From `docs/HARDENING_AUDIT_2026-09-02.md`, verified against HEAD `e8892a0`\") put 5 of its 6 findings on master.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "The gate is fine; the trigger is missing. Bind it: any opening prompt containing 'workflow', 'best in class', 'research' or 'audit' enters plan mode before dispatching anything.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Sessions run long; /clear discipline slipped, handoff and retro are untestable at this n",
+      "claim": "Sessions have grown long and compaction-heavy while /clear use roughly halved. Handoff and retro at zero cannot be called a collapse - the sample is too small to detect a change in a mechanism used once per hundred sessions.",
+      "evidence": "Local (47 sessions): /clear 4 calls, /session-retro:retro 0, /handoff:handoff 0. Archive (268): /clear 51 calls in 51 sessions, retro 9 calls in 6, handoff 7 in 7. Tests: /clear 8.5% vs 19% of sessions, p=0.096 (marginal); handoff p=0.600, retro p=0.597 - zero is exactly what the ~2% base rate predicts in 47 sessions. Session shape: median 1.0 h, mean 7.3 h, 10 of 47 over 12 h, 5 over 24 h, longest 51.4 h (b2ab8180), 34 compactions across 13 sessions, one with 9 (68e1fc37) in which Jason carries the plan: \"Wait we were meant to be swapping the ambient docs to nimbus / cumulious right?\" (2026-08-30). The handoff nudge was deliberately disabled 2026-08-08 because compaction now continues the session.",
+      "classification": "operator failure",
+      "confidence": "medium",
+      "action": "One session, one outcome: /clear when the thing you opened for is done. If that needs to be mechanical, a Stop hook that offers /clear once a session crosses two compactions. Do not spend effort reviving handoff and retro on this evidence - the data cannot say they declined.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Some long sessions drift hard, but duration is not the tell",
+      "claim": "Drift is real in specific sessions and not a general property of long ones. Two of the four exhibits close on the topic they opened on.",
+      "evidence": "Drifts: b2ab8180 (Coach, 51.4 h, 4 compactions) opens \"Can we look at how this is going? I also have a question around like Graph RAG\" and closes \"Ok what nutrition gel options are good for me?\"; c69c8882 (7 h) opens on chezmoi dotfiles and passes through local Qwen inference, GitHub username migration, 1Password SSH, UniFi, transcoder and Coach. Does not drift: 68e1fc37 (38.7 h) opens \"Yo! New project, ambient capture for mac?\" and closes \"Ok lets commit and then build a new binary so I can test tomorrow at work\" - the docs theme, Nimbus site and signed binary are all the same project; c9762ff5 (19.5 h) opens \"Yo! Patching!!!!!!\" and closes \"Cool lets stop here I assume it'll work from here on out since we are back in the tested path right?\", with the takeout/ZFS excursion inside the same repo and infrastructure.",
+      "classification": "operator failure",
+      "confidence": "medium",
+      "action": "Open a second session when a genuinely unrelated topic arrives; do not treat length alone as the trigger. The cost of a cold start is one prime, the cost of drift is a compaction every 90 minutes with Jason holding the plan.",
+      "status": "corrected",
+      "question": "Q3 operator gaps"
+    },
+    {
+      "title": "Socratic questioning works, is requested six times more often than before, and is still only a request",
+      "claim": "Socratic questioning is not default behaviour - it happens only when Jason explicitly asks, and he is asking six times more often than four months ago. It works when he asks. The gap is that it is a request rather than a mode. This is one of only two trends in the whole evidence set that clears significance, and it is Jason improving.",
+      "evidence": "Explicit requests (socratic / quiz me / interview me / grill me / ask me N questions): local 9 real requests across 6 of 47 sessions (13%); archive 6 across 6 of 269 (2%), Fisher p=0.004 (p=0.0001 on the verifier's stricter archive count of 3). Independent regex returned 12 local hits across 7 sessions, 3 of them compaction-continuation echoes; removing those reproduces the finder's 9. Verbatim: \"ok socratic quiz me to tease out options\" and \"Ok cool grill me on any info you need\" (2026-08-28 b30659ad); \"Wait can you interview me? I didn't answer any questions\" (2026-08-30 d005accb); \"maybe you can do a socratic pass with me to figure out what I want\" (2026-09-05 7c70b045). Outcome evidence: the b764415d Socratic pass fixed the DER/WER/fixture decisions in 16 minutes and Nightshift shipped the next day; c69c8882's \"a few target questions maybe 20 - 40\" produced 8 question batches and the elicitation \"what actually wastes the most of your time? = Agents confidently doing the wrong thing, Re-explaining context to agents, Secrets and auth friction\".",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Promote it from a request to a gate: 5-8 forced-choice questions before any workflow dispatch, in the same /prime or intent skill as finding 2's gate. That makes the thing that already works happen every time instead of one session in eight.",
+      "status": "confirmed",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Fire-and-forget is real, rare, and signalled by research followed by more research",
+      "claim": "The literal 'fires off a workflow and never comes back' pattern appears in a small number of sessions; its tell is a second research pass dispatched before the first has an owner. Sized honestly it is about one product-relevant instance in 47 sessions.",
+      "evidence": "2026-09-02 82565888 (brok-stacks): one human prompt at [1m], a 15-agent audit workflow at [6m], a 7-agent round two at [72m], 99 findings, session ends at 124 min with no further human turn (index: 1 prompt, 10:20-12:24, 112K output tokens). 2026-09-03 6f84c451 (24 min, 3 prompts): research workflow at [2m], then at [11m] before acting on any of it \"Maybe with what you know about me run another large research pass for cool projects people are running at the moment?\", second workflow at [13m], session ends. Sizing: 7 of 47 local sessions have exactly one human prompt (15%) vs 20 of 268 archive (7.5%), p=0.151, and six of the seven are trivial personal queries. Against the pattern: post-workflow human turns are mostly substantive, median gap 22 min, replies engage with specifics (\"Yeah cut qwen at the moment until we can figure out optimizations\").",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Rule of one: never dispatch a second research pass while the first has no owner. If the answer to 'what does this change' is 'I'll decide later', the pass should not run.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Hours of the loop are spent waiting on Jason, and turns are spent polling",
+      "claim": "A visible slice of Jason's turns are status pings, and multi-hour stalls are the loop waiting on him - a locked 1Password, a session limit, a return to the keyboard. This is cost, not a model or skill error, and it is the strongest empirical case for the unattended loop already being built.",
+      "evidence": "Stalls recomputed from prompt timestamps, all reproducing to the minute with their resume text: b2ab8180 [92m]->[1264m] = 19.5 h, resumed \"Ok unlocked\"; 00b357e7 [469m]->[1050m] = 9.7 h, \"Hey back! How is this looking after overnight?\"; c9762ff5 [87m]->[662m] = 9.6 h, \"Hey sorry we hit session limits can you keep going now?\"; b764415d [110m]->[684m] = 9.6 h, same cause. Further stalls beyond those: b2ab8180 two more (4.3 h, 19.8 h), 00b357e7 two more (5.4 h, 8.8 h), 68e1fc37 one (10.7 h, resumed \"op unlocked\"). Polling turns: c69c8882 has five consecutive \"still running?\" turns between [52m] and [106m]; c9762ff5 closes \"how is this looking now?\" -> \"Your watching right?\" -> \"Done?\" -> \"now?\".",
+      "classification": "cost only",
+      "confidence": "high",
+      "action": "Two cheap additions to what exists: unlock 1Password before dispatching anything long, and have long workflows push a notification on completion instead of being polled.",
+      "status": "confirmed",
+      "question": "Q1 usage, Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "Two of every five sessions build nothing; a third go into the harness",
+      "claim": "Personal and consumer support takes 40% of interactive sessions but only 14% of output tokens - cheap in tokens, expensive in context switches. Another third of sessions go into the harness rather than into products.",
+      "evidence": "47 local interactive sessions, independently reclassified from cwd and opening prompt, tok_out summed per bucket: product/infra 12 sessions, 10.82M tokens (68e1fc37 3.90M, b2ab8180 1.63M, b764415d 1.46M, 00b357e7 1.11M, c9762ff5 0.84M, 573d625c 0.66M...); harness/tooling 16 sessions, 6.69M; personal/consumer 19 sessions, ~2.5M (six 3D-printing, seven display/dock/keyboard, plus tax, Factorio, an email backlog, a logo). Total 20.1M matches the index total for real interactive sessions. Consistent with the commit-side observation that roughly half of recent commits are tooling; session-count fragmentation is worse than the token split suggests.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Price it rather than fix it. If product throughput is the goal, batch the 19 personal sessions into one weekly session and cap the 16 harness sessions.",
+      "status": "confirmed",
+      "question": "Q1 usage"
+    },
+    {
+      "title": "Denials measure guards being installed; the auto-mode classifier is the one to chase",
+      "claim": "Denials run 3.55 per session locally against 0.92 in the archive, but the archive baseline predates the gates plugin, so the rise measures a deployment Jason chose rather than a change in behaviour. The part worth chasing is the auto-mode classifier blocking actions Jason has explicitly authorised.",
+      "evidence": "Index sums: local 167 denials over 47 sessions (3.55/session), 5 hook errors; archive 246 over 268 (0.92/session), 13 hook errors. Highest-denial local sessions: d005accb (22), 7c70b045 (16), c9762ff5 (15). Breakdown across the top three: 37 permission-rule (docs-sync-guard 9, SECRETS-SCAN 3, agent-model-guard, workflow-model-guard), 11 automode-blocked, 3 user-rejected. Automode denials read \"Permission for this action was denied by the Claude Code auto mode classifier. Reason: Blocked by classifier.\" and force turns like \"Ok can you run it (explicit permission should get you around that issue)\" and \"Ok explicit permission to update those please\" (both 2026-09-04 c9762ff5), \"No explicit permission for doing that debugging, please go ahead and do it\" (2026-08-23 00b357e7). 13 local prompts (1.9%) exist only to grant permission.",
+      "classification": "tool",
+      "confidence": "high",
+      "action": "Leave the guard denials alone, they are earning their keep. For the classifier: a standing session-level grant, or permission rules for the command families that keep tripping it (docker/ssh against brok, wrangler, terraform apply). Do not quote 'denials quadrupled' as a behavioural finding.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "What to keep from the retired stack is the front end, not the session shape",
+      "claim": "The cleanest stretch in the whole sample is 79 minutes, not a whole session: forced design questions, deep-dive, cross-vendor review, plan, then execution. The session then ran another eleven hours through three compactions like every other marathon, so the thing to preserve from the retired superpowers stack is the forced question set before any artifact is written.",
+      "evidence": "2026-07-16 a5bbe773 (claude-skills), tool timeline replayed: superpowers:brainstorming [1m], five AskUserQuestion rounds [4m]-[24m] resolved decisively (\"Finish the fork\", \"Match-and-proportion\", \"Vendor TDD too\", \"Proportioned to blast radius\"), deep-dive [28m], codex-plan-review [50m] raising a real contradiction Jason dispositioned in one turn (\"the spec says 'disclose the skip' but your ~/Work/Git/CLAUDE.md says 'skip silently' ... = Disclose + fix the rule\"), writing-plans [74m], SDD [79m], first compaction [407m] - then two more compactions at [559m] and [663m], running past [740m]. Skill counts: superpowers:brainstorming 74 archive uses -> 0 local; local period codex-plan-review 5-6, writing-artifacts 3, deep-dive 3, domain-modeling 1, adr 1, frontend-design 0.",
+      "classification": "practice",
+      "confidence": "medium",
+      "action": "Whatever replaces superpowers must carry a forced set of design questions before any artifact is written. Nightshift replaces the execution half of SDD; nothing currently replaces the brainstorming half, and that is the half producing the clean openings.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Jason is taking the chair back: menu refusals doubled, and he wants to interrogate the option set",
+      "claim": "One answer in five now refuses the AskUserQuestion menu and replies in prose, up from one in ten - the second of only two significant trends in the evidence set, and it points the opposite way from the deference thesis. What the refusals contain matters more than the rate: Jason is asking the model a question back, not picking. AskUserQuestion gives him no affordance for that, so he breaks out into prose and the loop absorbs the re-planning cost.",
+      "evidence": "Of 605 answered questions, 76 were answered in free text: 31 of 144 local (21.5%) vs 45 of 461 archive (9.8%), Fisher p=0.0005. Refusals that ask a question back, verified verbatim in the raw transcripts: \"What's setting up a developer Id entail?\" (68e1fc37, 2026-08-30, confirmed in /Users/jasonmatthew/.claude/projects/-Users-jasonmatthew/68e1fc37-1d0c-4618-a533-4ad977b7bffe.jsonl); \"Does it make sense shadcn or something similar, preact or svelte?\" (b764415d, 2026-09-05, confirmed in .../-Users-jasonmatthew-Work-Git-ambient/b764415d-0a7b-482c-9cd2-9ab11a551775.jsonl); also \"Is there a better way to do this with the deployed worker etc?\" (da826680), \"Hmm Is it possible to hook into the background worker here from claude-mem and do something smarter?\" (11634735). Others reject the framing: \"I'd like all 4 but can we check the...\" (d005accb), \"let's go passive for tonight then app later\" (291f6c79). Note the finder's matching rule dropped exactly these 26-76 answers, which is how its recommended-take rate became 90% instead of 80%.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Add a standing \"none of these - here is what I need to know first\" option to every AskUserQuestion, and randomise option order. That converts a behaviour Jason already performs by hand one time in five into something the loop can act on, and it is the change the evidence supports rather than banning the '(Recommended)' label.",
+      "status": "new-from-verifier",
+      "question": "Q3 operator gaps, Q4 tools"
+    },
+    {
+      "title": "The 'it got worse' narrative does not survive significance testing",
+      "claim": "Eight of the decline comparisons in this finder set are indistinguishable from chance at n=47, and the only two trends that clear significance are both Jason improving. Any operator review built on 'Jason's practice degraded over the last fortnight' is built on noise.",
+      "evidence": "Non-significant: substantial openings p=0.133, path-citing openings p=0.142, handoff p=0.600, retro p=0.597, /clear p=0.096, plan-gate use p=0.636 (local rate is actually higher, 14.9% vs 12.3%), ask rate p=0.873, single-prompt sessions p=0.151. Significant, both improvements: explicit Socratic requests 13% vs 2% of sessions, p=0.004; free-text menu refusals 21.5% vs 9.8% of answers, p=0.0005. Sample sizes are 47 local against 268 archive sessions, so a mechanism used at ~2% per session cannot be shown to have changed.",
+      "classification": "no failure",
+      "confidence": "high",
+      "action": "State the direction of travel honestly in the final review: the practices that changed measurably are the two Jason introduced himself. Reserve 'declining' language for /clear, and label it marginal.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q3 operator gaps"
+    }
+  ],
+  "dropped": []
+}

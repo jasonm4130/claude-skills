@@ -1,0 +1,136 @@
+{
+  "label": "E6-spend",
+  "findings": [
+    {
+      "title": "Nightshift's skeptic budget default truncates the reviewer and the truncation reads as REFUTED",
+      "claim": "The shipped template default is SKEPTIC_BUDGET:=1, and a skeptic that hits the cap returns no verdict line. land.sh:311-318 pipes the skeptic through `grep -E '^VERDICT:'`, so a truncated run yields an empty $verdict, the case statement's `*)` arm treats it as a refutation, and the generator is handed \"A reviewer read your diff and refuted it. Fix this\" followed by an empty file. It fails silently in the direction of blocking correct work. It happened on both rounds of ambient task 3 (2026-09-05), the task was blocked, PR #34 was closed unmerged, and the same task on the same unchanged plan passed round 0 on a plain rerun at 15:47. Jason raised the budget to 5 in ambient's own copy at 15:43 (624012f) but the plugin template was never back-ported.",
+      "evidence": "~/.local/state/nightshift/ambient/2026-09-05-t3/skeptic-1.json: subtype error_max_budget_usd, terminal_reason budget_exhausted, result null, is_error true, total_cost_usd 1.013188 (read directly). plugins/nightshift/templates/loop/config:30 and templates/loop/land.sh:40 both still `: \"${SKEPTIC_BUDGET:=1}\"`, and claude-skills' own loop/config:30 is still 1 (grep run today). land.sh:311-318 read in full: the grep and the `*)` fallthrough are as described. journal.md skeptic lines: 14:51:29 $1.0485535 \"18 turns, 0 lines\" and 14:58:30 $1.013188 \"18 turns, 0 lines\" - the two zero-line skeptic outputs. gh pr view 34: state CLOSED, mergedAt null.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Two one-line fixes in plugins/nightshift/templates/loop/: raise SKEPTIC_BUDGET's default (ambient already runs 5), and make an empty verdict an error arm rather than falling through to the refutation arm. Back-port ambient's 624012f to the template, which is the direction the repo's own memory note prescribes.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Today's biggest measured nightshift waste is failed attempts, not model tier",
+      "claim": "$7.88 of the day's $28.87 (27%) went to attempts that merged nothing: the 05:57 invocation ($0.741, generator returned \"BLOCKED: Edit/Write require approval that this session cannot obtain\"), the 06:02 invocation ($2.729 across four calls, task blocked after two rounds), and the 14:49 wer task-3 attempt ($4.411 across four calls, PR #34 closed never merged). This is measured spend on merged-nothing work, unlike the generator-tier saving, which is projected from unverified pricing.",
+      "evidence": "~/.local/state/nightshift/ambient/journal.md, lines summed today: 0.741041 + (0.858572+0.612579+0.436227+0.822119) + (1.230193+1.048554+1.119481+1.013188) = $7.882. journal line 7: 'task 1: no commits after round 0; last line: BLOCKED: Edit/Write require approval that this session cannot obtain'. gh pr view 34 -> state CLOSED, mergedAt null.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Measure nightshift on cost-per-landed-PR including failed attempts, not on model price. The two mechanisms behind today's 27% are both fixable in the template: the permission-blocked generator (approval the unattended session cannot obtain) and the budget-truncated skeptic above.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "The Workflow model guard exists but its bypass exempts whole scripts, so 91% of subagent volume runs untiered",
+      "claim": "1300 of 1425 local subagent transcripts (91%) come from Workflow scripts, 972 of them on Opus, 251 of those small or mechanical (<=6 tool calls, <3000 output tokens) - ten times the interactive Agent-tool volume. This population is not the retired subagent-driven-development: it spans 41 distinct workflow ids (adversarial branch review on transcoder, web-research workers, a Coach grounding worker) across cwds including /Users/jasonmatthew (132 rows), and it is still running - 17 rows start on 2026-09-05. A Workflow model guard has existed since 2026-08-26 (6b5d3b6) and 887 of those Opus rows post-date it, because the guard exempts an entire script the moment one `model:` string appears anywhere in it.",
+      "evidence": "local.sessions.jsonl: wf_* sidechain rows 1300 of 1425; Opus among them 972; 251 with sum(tools)<=6 and tok_out<3000. Examples: wf_6ba193c9-488/agent-a832 (2026-09-04, tools {Bash:2, StructuredOutput:1}, tok_out 10, cache_read 230,620); wf_36434855-62d/agent-ae6a (tools {Bash:2}, tok_out 5). plugins/gates/hooks/hooks.json carries a Workflow matcher; pretooluse-guard-workflow-model.mjs:72 reads `if (/\\bmodel\\s*:/.test(script) || script.includes(\"model-guard:ack\")) process.exit(0)`.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Tighten the bypass at pretooluse-guard-workflow-model.mjs:72 to require a model on every agent() call in the script rather than anywhere in it. Do not build a new guard; the one that exists is one predicate away from working.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "Half the period's token cost is subagents, and a third of it is cache creation - the churn test could see neither",
+      "claim": "Across all 1503 local rows: cache-create 312.1M tokens, cache-read 6,692.0M, output 23.0M. At standard cache multipliers that puts cache creation at ~33% of token cost overall, 49% within subagent transcripts against 15% in the main loop. Subagents hold 3,044.7M of the 6,692.0M cache-read tokens and 244.3M of the 312.1M cache-create - about 53% of the period's token cost - while producing 2.8M of 23.0M output tokens, 12%. The efficiency question lives in this population, and the churn filter (sidechain false, prompts >= 3) excluded all of it by construction.",
+      "evidence": "Recomputed independently over local.sessions.jsonl (1503 rows): totals as stated; subagent share of a cost model weighting create 1.25x, read 0.1x, output 5x input = 53.1%; cache-create share 33.2% overall, 49.0% within subagents, 15.4% in the main loop; subagent output share 12.1%. The multiplier assumption is standard Anthropic cache pricing, so the percentages are directional, the token counts exact.",
+      "classification": "no failure, just cost",
+      "confidence": "high",
+      "action": "Aim cost work at subagent context, not at main-loop turns: subagent cache TTL (subagentPromptCacheTtl is unset, default 5 minutes), the prompt each worker is handed, and the number of workers spawned. Halving the main loop's context would move ~7% of the period's cost.",
+      "status": "new-from-verifier",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Nightshift's run-dir JSON undercounted spend by 31% - already diagnosed and fixed today",
+      "claim": "Run-dir JSON on disk for today's pre-14:34 runs undercounts real spend by 31% ($19.91 vs $28.87), because the directory was keyed `<date>-t<task-index-within-plan>` and collided across both retries and unrelated plans. This was diagnosed and fixed today in commit b262ae6 (14:34, closes #105) and taken by ambient at 16:25; runs from 16:29 onward use `<date>-<HHMMSS>-<plan>-tN`. Total historical nightshift spend from journal.md, not from the run dirs. No code change is outstanding.",
+      "evidence": "18 run-dir JSONs at the snapshot sum to $19.91 (gen $10.62, skeptic $9.29); journal per-round $ lines before 16:22 sum to $28.87 (gen $15.82, skeptic $13.05); gap 31.0%. land.sh:285 and :375 now read `run_dir=$STATE_DIR/$(date +%F-%H%M%S)-$slug-t$n`; the 16:29 runs wrote to `2026-09-05-162937-2026-09-05-hardening-t1`. Collision across plans is visible in ambient/2026-09-05-t1, which holds a gen-0.json written 14:27 beside a gen-1.json written 06:07 from an unrelated plan.",
+      "classification": "skill/hook failure",
+      "confidence": "high",
+      "action": "Nothing to build. Quote nightshift history from journal.md for anything before 2026-09-05 14:34; the run dirs are trustworthy after it.",
+      "status": "corrected",
+      "question": "Q1 usage"
+    },
+    {
+      "title": "The skeptic that stopped ambient task 4 was over-rejecting: the work merged four minutes later",
+      "claim": "Ambient task 4 spent $4.47 over two rounds and was stopped by the skeptic, but its work merged anyway as PR #43 (+177 lines, merged 06:20:55Z, four minutes after the block). Round 0's REFUTE was a real integration bug the plan itself introduced - brief.md hands the generator the literal `scripts/check && scripts/quality` that land.sh:213's exact-string gate rejects - and grepping that string against land.sh before launch would have saved a paid round. Round 1's REFUTE (scripts/quality missing from the settings.json Bash allow list) was overridden by the merge and remains unfixed, so the skeptic's second stop cost a night and bought nothing.",
+      "evidence": "journal task 4: 1.4247 + 0.9552 + 0.8251 + 1.2607 = $4.4657. land.sh:213 `[ \"$(tail -1 \"$logf\")\" = \"CHECK OK\" ]`; skeptic-0.md states \"The task text supplied that `&&` string, so the spec is where the error originates.\" .claude/settings.json allow array lists Bash(scripts/check:*) and Bash(./scripts/check:*) and no scripts/quality entry - a positive absence, read in full. gh pr view 43: state MERGED, isDraft false, mergedAt 2026-09-05T06:20:55Z, +177 lines across scripts/quality, quality/wer.json, docs/developing/landing.md.",
+      "classification": "operator failure",
+      "confidence": "high",
+      "action": "Before handing nightshift a task that touches loop or gate wiring, grep the literal command string the task text proposes against land.sh's exact-match gate and against settings.json's allow list. Thirty seconds, and it removes the round that the skeptic was right about. Separately, add scripts/quality to the allow list or drop the round-1 finding - it is currently neither fixed nor dismissed.",
+      "status": "corrected",
+      "question": "Q1 usage, Q3 operator gaps"
+    },
+    {
+      "title": "Both nightshift roles are pinned to Opus by one variable, but the generator is not the settled-spec shape that justifies a downgrade",
+      "claim": "Both roles are pinned to Opus by a single MODEL variable (templates/loop/land.sh:38, loop/config:28), and today they cost $15.82 (generator) and $13.05 (skeptic). Generator spend is 83% context, not output, and the generator emits fewer output tokens than the skeptic - so this is not the settled-spec shape CLAUDE.md routes to Sonnet, and a tier change is a hypothesis to test, not a quantified saving.",
+      "evidence": "grep: templates/loop/land.sh:38 and loop/config:28, both `: \"${MODEL:=opus}\"`; one `ask` helper at land.sh:167 passes `--model \"$MODEL\"` for both roles. modelUsage across today's 21 Opus calls: generator 112,692 output against 10,539,080 cache-read; skeptic 128,413 output against 4,416,076 cache-read (skeptic writes 14% more output). Generator spend decomposes 54% cache-read, 29% cache-create, 17% output. skeptic-1.md for task 4 records the generator's departure from the plan's literal CHECK_CMD as correct judgment, not spec-following.",
+      "classification": "cost only",
+      "confidence": "medium",
+      "action": "Run generator=sonnet (effort high) for a week with skeptic=opus held, and compare REFUTE rate, turn count and landed-task rate. No dollar figure is knowable until then. Split MODEL into GEN_MODEL and SKEPTIC_MODEL first, which the test requires anyway.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "The interactive Agent-tool tiering rule is working - stop re-tuning it",
+      "claim": "Of 125 non-Workflow subagent dispatches in the local period, 39 ran on Opus and only one of those was small or mechanical (<=6 tool calls, <3000 output tokens). The 73% baseline quoted in CLAUDE.md measured dispatches that omitted `model` entirely, which the guard now denies outright, so it is not comparable to the 31% Opus share - the evidence for \"nothing to fix here\" is the 1-of-39, not a 73 to 31 trend.",
+      "evidence": "local.sessions.jsonl: 125 non-wf sidechain rows, all project 'subagents'; models {sonnet 85, opus 39, fable 1}; the single small/mechanical Opus row is agent-a2fd (2026-08-29, tools {Read:2, Bash:1}, tok_out 113). plugins/gates/scripts/pretooluse-guard-agent-model.mjs:7 states the baseline as \"73% of 477 dispatches omitted `model`\"; line 93 exits clean when model is present, line 118 denies when absent.",
+      "classification": "strength",
+      "confidence": "high",
+      "action": "None on this call site. Worth saying out loud so effort goes to the Workflow path instead, which carries ten times the volume.",
+      "status": "corrected",
+      "question": "Q1 usage"
+    },
+    {
+      "title": "No live cache-invalidation churn in the current period; the one historical instance is already resolved",
+      "claim": "Filtering local main-loop sessions with >=3 human prompts and >=100k cache-create tokens, the worst create/read ratio is 0.19 - no session shows the create-dominates-read signature of an invalidated prefix. The one clear instance in either dataset is the archive-only claude-mem-observer background project (ratios up to 24.9x), which appears 536 times in the archive and zero times locally: it was retired before the local period began. The conclusion also survives in the subagent population the original filter excluded.",
+      "evidence": "local churn candidates (sidechain false, prompts >=3, cache_create >=100,000): 35 rows, max ratio 0.195, session 7c13ca71 (fable-5-1, create 324,522 / read 1,665,739). Archive worst: session 6e2fcd60 under -Users-jasonmatthew--claude-mem-observer-sessions, ratio 24.92 (create 193,158 / read 7,751). grep -c 'claude-mem-observer': archive 536, local 0. Re-run over the 1425 sidechain rows: only 12 have cache_create>0 with cache_read==0 (2.8M tokens) and 16 have create>read. Compaction is cleared too: compacted local sessions show a lower create-share (0.018) than non-compacted multi-turn sessions (0.057).",
+      "classification": "no failure, just cost",
+      "confidence": "high",
+      "action": "None. Positive precedent: retiring the mem-observer background agent removed the only clear churn pathology in the data. Compaction is not a churn cause, so do not spend on avoiding it.",
+      "status": "confirmed",
+      "question": "Q1 usage"
+    },
+    {
+      "title": "Forced codex-review chains carry 60% of its token spend, but almost none of it is redundant",
+      "claim": "Forced (manually invoked) chains carry 60.2% of codex-review's token spend - 503,965,066 of 837,360,407 tokens - and cache reuse is excellent at 91.1%. Genuine redundancy is narrow: 5 chains re-reviewed a content hash a prior chain had already covered. The high chain counts on `diff:main...HEAD` (transcoder 37, claude-skills 24) are not redundancy - chain identity is deliberately the symbolic range so it stays stable across a chain's rounds, so one chain per branch state is the design.",
+      "evidence": "codex-review-log.jsonl, summing usage across all four usage-bearing modes (review 252, diff 277, audit 80, diff-audit 112): input 831,243,673, cached 757,500,672 (91.1%), output 6,116,734. Forced closed chains 135, input+output 503,965,066 of 837,360,407 = 60.2%. 21 of 142 distinct artifacts opened more than one chain; 5 same repo+artifact+contentHash pairs.",
+      "classification": "practice",
+      "confidence": "high",
+      "action": "Do not act on the chain counts. The only actionable slice is the 5 same-content-hash repeats: check the log for an open chain on the same repo+artifact and resume with --chain before opening a fresh one. No dollar figure - the log carries no costUSD field for GPT-5.6-terra and no verified pricing was available.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "The worst codex-review chains burn 1.6-1.8M tokens per unique finding and 73% use every review round",
+      "claim": "Among 88 eligible chains with at least one unique finding, the worst burn 1.6-1.8M tokens per unique finding, and the two largest absolute burners are chain 9ad433ed0ec3 (6.82M tokens, 4 findings) and 6591cdd74848 (6.45M, 4) rather than the single-finding chains - roughly four times the burn of the chains a per-finding ranking surfaces. 65 of 89 eligible chains (73%) used all three review rounds; the protocol is 3 rounds plus 1 audit, so a fourth logged call is the audit, not a fourth round.",
+      "evidence": "Per-chain reconstruction: 5243c637c217 mobile-game 1,845,866 per unique; efde3c4b94a6 claude-skills 1,817,900; 9ad433ed0ec3 (scratchpad/2026-08-14-polish-round-inventory.md) 1,703,964 per unique, 6,815,856 total; 6591cdd74848 (plans/composed-swimming-pine.md) 1,613,253 per unique, 6,453,012 total. codex-review.mjs:764-768 sets MAX_REVIEW_ROUNDS = 3 and its deny message reads \"the protocol is 3 rounds + 1 audit\".",
+      "classification": "cost only",
+      "confidence": "high",
+      "action": "No new mechanism - this is fresh token-cost evidence for the existing over-correction research (LLM reviewers over-reject correct code, FNR 26-88%). Keep whole-branch review, which CLAUDE.md already mandates. If anything is worth trying, it is an early-exit on a clean round rather than a lower cap.",
+      "status": "corrected",
+      "question": "Q1 usage, Q4 tools"
+    },
+    {
+      "title": "codex-review's stats() is trustworthy; the reported discrepancy was the finder's own walk",
+      "claim": "An independent reconstruction of the codex-review log agrees with computeStats() exactly (eligible 89 on the current 1189-line log). Eligibility is `trigger === \"auto\" && outcome !== \"aborted\"` (codex-review.mjs:610-613); a walk that forgets the aborted exclusion overcounts by the number of auto-aborted chains, currently 8. There is no undercount and nothing to root-cause.",
+      "evidence": "Independent walk of ~/.claude/codex-review-log.jsonl (1189 lines, 236 chains, 232 closed, 4 open) counting closed chains with trigger auto and outcome not aborted: 89. `node codex-review.mjs stats` on the same log returns eligible 89. The log holds 8 auto chains closed as aborted.",
+      "classification": "no failure, just cost",
+      "confidence": "medium",
+      "action": "None. Use stats() as the reference for chain aggregates; the original claim that it undercounts is withdrawn.",
+      "status": "corrected",
+      "question": "Q1 usage"
+    },
+    {
+      "title": "Fable does not beat Opus on turns-to-commit on current models",
+      "claim": "In the archive period Fable reached a commit in fewer prompts than Opus (13.2 vs 24.1 mean, n=40 and n=149), but that window ran on earlier model generations. In the local period the gap is an artifact: Fable's mean advantage (23.6 vs 30.7) reverses on the median (22.0 vs 17.0) and disappears entirely when one 110-prompt Opus session is removed (22.8 vs 23.6), across seven and eleven committing sessions. Neither the turns-to-commit nor the regex-corrections signal supports a model-choice change on current models.",
+      "evidence": "local.sessions.jsonl: [fable] prompts 224, corrections 7, corr/prompt 0.0312, 7 sessions with commit, mean 23.57; [opus] prompts 451, corrections 24, corr/prompt 0.0532, 11 sessions with commit, mean 30.73. Underlying distributions: Fable [6, 11, 17, 22, 29, 31, 49], Opus [7, 7, 11, 11, 15, 17, 24, 33, 49, 54, 110]. Archive: fable corr/prompt 0.0350, mean 13.18; opus 0.0263, mean 24.07.",
+      "classification": "no failure, just cost",
+      "confidence": "medium",
+      "action": "Do not change the Fable/Opus default on this evidence. Keep the documented escalation triggers as the decision rule; there is no measured per-model efficiency gap in the current period to trade against them.",
+      "status": "corrected",
+      "question": "Q1 usage"
+    }
+  ],
+  "dropped": []
+}
