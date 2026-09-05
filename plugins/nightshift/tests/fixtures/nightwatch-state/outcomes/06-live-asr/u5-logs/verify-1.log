@@ -1,0 +1,12 @@
+running scripts/check from /clone
+line 1 of noise the report must drop
+line 2 of noise the report must drop
+line 3 of noise the report must drop
+line 4 of noise the report must drop
+line 5 of noise the report must drop
+✓ cargo fmt --check
+✓ cargo clippy --all-targets -- -D warnings
+✓ cargo test --all-targets
+✓ cargo run --bin symbolcheck
+CHECK OK
+exit=0

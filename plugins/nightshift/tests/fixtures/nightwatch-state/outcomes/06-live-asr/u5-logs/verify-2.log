@@ -1,0 +1,12 @@
+running 8 tests
+test bench::tests::rtf_divides ... ok
+test bench::tests::empty_slice_is_zero ... ok
+test bench::tests::queue_light_load_one_track ... ok
+test bench::tests::queue_heavy_load_one_track ... ok
+test bench::tests::queue_light_load_two_tracks ... ok
+test bench::tests::repeat_light_load_stays_bounded ... ok
+test bench::tests::repeat_heavy_load_grows_backlog ... ok
+test bench::tests::rtf_none_when_no_audio ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored
+exit=0

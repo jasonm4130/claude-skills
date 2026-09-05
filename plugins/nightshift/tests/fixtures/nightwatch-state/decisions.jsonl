@@ -1,0 +1,10 @@
+{"ts":"2026-09-04T21:11:03Z","run":"20260904-220000","spec":"00-plumbing","unit":1,"state":"PASS","branch":"nw/2026-09-04/00-plumbing","cost":0.31,"turns":2}
+{"ts":"2026-09-05T22:15:57Z","run":"20260905-225514","spec":"01-ui-api","unit":1,"state":"CONTINUE","branch":"nw/2026-09-05/01-ui-api","cost":6.461231149999998,"turns":2}
+{"ts":"2026-09-05T22:36:38Z","run":"20260905-225514","spec":"01-ui-api","unit":2,"state":"CONTINUE","branch":"nw/2026-09-05/01-ui-api","cost":5.737763000000001,"turns":4}
+{"ts":"2026-09-05T22:56:19Z","run":"20260905-225514","spec":"01-ui-api","unit":3,"state":"CONTINUE","branch":"nw/2026-09-05/01-ui-api","cost":6.700767600000003,"turns":3}
+{"ts":"2026-09-05T23:19:31Z","run":"20260905-225514","spec":"01-ui-api","unit":4,"state":"BLOCKED","branch":"nw/2026-09-05/01-ui-api","cost":8.093145250000005,"turns":3}
+{"ts":"2026-09-06T01:02:32Z","run":"20260905-225514","spec":"06-live-asr","unit":1,"state":"CONTINUE","branch":"nw/2026-09-05/06-live-asr","cost":4.175844549999999,"turns":3,"startedAt":"2026-09-06T00:43:52Z","endedAt":"2026-09-06T01:02:32Z","durationS":1120}
+{"ts":"2026-09-06T01:30:16Z","run":"20260905-225514","spec":"06-live-asr","unit":2,"state":"CONTINUE","branch":"nw/2026-09-05/06-live-asr","cost":6.6917239,"turns":2,"startedAt":"2026-09-06T01:02:33Z","endedAt":"2026-09-06T01:30:16Z","durationS":1663}
+{"ts":"2026-09-06T01:56:00Z","run":"20260905-225514","spec":"06-live-asr","unit":3,"state":"CONTINUE","branch":"nw/2026-09-05/06-live-asr","cost":4.581387149999999,"turns":2,"startedAt":"2026-09-06T01:30:17Z","endedAt":"2026-09-06T01:56:00Z","durationS":1543}
+{"ts":"2026-09-06T02:18:12Z","run":"20260905-225514","spec":"06-live-asr","unit":4,"state":"CONTINUE","branch":"nw/2026-09-05/06-live-asr","cost":4.406454049999998,"turns":2,"startedAt":"2026-09-06T01:56:01Z","endedAt":"2026-09-06T02:18:12Z","durationS":1331}
+{"ts":"2026-09-06T02:39:23Z","run":"20260905-225514","spec":"06-live-asr","unit":5,"state":"PASS","branch":"nw/2026-09-05/06-live-asr","cost":4.2101448,"turns":2,"startedAt":"2026-09-06T02:18:13Z","endedAt":"2026-09-06T02:39:23Z","durationS":1270}
