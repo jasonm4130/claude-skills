@@ -199,8 +199,28 @@ ${JSON.stringify(verify)}`,
   { label: `eval:u${unit}`, phase: 'Eval', schema: EVAL, model: 'opus', effort: 'medium' })
 const evalResult = ev || { verdict: 'concerns', concerns: [{ what: 'Eval agent returned nothing', where: '', severity: 'high' }] }
 log(`Eval u${unit}: ${evalResult.verdict}, ${evalResult.concerns.length} concern(s)`)
+let evalResult2 = null
 if (evalResult.concerns.some(c => c.severity === 'high')) {
-  return await finish('BLOCKED', { unitTitle: plan.unitTitle, blockedReason: evalResult.concerns.filter(c => c.severity === 'high').map(c => `${c.what} (${c.where})`).join('; '), summary: impl.summary, commits: impl.commits, verify, eval: evalResult })
+  // One repair round for a high concern before blocking: most highs are a concrete, named fix
+  // (a CI-only check the local check skips, a weakened test). Block only if it survives the round.
+  const high = evalResult.concerns.filter(c => c.severity === 'high').map(c => `- ${c.what} (${c.where})`).join('\n')
+  phase('Implement')
+  const repair = await agent(implPrompt(`\nEVAL REPAIR ROUND. The unit is committed and verified, but the evaluator raised these concerns, each of which needs a real fix (not a suppression) in one further commit:\n${high}\nIf a concern cannot be fixed within the unit's scope, say so in blockedReason and change nothing.\n`),
+    { label: `eval-repair:u${unit}`, phase: 'Implement', schema: IMPL, agentType: 'worker', effort: 'medium' })
+  if (repair && repair.status === 'done') {
+    impl = { ...repair, commits: [...impl.commits, ...repair.commits], summary: `${impl.summary} Eval repair: ${repair.summary}` }
+    phase('Verify')
+    const v2 = await agent(verifyPrompt, { label: `verify:u${unit}:after-eval-repair`, phase: 'Verify', schema: VERIFY, model: 'sonnet', effort: 'low' })
+    if (v2) verify = v2
+    phase('Eval')
+    evalResult2 = await agent(`${RULES}You are re-evaluating one unit after a repair commit. These concerns were raised and a repair was attempted (commits: ${repair.commits.join('; ')}):\n${high}\n\nRead the repair diff and say, per concern, whether it is resolved. Report only concerns that remain, with severity high if a human must still look. Do not raise new style points.\n\nVERIFY RESULT:\n${JSON.stringify(verify)}`,
+      { label: `eval:u${unit}:after-repair`, phase: 'Eval', schema: EVAL, model: 'opus', effort: 'medium' })
+    log(`Eval u${unit} after repair: ${evalResult2 ? `${evalResult2.verdict}, ${evalResult2.concerns.length} concern(s)` : 'no result'}`)
+  }
+  const still = evalResult2 ? evalResult2.concerns.filter(c => c.severity === 'high') : evalResult.concerns.filter(c => c.severity === 'high')
+  if (!verify.checkOk || !verify.clean || still.length || !evalResult2) {
+    return await finish('BLOCKED', { unitTitle: plan.unitTitle, blockedReason: (still.length ? still : evalResult.concerns.filter(c => c.severity === 'high')).map(c => `${c.what} (${c.where})`).join('; ') + (repair && repair.status !== 'done' ? ` [repair: ${repair.blockedReason || repair.status}]` : ''), summary: impl.summary, commits: impl.commits, verify, eval: evalResult, evalAfterRepair: evalResult2 })
+  }
 }
 
-return await finish(verify.allPass ? 'PASS' : 'CONTINUE', { unitTitle: plan.unitTitle, summary: `${impl.summary} Remaining: ${plan.remaining}`, commits: impl.commits, verify, eval: evalResult })
+return await finish(verify.allPass ? 'PASS' : 'CONTINUE', { unitTitle: plan.unitTitle, summary: `${impl.summary} Remaining: ${plan.remaining}`, commits: impl.commits, verify, eval: evalResult, evalAfterRepair: evalResult2 })
