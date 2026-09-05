@@ -1,0 +1,86 @@
+# Nightwatch v1 batch 1 Implementation Plan
+
+**Goal:** the launcher can be steered while it runs (dependencies, per-spec unit caps, a control file for an orchestrating session), a spec is linted before it costs a night, the morning is one command, and the orchestrator role has a written playbook.
+**Architecture:** everything lands under `plugins/nightshift/nightwatch/` (bash launcher, Workflow script, two new Node scripts) and `plugins/nightshift/skills/` (two new skills). The launcher stays one bash file readable on macOS bash 3.2; the Node scripts are stdlib-only `.mjs` tested with `node --test`. Nothing here touches the old loop (`templates/`, `loop/`, `.claude/`). Work happens on branch `nightwatch-v1-batch1` in the worktree named below, never in the checkout a live run reads.
+**Tech Stack:** bash 3.2 + jq + git, Node 24 stdlib `.mjs`, `node --test`, `shellcheck`, `scripts/bump-plugin.mjs`.
+
+## Global Constraints
+- Work only in the worktree `/private/tmp/claude-501/-Users-jasonmatthew-Work-Git-claude-skills/a67c55f8-f689-467a-8902-a8042462f5b2/scratchpad/nw-v1` (branch `nightwatch-v1-batch1`, cut from `nightwatch-redesign`). Every path below is relative to it. Do not edit `~/Work/Git/claude-skills` directly.
+- `bash scripts/check` must end with `CHECK OK` before every commit; `shellcheck -S warning plugins/nightshift/nightwatch/run.sh` must print nothing. Never delete or rename a test file.
+- `run.sh` must stay bash 3.2 compatible: no associative arrays, no `mapfile`/`readarray`, no `${var,,}`, no `declare -A`. Plain indexed arrays and `while read` loops are fine.
+- Do not edit `.github/`, `.claude/`, `loop/`, `scripts/`, or `plugins/nightshift/templates/**`. Never write the literal text of the GitHub merge subcommand or the variable-set subcommand into a commit message or PR body; a guard denies it.
+- Write test files with the Write tool, not shell heredocs.
+- Commit per task on the worktree branch with `git -C <worktree> add <paths>` then `git -C <worktree> commit -m "<why>" -m "Claude-Session: https://claude.ai/code/session_01VTq6c3jydZzTdiGvCBTTwA"`. Do not bump the plugin version until Task 4 says so (one bump for the batch).
+- The night's evidence is `docs/research/2026-09-05-nightwatch-first-night.md`; read its "Observations" list before Task 1 and its "How the night ended" table before Task 3.
+
+### Task 1: the launcher takes orders — dependencies, unit caps, a control file, honest states
+
+**Files:**
+- Modify: `plugins/nightshift/nightwatch/run.sh` (header comment lines 1-15; option parsing 20-28; env defaults 30-38; `record()` 55-59; `unit_run` result handling 137-147; the queue loop 155-197).
+- Test: `plugins/nightshift/tests/nightwatch-run.test.mjs` (new), `plugins/nightshift/tests/nightwatch-fixtures.mjs` (new).
+
+**Interfaces:**
+- Spec header lines, read from the lines between the `# title` line and the first `## ` heading: `Repo: <path>` (exists today), `Depends: <slug>[, <slug>...]`, `Units: <n>`, `Writes: <path>[, <path>...]`. Parse with `sed -n '/^Depends:/s/^Depends:[[:space:]]*//p'` style; slugs are the spec basenames without `.md`.
+- `$STATE/landed`: one line per landed outcome, `<slug>\t<date>\t<sha>`, appended on PASS after the fast-forward. A dependency is satisfied when its slug appears in column 1. An unmet dependency logs `<slug>: waiting on <dep>` and moves to the next spec without cutting a branch or spending a unit.
+- `Units: n` overrides `MAX_UNITS` for that spec only.
+- Queue: the specs become an indexed array `queue` built from `ls "$SPECS"/*.md` (filtered by `--only`, which now accepts a comma-separated list). The loop is `i=0; while [ $i -lt ${#queue[@]} ]`, so `requeue` can append.
+- Control file `$STATE/control`, read and truncated at every unit boundary (before each unit and before each spec). One command per line: `stop` (finish the current unit, then end the night with the usual `end:` line), `skip <slug>` (do not start that spec; if it is the current one, end it after this unit as PARTIAL), `requeue <slug>` (append the spec to the queue once, even if it already ran; its kept branch is resumed). Unknown lines are logged and ignored. While a file `$STATE/pause` exists the launcher waits at the boundary, logging `paused` once, polling every 30 s, and honouring the deadline and the kill switch while it waits.
+- A unit with no result file but new commits on the branch (`git rev-list --count <head-before-unit>..HEAD` > 0) is recorded PARTIAL, summary `workflow died after <n> commit(s): <last stderr line>`; the commits are kept as today. No result file and no commits stays FAILED.
+- After a unit, if `$STATE/outcomes/<slug>/u<n>-logs/` has fewer `verify-*.log` files than the result file has `.verify.results[]` entries, log `  <slug> u<n>: <k> of <m> verify commands have no log`. Informational only.
+- `record()` gains `startedAt` and `endedAt` (ISO 8601 UTC, from `date -u +%FT%TZ` taken around the `claude -p` call) and `durationS`.
+- Header comment documents every new header line, the control file, `pause`, and `landed`.
+
+- [ ] **Step 1:** write `nightwatch-fixtures.mjs`: `nightwatchRepo()` builds a temp repo with a bare `origin` under a `github.com/o/r.git` path (copy the shape from `tests/fixtures.mjs`), an initial commit, `scripts/check` that prints `CHECK OK`, and returns `{ clone, state, specs, bin }`. `bin` holds a fake `gh` (`variable get` prints `${FAKE_GH_STATE:-run}`) and a fake `claude` that ignores its arguments, reads `FAKE_NW_SCRIPT` (a small shell snippet the test supplies) and runs it in the clone: the snippet commits a file and writes the result JSON to the path in `FAKE_NW_RESULT` (the fake derives slug and unit from the `--add-dir` state path plus a counter file, or the test passes them; pick the simplest that works and document it). `runNightwatch({ env, args })` runs `bash plugins/nightshift/nightwatch/run.sh <clone> <specs> ...args` with `HOME` pointed at a temp dir so `$STATE` is isolated, `PATH` prefixed with `bin`, `DEADLINE=1h`, and returns `{ code, journal, decisions, landed, stdout }`.
+- [ ] **Step 2:** write `nightwatch-run.test.mjs` with these cases, each with its own specs dir: (a) `Depends:` unmet: specs `01-a` (fake claude returns PASS after one commit) and `02-b` with `Depends: 03-c` → journal has `02-b: waiting on 03-c`, no `nw/*/02-b` branch, `landed` has `01-a`. (b) `Depends:` met in the same run: `02-b` with `Depends: 01-a` runs after `01-a` lands. (c) `Units: 1` with a fake that always returns CONTINUE → exactly one `u1` line then `PARTIAL`. (d) `requeue`: the test writes `requeue 01-a` into `$STATE/control` from inside the fake claude's first call; `01-a` runs twice, the second time logging `resuming branch`. (e) no result file but a commit → the journal line says `PARTIAL` and `workflow died after 1 commit(s)`. (f) `stop` in the control file after the first unit → `end:` line follows with one outcome. Run `node --test plugins/nightshift/tests/nightwatch-run.test.mjs` → FAIL (the launcher does not know `Depends:`).
+- [ ] **Step 3:** implement the interfaces above in `run.sh`. Keep `log()`'s contract (journal + stderr; stdout carries unit states). Run the test file → PASS (`# fail 0`); `shellcheck -S warning plugins/nightshift/nightwatch/run.sh` → no output.
+- [ ] **Step 4:** `bash scripts/check` → `CHECK OK`. Commit: `nightwatch: the launcher takes orders — Depends, Units, a control file, PARTIAL when the workflow dies with work on the branch`.
+
+### Task 2: lint a spec before it costs a night, and a skill that writes one
+
+**Files:**
+- Create: `plugins/nightshift/nightwatch/lint-spec.mjs`, `plugins/nightshift/skills/spec/SKILL.md`.
+- Test: `plugins/nightshift/tests/lint-spec.test.mjs` (new).
+
+**Interfaces:**
+- `node lint-spec.mjs <spec.md> [--specs-dir <dir>]` prints one line per problem as `<line>: <problem>` and exits 1, or prints `SPEC OK` and exits 0. It exports `lintSpec(text, { slugs })` returning `string[]` so the test needs no subprocess.
+- Problems it must find (each is a defect the first night paid for): missing `# title`, `Repo:`, or any of `## Outcome`, `## Acceptance`, `## Non-goals`, `## Context`; Acceptance without a `scripts/check` line that names `CHECK OK`; a backticked `cargo run --` or `cargo run --release --` that does not name `--bin`; a backticked `cargo test <filter>` whose sentence does not pin a count (`N passed`, `N tests`, or the word `exactly`); a command whose sentence says it must fail (`non-zero`, `exits 1`, `must fail`, `is refused`) is fine, but a backticked command followed by `-- FAILS` or `expected non-zero` in a code span is not (that phrasing belongs in prose); `Depends:` naming a slug not in `--specs-dir` (when given); `Units:` not a positive integer; an Acceptance item that mentions a `.png`, `.json`, `.md` or `.log` the command writes without a `Writes:` header listing it.
+- `SKILL.md` frontmatter description with a negative scope (do NOT use to execute a spec, for a one-sitting edit, or for the old Task-N plan format). Body: announce `Using nightwatch:spec to write a spec the launcher can land unattended`; read the code the outcome touches; iterate the four headings with the user one question at a time; every Acceptance item is a command with its expected output, one of them `scripts/check` → `CHECK OK`, test commands pin counts, binaries are named; declare `Depends:`, `Units:`, `Writes:` when they apply; write the file to the specs dir (default `~/.local/state/nightwatch/<repo>/specs/NN-<slug>.md`, next free `NN`); run `lint-spec.mjs` and refuse to finish until it prints `SPEC OK`; print the launch line `caffeinate -i <plugin>/nightwatch/run.sh <clone> <specs-dir> --only <slug>`.
+
+- [ ] **Step 1:** write `lint-spec.test.mjs`: one passing spec fixture (modelled on `~/.local/state/nightwatch/ambient/specs/06-live-asr.md`, which landed), and one failing case per problem above, including the exact defects from the night: `cargo run -- search the`, `cargo test export::` with no count, `uicheck.png` with no `Writes:`. Run → FAIL (module missing).
+- [ ] **Step 2:** implement `lint-spec.mjs`; test → PASS.
+- [ ] **Step 3:** write `skills/spec/SKILL.md`. `claude plugin validate plugins/nightshift` → OK (if the command is unavailable, say so in the commit body instead of claiming it ran).
+- [ ] **Step 4:** `bash scripts/check` → `CHECK OK`. Commit: `nightwatch: lint a spec for the four ways the first night's specs failed; nightwatch:spec writes one`.
+
+### Task 3: the morning is one command
+
+**Files:**
+- Create: `plugins/nightshift/nightwatch/morning.mjs`.
+- Test: `plugins/nightshift/tests/nightwatch-morning.test.mjs` (new), fixture directory `plugins/nightshift/tests/fixtures/nightwatch-state/` (journal, decisions, two outcome dirs with result files and logs, `landed`).
+
+**Interfaces:**
+- `node morning.mjs <state-dir> [--clone <path>]` (state dir is `~/.local/state/nightwatch/<name>`; `--clone` enables the commit-range and push lines). Exports `report(stateDir, opts)` returning `{ text, prBody, outcomes }`.
+- Reads the journal from its last `start:` line. Per outcome, in queue order: state (PASS/PARTIAL/BLOCKED/FAILED/waiting/skipped), branch, unit count, cost (sum from `decisions.jsonl` rows for this run and spec), wall clock (from `startedAt`/`endedAt` when present, else the journal timestamps), the eval concerns of every unit (from each `u<n>.result.json`'s `.eval.concerns[]`, marked high/low), and for BLOCKED the `blockedReason`. Then totals, then the two commands: push the landing branch and open the PR (print them; do not run them).
+- Writes `<state-dir>/pr-body.md`: one section per landed outcome (from `landed`): the spec's `# title`, the commit range on the landing branch, and every acceptance command of the passing unit with the exit line and last 10 lines from `u<n>-logs/verify-*.log` (the files the commands wrote, never the result file's `tail`). Ends with the Claude Code attribution footer the repo uses.
+- `--verdict <slug> <merged|reverted|overridden|discarded> [--note "..."]` appends `{ts, spec, verdict, note}` to `decisions.jsonl` and prints the line.
+- Runs in under a second on the fixture; no network.
+
+- [ ] **Step 1:** build the fixture from tonight's real shapes (copy and trim `~/.local/state/nightwatch/ambient/journal.md`, `decisions.jsonl`, `runs/20260905-225514/06-live-asr/u5.result.json`, a `u5-logs/verify-1.log`, and `01-ui-api/u4.result.json` with its high concern). Write the test: report names live-asr PASS with 5 units and its cost, ui-api BLOCKED with the typo reason and the high concern, the `pr-body.md` section quotes `CHECK OK` from the log file, `--verdict` appends one line. Run → FAIL.
+- [ ] **Step 2:** implement `morning.mjs`; test → PASS.
+- [ ] **Step 3:** `bash scripts/check` → `CHECK OK`. Commit: `nightwatch: morning.mjs reads the night, writes the PR body from the logs, records the verdict`.
+
+### Task 4: the orchestrator's playbook, the docs, the bump
+
+**Files:**
+- Create: `plugins/nightshift/skills/watch/SKILL.md`.
+- Modify: `plugins/nightshift/README.md` (add a Nightwatch section before the old-loop material), `docs/nightshift.md` (same, shorter, pointing at the README), `plugins/nightshift/.claude-plugin/plugin.json` (description gains one sentence on Nightwatch: spec, run.sh, watch, morning).
+- Bump: nightshift patch, last.
+
+**Interfaces:**
+- `skills/watch/SKILL.md`, description with negative scope (do NOT use to write specs or to implement code yourself; the run does that). Body is the playbook a Claude Code session follows to fire, watch and intervene: (1) preflight: clone clean and trusted, `gh variable get LANDING_STATE` is `run`, specs lint clean, 1Password unlocked, the launcher lock free; (2) launch with `caffeinate -i` in a herdr pane when `HERDR_ENV` is set, else backgrounded with stdin from `/dev/null`; (3) arm two monitors: the journal (`tail -f`, one event per line) and the workflow journals under `~/.claude/projects/<sanitised clone path>/*/subagents/workflows/wf_*/journal.jsonl` (one event per phase result); (4) what is safe to change mid-run and when it takes effect: `nightwatch.mjs` and spec files are re-read at the next unit, `run.sh` must never be edited in place while running (bash reads it incrementally; write a temp file and rename, and the change applies only to the next launch); (5) the interventions and their commands: fix a blocked branch from a git worktree, `requeue <slug>`/`skip <slug>`/`stop` via the control file, `pause` file, the kill switch for a hard stop; (6) keep a running log in `docs/research/<date>-nightwatch-<name>.md` with a timeline table and a findings list, committed as it grows; (7) at the `end:` line run `morning.mjs` and hand the report to the user. Include the night-one lesson list in one paragraph: the harness failed five ways, the code once.
+- README section: what Nightwatch is (spec → clone → units → integration branch → one PR), the spec format with the header lines, the launcher's env knobs, the control file, the three commands (`lint-spec`, `run.sh`, `morning.mjs`), the two skills, and a pointer to the design doc and the first-night log. Keep the old-loop docs intact below it with a one-line note that Nightwatch replaces the loop once the old worktrees are drained.
+
+- [ ] **Step 1:** write the skill, the README section, the docs pointer, the plugin.json sentence.
+- [ ] **Step 2:** `node --test plugins/nightshift/tests/*.test.mjs` → `# fail 0`; `bash scripts/check` → `CHECK OK`.
+- [ ] **Step 3:** `node scripts/bump-plugin.mjs nightshift patch` (it also rewrites the marketplace entry). Commit: `nightwatch: the watch playbook, docs, and the batch's version bump` with `plugins/nightshift` and `.claude-plugin/marketplace.json` staged.
+
+## Open Questions
