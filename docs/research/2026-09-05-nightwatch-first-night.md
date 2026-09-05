@@ -35,6 +35,8 @@ Live record of the first unattended Nightwatch v0 run (ambient, six specs), kept
 | 01:32 | wer unit 1, "`wer --via <rate>`: does the resampler cost words": `b45ca46`, $5.55, eval ok (one low note: the transcode cache keys on rate and speaker only). First clean unit on the fully patched engine. |
 | 01:34 | wer unit 2 Reconcile reported every acceptance command passing at `b45ca46`; the planner still chose a unit (the `calls` fixture set) because the Outcome asks for more than the acceptance tests. A spec whose acceptance passes before its Outcome is done is a spec gap: `nightwatch:spec` should refuse it. |
 | 01:45 | **wer BLOCKED at unit 2 on a real spec defect.** Acceptance item 5 builds each Earnings-21 reference from tokens with `ts` under 300 s, but every `.nlp` reference file has empty `ts`/`endTs` columns. The worker made no edits and left the facts: media is plain (not LFS), the first three sorted ids are 4320211, 4330115, 4341191, header order is `token|speaker|ts|endTs|punctuation|case|tags|wer_tags`, lines are CRLF. Jason decides the replacement rule (truncate audio to 300 s and use the whole reference, or drop the bound). |
+| 02:05 | live-asr unit 1, "src/bench.rs, the pure queue arithmetic and its tests": `5f1f9be` + `aa9ee26`, eval ok. |
+| 02:26 | live-asr unit 2, "asrbench binary: replay in blocks, time each stage, feed the queue simulation": `0957844`, eval ok, no concerns. Remaining: the three dated sections in `docs/developing/measurements.md` (unit 3, needs a real benchmark run on the symlinked models). |
 
 ## Fixed before launch (all in the engine now)
 
