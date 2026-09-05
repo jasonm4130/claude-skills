@@ -349,6 +349,18 @@ while :; do
   case "$units" in ''|*[!0-9]*|0) units=$MAX_UNITS ;; esac
   if git show-ref --verify --quiet "refs/heads/$branch"; then
     git switch -q "$branch"; log "$slug: resuming branch $branch at $(git rev-parse --short HEAD)"
+    # A branch cut before another outcome landed cannot fast-forward onto $LANDING. Rebase it first,
+    # so the unit verifies the tree that will actually land; a conflict is the morning's, not the worker's.
+    if ! git merge-base --is-ancestor "$LANDING" "$branch"; then
+      if git rebase -q "$LANDING" >/dev/null 2>&1; then
+        log "$slug: rebased onto $LANDING at $(git rev-parse --short HEAD); the unit verifies the rebased tree"
+      else
+        conflicts=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
+        git rebase --abort >/dev/null 2>&1 || true
+        log "$slug: BLOCKED, rebase onto $LANDING conflicts in ${conflicts% }; branch kept for the morning"
+        git switch -q "$LANDING"; continue
+      fi
+    fi
   else
     git switch -q -c "$branch"; log "$slug: branch $branch cut from $LANDING"
   fi

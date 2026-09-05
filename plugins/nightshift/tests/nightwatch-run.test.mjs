@@ -173,3 +173,36 @@ test("--only takes a comma-separated list", () => {
   assert.match(out.journal, /03-c u1: PASS/);
   assert.equal(/02-b u1:/.test(out.journal), false);
 });
+
+test("a kept branch cut before another outcome landed is rebased onto the landing branch, then lands", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A", "Units: 1") } });
+  const date = "2026-01-01"; // DATE is an env override in run.sh; the launcher's own is local time
+  r.git("switch", "-q", "-c", `nw/${date}/01-a`);
+  writeFileSync(join(r.clone, "a.txt"), "a\n");
+  r.git("add", "-A"); r.git("commit", "-q", "-m", "a: earlier unit");
+  r.git("switch", "-q", "-c", `nightwatch/${date}`, "main");
+  writeFileSync(join(r.clone, "other.txt"), "other\n");
+  r.git("add", "-A"); r.git("commit", "-q", "-m", "other outcome landed");
+  const out = runNightwatch(r, { env: { FAKE_NW_SCRIPT: PASS_UNIT, DATE: date } });
+
+  assert.match(out.journal, /01-a: rebased onto nightwatch\/\S+ at \w+; the unit verifies the rebased tree/);
+  assert.match(out.journal, /01-a: PASS, landed on/);
+  assert.doesNotMatch(out.journal, /fast-forward .* failed/);
+});
+
+test("a kept branch whose rebase conflicts is BLOCKED before any unit runs, and the branch is kept", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A", "Units: 1") } });
+  const date = "2026-01-01"; // DATE is an env override in run.sh; the launcher's own is local time
+  r.git("switch", "-q", "-c", `nw/${date}/01-a`);
+  writeFileSync(join(r.clone, "README.md"), "branch version\n");
+  r.git("add", "-A"); r.git("commit", "-q", "-m", "a: edits README");
+  r.git("switch", "-q", "-c", `nightwatch/${date}`, "main");
+  writeFileSync(join(r.clone, "README.md"), "landed version\n");
+  r.git("add", "-A"); r.git("commit", "-q", "-m", "other outcome edits README");
+  const out = runNightwatch(r, { env: { FAKE_NW_SCRIPT: PASS_UNIT, DATE: date } });
+
+  assert.match(out.journal, /01-a: BLOCKED, rebase onto nightwatch\/\S+ conflicts in README\.md; branch kept/);
+  assert.doesNotMatch(out.journal, /01-a u1:/);
+  assert.ok(branches(r).includes(`nw/${date}/01-a`));
+  assert.equal(r.git("rev-parse", "--abbrev-ref", "HEAD"), `nightwatch/${date}`);
+});
