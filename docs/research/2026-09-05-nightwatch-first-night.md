@@ -28,7 +28,9 @@ Live record of the first unattended Nightwatch v0 run (ambient, six specs), kept
 | 00:31 | session-tools unit 1, "Extract session::model_files": `c30e884`, $3.82, eval ok. |
 | 00:46 | session-tools unit 2, "src/doctor.rs, the pure ten-check run": `c4a1731`, $4.42, eval ok. |
 | 00:57 | session-tools unit 3, "the doctor CLI arm, USAGE line, two docs sections": the worker committed `28b1c93 doctor: wire the verb up` (the last unit the spec needs) and then omitted the schema's required `blockedReason` field five times; the StructuredOutput retry cap threw out of the workflow, no result file was written, and the launcher recorded **session-tools FAILED** ($2.99) with 3 commits kept. The branch is very likely complete; nothing verified it. Launcher moved to ui-shell (unit 7 of 8). |
-| 01:02 | Engine: schemas now require only load-bearing fields (`status`/`commits`/`summary` for Implement, and so on) and the script fills the rest with defaults. Live from the unit after ui-shell unit 1. |
+| 00:59 | Engine: schemas now require only load-bearing fields (`status`/`commits`/`summary` for Implement, and so on) and the script fills the rest with defaults. Live from the unit after ui-shell unit 1. |
+| 01:01 | **ui-shell FAILED at unit 1 in four minutes ($0.53), zero commits.** Its acceptance command `cargo run --bin uicheck` writes `uicheck.png` to the repo root; Reconcile saw an untracked file, reported the tree dirty, and the engine's "not clean at start of unit 1" rule failed the outcome. Launcher moved to ui-features (unit 8 of 8, the last), whose acceptance writes the same file. |
+| 01:02 | Stop-gap for the running unit: `/uicheck.png` and `/windowcheck.png` added to the clone's `.git/info/exclude`, in place before ui-features' Reconcile ran the command (the file appeared at 01:03 with `git status` clean). Engine fix committed: the launcher runs `git clean -fdq` after every unit and both prompts say an acceptance-written file is not dirt. |
 
 ## Fixed before launch (all in the engine now)
 
@@ -62,10 +64,12 @@ Unit 2: `search` is callable over MCP even though `tools/list` hides it, because
 7. **A high eval concern blocked a whole outcome over a one-word typo.** The evaluator was right (CI would fail) and the rule did what the design said, but the cost was the remaining ui-api units tonight. Fixed in `95f00b2` with a repair round. The deeper fix is in ambient: `scripts/check` should run `typos` when installed so local check equals CI; that is a spec for tomorrow.
 8. **Vacuous acceptance commands.** `cargo test export::` exits 0 with zero tests; the spec's acceptance line cannot tell "passed" from "nothing ran". The verifier caught it by judgment, which is the thing we are trying not to depend on. Specs should pin counts (`cargo test export:: 2>&1 | grep -q '7 passed'`), and `nightwatch:spec` (v1 item 5) should refuse a bare `cargo test <filter>`.
 9. **A thrown agent error leaves no result file, which reads as a dead unit.** The record step is the last `agent()` call; anything that throws before it (schema retry cap, agent killed) skips it. Two fixes, both v1: the launcher should treat "no result file but new commits on the branch" as PARTIAL-with-work rather than FAILED, and the script should catch at the top level and still record. The Workflow runtime forbids wrapping top-level `return`s in `try`, so the record-on-throw has to be a launcher-side fallback that reads the driver's stderr for the error text.
-10. **Parallel outcomes** (v1 item 2) are where the sequential frustration goes; the lock and single-owner rule from tonight are the prerequisites and are in.
+10. **"Dirty" needs a definition that excludes what acceptance commands write.** Tonight it cost an outcome for $0.53 and would have cost a second. Untracked files at the start of a unit cannot be work (the worker commits what it makes), so the launcher now cleans them; a spec whose acceptance writes a file should say so, and `nightwatch:spec` should ask.
+11. **Parallel outcomes** (v1 item 2) are where the sequential frustration goes; the lock and single-owner rule from tonight are the prerequisites and are in.
 
 ## Open for Jason in the morning
 
+- Resume ui-shell too: `--only 03-ui-shell` (branch exists with zero commits; it costs nothing to keep).
 - Resume both kept branches: `run.sh <clone> <specs> --only 02-session-tools` (should PASS on Reconcile plus Verify: all three units are committed), then `--only 01-ui-api` (two units left). Both before the batch push.
 - Disposition of the Codex audit P1 (launcher lock as the answer, or something else).
 - Whether the three unit-1 eval concerns should be fixed on the branch before the PR.
