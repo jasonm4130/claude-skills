@@ -37,7 +37,7 @@ repo=$(cd "$here/.." && pwd)
 : "${CHECK_CMD:=scripts/check}"
 : "${MODEL:=opus}"
 : "${GEN_BUDGET:=4}"
-: "${SKEPTIC_BUDGET:=1}"
+: "${SKEPTIC_BUDGET:=5}"
 : "${REPAIR_ROUNDS:=1}"
 : "${GEN_TIMEOUT:=45m}"
 : "${CHECK_TIMEOUT:=30m}"
@@ -314,6 +314,26 @@ run_task() { # run_task <n> <title>
       log "  round $round: $verdict"
       case "$verdict" in
         "VERDICT: OK"*) break ;;
+        "")
+          log "  round $round: skeptic returned no verdict (budget or timeout)"
+          verdict=$(ask "skeptic-$round-retry" plan "$SKEPTIC_BUDGET" "$SKEPTIC_TIMEOUT" \
+            "$(fill "$here/SKEPTIC.md" "TASK=$n" "TITLE=$title" "BRIEF=$(cat "$run_dir/brief.md")" "DIFF=$(gw diff "origin/$BASE...HEAD" | head -c 200000)")" \
+            | grep -E '^VERDICT:' | tail -1)
+          log "  round $round: retry: $verdict"
+          case "$verdict" in
+            "VERDICT: OK"*) break ;;
+            "")
+              log "  round $round: skeptic returned no verdict twice (budget or timeout)"
+              gw push -q -u origin "$branch" || die "push failed"
+              pr=$(open_pr_number --draft --label "$BLOCKED_LABEL" --title "[task $n] $title" \
+                --body "$(pr_body "$n" "$title" "blocked: skeptic returned no verdict twice (budget or timeout)")")
+              log "task $n: blocked after $((round + 1)) round(s); draft PR #$pr carries the evidence"
+              return 1
+              ;;
+            *) feedback="A reviewer read your diff and refuted it. Fix this, or if the reviewer is wrong say why in your report:
+$(cat "$run_dir/skeptic-$round-retry.md")" ;;
+          esac
+          ;;
         *) feedback="A reviewer read your diff and refuted it. Fix this, or if the reviewer is wrong say why in your report:
 $(cat "$run_dir/skeptic-$round.md")" ;;
       esac

@@ -23,11 +23,11 @@
 : "${EXPECTED_CHECKS:=}"
 
 # Money and time per task. GEN_BUDGET is spent up to (REPAIR_ROUNDS + 1) times,
-# SKEPTIC_BUDGET the same, so a task costs at most
-# (GEN_BUDGET + SKEPTIC_BUDGET) * (REPAIR_ROUNDS + 1) dollars.
+# SKEPTIC_BUDGET up to twice per round (an empty verdict retries once), so a task costs at most
+# (GEN_BUDGET + 2 * SKEPTIC_BUDGET) * (REPAIR_ROUNDS + 1) dollars.
 : "${MODEL:=opus}"
 : "${GEN_BUDGET:=4}"
-: "${SKEPTIC_BUDGET:=1}"
+: "${SKEPTIC_BUDGET:=5}"
 : "${REPAIR_ROUNDS:=1}"
 : "${MAX:=3}"
 : "${DEADLINE:=6h}"
