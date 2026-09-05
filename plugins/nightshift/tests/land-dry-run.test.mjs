@@ -61,5 +61,7 @@ test("an open PR is resumed, a blocked or human-closed PR stops the night", () =
     assert.match(r.journal, /STOP: task 1: PR #7 is blocked, waiting for a human/, r.journal);
     r = dryRun(repo, { FAKE_GH_STATE: "run", FAKE_GH_CLOSED_PR: "5" });
     assert.match(r.journal, /STOP: task 1: PR #5 was closed without merging; a human decided/, r.journal);
+    r = dryRun(repo, { FAKE_GH_STATE: "run", FAKE_GH_CLOSED_PR: "5", FAKE_GH_CLOSED_RETRY: "1" });
+    assert.match(r.journal, /STOP: would run task 1: first/, "a land:retry label on the closed PR means run it again");
   } finally { rmSync(repo.root, { recursive: true, force: true }); }
 });

@@ -37,7 +37,7 @@ bash and runs anywhere).
          skeptic    read-only claude -p → VERDICT: OK | REFUTED
          one repair round on red or REFUTED, then draft PR labelled land:blocked
          push, gh pr create, ./loop/merge-pr.sh waits for CI and merges
-       stop on: switch off, a blocked or closed PR, MAX tasks, DEADLINE
+       stop on: switch off, a blocked or closed PR (unless labelled land:retry), MAX tasks, DEADLINE
 07:00  /nightshift:morning
 ```
 
@@ -64,6 +64,16 @@ cannot loosen them by editing permissions:
   like `git -C dir push`, and it is still a textual guard: branch protection
   on the base branch is the gate, and preflight warns when there is none.
 - **tests-are-readonly** — deleting a test file or removing test markers.
+
+## The generator's environment
+
+`claude -p` runs with the parent session's `CLAUDE*` variables scrubbed (a
+claude started inside another Claude Code session is forced into default
+permission mode, where every edit is a prompt nobody answers), with
+`commit.gpgsign=false` (a signing key behind 1Password or gpg-agent does not
+answer at 02:00), with `/dev/null` on stdin (it reads stdin even given a
+prompt, and would eat the loop's task list), and with `--add-dir` on the run
+directory so it can read its brief. The PR is the audit trail.
 
 ## Merging
 

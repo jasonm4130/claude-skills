@@ -63,6 +63,7 @@ case "$1 $2" in
   "pr list")
     case "$args" in
       *"--state open"*) printf '%s\\n' "\${FAKE_GH_OPEN_PR:-}" | grep . ;;
+      *"--state closed"*"labels"*) [ "\${FAKE_GH_CLOSED_RETRY:-0}" = 1 ] || printf '%s\\n' "\${FAKE_GH_CLOSED_PR:-}" | grep . ;;
       *"--state closed"*) printf '%s\\n' "\${FAKE_GH_CLOSED_PR:-}" | grep . ;;
     esac; exit 0 ;;
   "api "*)
