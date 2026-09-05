@@ -39,7 +39,9 @@ the wrong target at night.
 ## Acceptance
 
 Every item is a command with its expected output, checkable without a human.
-One item is always `scripts/check` → `CHECK OK`. A `cargo test <filter>` item
+One item is always the repo's `CHECK` command (from
+`~/.local/state/nightwatch/<name>/config` — `scripts/check` when the repo
+owns one, else the path `init.mjs` generated) → `CHECK OK`. A `cargo test <filter>` item
 pins a count (`N passed`, `N tests`, or the word `exactly`) — a trivial test
 must not stand in for the real assertion. A `cargo run --` or `cargo run
 --release --` item names `--bin <name>` — an unnamed binary lets cargo guess.
@@ -67,13 +69,16 @@ spec until that one has landed.
 
 ## 3. Write it, lint it, refuse to stop until it's clean
 
-Write the file to the specs dir — default
-`~/.local/state/nightwatch/<repo>/specs/NN-<slug>.md`, `NN` the next unused
-two-digit number in that directory — then run:
+Write the file to the specs dir — the config's `SPECS` (default
+`~/.local/state/nightwatch/<name>/specs`), `NN-<slug>.md` with `NN` the next
+unused two-digit number in that directory — then run:
 
 ```
-node <plugin>/nightwatch/lint-spec.mjs --specs-dir <specs-dir> <file>
+node <plugin>/nightwatch/lint-spec.mjs --specs-dir <specs-dir> --check <check> <file>
 ```
+
+`<check>` is the config's `CHECK`, rendered the way `run.sh` and the engine
+render it (double-quoted when the path isn't bare word characters).
 
 A non-empty line means a problem, one per line, `<file>:<line>: <problem>`.
 Fix the spec and re-run; do not consider the spec finished until the command
@@ -84,7 +89,7 @@ the header, not the linter.
 ## 4. Hand off the launch line
 
 ```
-caffeinate -i <plugin>/nightwatch/run.sh <clone> <specs-dir> --only <slug>
+caffeinate -i <plugin>/nightwatch/run.sh <name> --only <slug>
 ```
 
 Print it and stop. This skill writes and lints the spec; running it,

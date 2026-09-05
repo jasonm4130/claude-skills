@@ -33,6 +33,25 @@ Acceptance → Non-goals → Context; the launcher runs it as a queue of
 headless `claude -p` units in a clone that never pushes, landing each PASS
 onto one integration branch and leaving one PR for the morning.
 
+### Set up a repo
+
+Say "initialize nightwatch" (or `/nightwatch-init`) in a session opened on
+the repo. `nightwatch/init.mjs` does every step idempotently — preflight,
+a clone at `~/Work/Git/nightwatch/<name>` that never pushes, a trust entry
+in `~/.claude.json` so the headless child never sees a trust dialog, a check
+command (the repo's own `scripts/check`, or one generated in the state
+directory from CI's steps and proved once before it's trusted), the state
+directory and `config`, the kill switch, and a dry run that proves the
+engine can reconcile a branch and run the acceptance commands in the clone.
+It never touches the repo's branches, GitHub, or CI, commits nothing and
+opens no pull request: the only push anywhere in Nightwatch is the morning
+one. Every check — the repo's own, the generated one, and the launcher's own
+re-check before it lands anything — ends its output with `CHECK OK` as its
+last line; that's the one contract every consumer reads for. The two
+PreToolUse guards reach the headless child through `--settings` JSON built
+fresh by `run.sh`, not through the repo's `.claude/`, so a Nightwatch clone
+needs no scaffolding of its own the way the old loop does.
+
 ```
 spec (Outcome/Acceptance/Non-goals/Context) → clone → units (Reconcile →
 Implement → Verify → Eval, one claude -p each) → land onto an integration
@@ -49,8 +68,11 @@ A spec header carries four lines above the first `## ` heading — only
 | `Units: <n>` | cap this spec at `n` units, overriding the launcher's default |
 | `Writes: <path>[, ...]` | files an acceptance command creates, so the morning's PR body can quote their logs |
 
-The launcher (`nightwatch/run.sh <clone> <specs-dir> [--dry-run] [--only
-<slug>[,...]]`) takes its knobs from the environment: `STATE_VAR`
+The launcher (`nightwatch/run.sh <name-or-clone> [<specs-dir>] [--dry-run]
+[--only <slug>[,...]]`) takes a repo name once init has run — the config at
+`~/.local/state/nightwatch/<name>/config` supplies the clone, specs dir,
+base branch and check command — or the old two-positional form unchanged.
+It also takes its knobs from the environment: `STATE_VAR`
 (`LANDING_STATE`), `DEADLINE` (`7h`), `UNIT_BUDGET` (`$8`), `UNIT_TIMEOUT`
 (`150m`), `MAX_UNITS` (`8`, unless the spec says `Units:`), `MAIN_MODEL`
 (`sonnet`), `BASE` (`main`). While it runs, `$STATE/control` (append-only,
@@ -58,22 +80,26 @@ The launcher (`nightwatch/run.sh <clone> <specs-dir> [--dry-run] [--only
 boundary, and a `$STATE/pause` file holds the queue there until it is
 removed.
 
-Three commands, no plan file:
+Four commands, no plan file:
 
-- `node nightwatch/lint-spec.mjs --specs-dir <dir> [spec.md]` — catches a
-  spec defect before it costs a night: an unnamed `cargo run --` binary, an
-  unpinned `cargo test` filter, an artifact missing its `Writes:` line, a
-  dependency cycle.
-- `nightwatch/run.sh <clone> <specs-dir>` — the launcher.
-- `node nightwatch/morning.mjs <state-dir> [--clone <path>]` — reads the
-  journal and every outcome's result and verify logs, reports each spec's
-  state, cost and eval concerns, writes `pr-body.md`, and (with
+- `node nightwatch/init.mjs [--report]` — sets a repo up end to end (clone,
+  trust, check command, state dir, switch) and proves it with a dry run;
+  `--report` changes nothing and only shows the status table.
+- `node nightwatch/lint-spec.mjs --specs-dir <dir> --check <cmd> [spec.md]` —
+  catches a spec defect before it costs a night: an unnamed `cargo run --`
+  binary, an unpinned `cargo test` filter, an artifact missing its `Writes:`
+  line, a dependency cycle.
+- `nightwatch/run.sh <name-or-clone> [<specs-dir>]` — the launcher.
+- `node nightwatch/morning.mjs <name-or-state-dir> [--clone <path>]` — reads
+  the journal and every outcome's result and verify logs, reports each
+  spec's state, cost and eval concerns, writes `pr-body.md`, and (with
   `--verdict <slug>[@<sha>] <merged|reverted|overridden|discarded>`) records
   what happened to a landing afterward.
 
-Two skills: `nightwatch:spec` writes and lints a spec with the user;
-`nightwatch:watch` runs preflight, launches `run.sh`, arms the journal and
-workflow-journal monitors, and knows the interventions above. Design:
+Three skills: `nightwatch-init` sets a repo up for Nightwatch;
+`nightwatch:spec` writes and lints a spec with the user; `nightwatch:watch`
+runs preflight, launches `run.sh`, arms the journal and workflow-journal
+monitors, and knows the interventions above. Design:
 [`2026-09-05-nightwatch-redesign.md`](https://github.com/jasonm4130/claude-skills/blob/main/docs/research/2026-09-05-nightwatch-redesign.md).
 First-night log:
 [`2026-09-05-nightwatch-first-night.md`](https://github.com/jasonm4130/claude-skills/blob/main/docs/research/2026-09-05-nightwatch-first-night.md).

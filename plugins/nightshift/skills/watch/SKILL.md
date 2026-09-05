@@ -27,29 +27,33 @@ Before starting `run.sh`, confirm all of:
   them).
 - `gh variable get LANDING_STATE` (from inside the clone; the launcher's
   default `STATE_VAR`) prints exactly `run`.
-- `node <plugin>/nightwatch/lint-spec.mjs --specs-dir <specs-dir>` prints
-  `SPEC OK (<n> specs)` for the whole queue — a spec defect caught here is
-  free; caught at 2 a.m. it costs a unit.
+- `node <plugin>/nightwatch/lint-spec.mjs --specs-dir <specs-dir> --check <check>`
+  prints `SPEC OK (<n> specs)` for the whole queue — a spec defect caught
+  here is free; caught at 2 a.m. it costs a unit.
 - 1Password is unlocked if any command in the queue needs a secret.
-- `$HOME/.local/state/nightwatch/<clone-basename>/launcher.lock` is absent,
-  or holds a pid that is no longer alive (`kill -0 <pid>` fails) — a live
-  lock means another launcher already owns this clone.
+- `$HOME/.local/state/nightwatch/<name>/launcher.lock` is absent, or holds a
+  pid that is no longer alive (`kill -0 <pid>` fails) — a live lock means
+  another launcher already owns this clone. `node <plugin>/nightwatch/init.mjs
+  --report` re-checks a setup already done — a clean way to confirm nothing
+  has drifted (trust, the check command, the switch) before a launch.
 
 ## 2. Launch
 
 ```
-caffeinate -i <plugin>/nightwatch/run.sh <clone> <specs-dir>
+caffeinate -i <plugin>/nightwatch/run.sh <name> [<specs-dir>]
 ```
 
-In a `herdr` pane when `HERDR_ENV` is set, so the run has its own pane and
-this session never blocks on it; otherwise background it with stdin from
-`/dev/null` (the child reads stdin even given a prompt, and would otherwise
-eat this session's own input). `--only <slug>[,<slug>...]` narrows the queue
-for a resume or a single-spec relaunch.
+`<specs-dir>` defaults to the config's `SPECS`, so a bare `<name>` is enough
+once init has run. In a `herdr` pane when `HERDR_ENV` is set, so the run has
+its own pane and this session never blocks on it; otherwise background it
+with stdin from `/dev/null` (the child reads stdin even given a prompt, and
+would otherwise eat this session's own input). `--only <slug>[,<slug>...]`
+narrows the queue for a resume or a single-spec relaunch.
 
-State lives at `$HOME/.local/state/nightwatch/<clone-basename>` — keyed on
-the clone's directory name, not the repo name. `<state>/journal.md` is the
-event log; `<state>/runs/<stamp>/` holds this launch's per-unit files.
+State lives at `$HOME/.local/state/nightwatch/<name>` — keyed on the name in
+`~/.local/state/nightwatch/<name>/config`, the same name `init.mjs` and
+`morning.mjs` take. `<state>/journal.md` is the event log;
+`<state>/runs/<stamp>/` holds this launch's per-unit files.
 
 ## 3. Arm two monitors
 
@@ -102,10 +106,11 @@ did.
 
 ## 7. At the `end:` line
 
-Run `node <plugin>/nightwatch/morning.mjs <state> [--clone <clone>]` and hand
-its report to the user — it reads the journal, the outcomes, and the verify
-logs, and writes `<state>/pr-body.md` with the exact commands to push the
-landing branch and open the PR. This skill launches and steers the run;
+Run `node <plugin>/nightwatch/morning.mjs <name>` and hand its report to the
+user — it resolves the name to its state dir, defaulting `--clone` from the
+config, and reads the journal, the outcomes, and the verify logs, and writes
+`<state>/pr-body.md` with the exact commands to push the landing branch and
+open the PR. This skill launches and steers the run;
 `morning.mjs` is what reads it afterward, not `nightshift:morning` (that
 skill reads the old task-per-PR loop's journal, a different state shape
 entirely).

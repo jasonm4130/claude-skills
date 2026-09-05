@@ -20,9 +20,11 @@ Acceptance / Non-goals / Context), no plan file. `nightwatch/run.sh` walks a
 queue of specs as headless `claude -p` units in a clone that never pushes,
 landing each pass onto one integration branch for a single morning PR;
 `nightwatch/lint-spec.mjs` catches a spec defect before it costs a night, and
-`nightwatch/morning.mjs` reads the result. The full spec format, the
-launcher's env knobs, the control file, and the two skills (`nightwatch:spec`,
-`nightwatch:watch`) are in the plugin's own
+`nightwatch/morning.mjs` reads the result. Say "initialize nightwatch" to set
+a repo up end to end (clone, trust, check command, kill switch, a proving dry
+run) via the `nightwatch-init` skill. The full spec format, the launcher's
+env knobs, the control file, and the three skills (`nightwatch-init`,
+`nightwatch:spec`, `nightwatch:watch`) are in the plugin's own
 [README](https://github.com/jasonm4130/claude-skills/blob/main/plugins/nightshift/README.md#nightwatch).
 It will replace the task-per-PR loop documented below once this repo's
 existing loop worktrees are drained.

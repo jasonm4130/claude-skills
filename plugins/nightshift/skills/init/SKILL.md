@@ -1,6 +1,6 @@
 ---
 name: init
-description: Use when the user says "/nightshift:init", "set up nightshift here", "add the overnight landing loop to this repo", or asks how to run plans unattended in a repo that has no `loop/` directory. Scaffolds the loop, the two PreToolUse guards, a stack-specific verifier and the landing doc into the current repo, merges `.claude/settings.json`, proves it with a dry run, commits the scaffold on a branch, runs preflight and prints the first-night recipe. Do NOT use to run a night (the loop runs itself from launchd or the terminal), to triage one (use morning), or to write a plan (use plan). Do NOT re-run to update an existing scaffold; use `init.mjs --check` and `--update`.
+description: Use when the user says "/nightshift:init", "set up nightshift here", "add the overnight landing loop to this repo", or asks how to run plans unattended in a repo that has no `loop/` directory. Scaffolds the loop, the two PreToolUse guards, a stack-specific verifier and the landing doc into the current repo, merges `.claude/settings.json`, proves it with a dry run, commits the scaffold on a branch, runs preflight and prints the first-night recipe. Do NOT use to run a night (the loop runs itself from launchd or the terminal), to triage one (use morning), or to write a plan (use plan). Do NOT re-run to update an existing scaffold; use `init.mjs --check` and `--update`. This is for the old landing loop; for Nightwatch use nightwatch-init.
 ---
 
 # Scaffold Nightshift into this repo
