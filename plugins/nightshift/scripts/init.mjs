@@ -111,6 +111,8 @@ export function fill(text, vars) {
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 
 /** Every file init manages: repo-relative path → rendered content. */
+const RUNTIME_TEMPLATES = new Set(["PROMPT.md", "SKEPTIC.md"]);
+
 export function render(dir, opts) {
   const name = basename(resolve(dir));
   const stack = opts.stack === "auto" ? detectStack(dir) : opts.stack;
@@ -132,7 +134,10 @@ export function render(dir, opts) {
   for (const f of LOOP_FILES) {
     let t = readFileSync(join(templates, "loop", f), "utf8");
     if (f === "launchd.plist") t = t.replace(/__REPO__/g, xml(vars.REPO)).replace(/__HOME__/g, xml(vars.HOME)).replace(/__NAME__/g, xml(vars.NAME)).replace(/__PATH__/g, xml(vars.PATH));
-    out[`loop/${f}`] = fill(t, vars);
+    // The prompts are land.sh's templates: it fills {{PLAN}}, {{BASE}}, {{TASK}}…
+    // at run time from loop/config, so scaffolding must leave them verbatim or a
+    // later change of PLAN in config would still name the old plan in the prompt.
+    out[`loop/${f}`] = RUNTIME_TEMPLATES.has(f) ? t : fill(t, vars);
   }
   for (const f of HOOK_FILES) out[`.claude/hooks/${f}`] = readFileSync(join(templates, "hooks", f), "utf8");
   out["scripts/check"] = readFileSync(join(templates, "check", `${stack}.sh`), "utf8");
@@ -274,7 +279,7 @@ export function main(argv = process.argv.slice(2), log = console.log) {
   log(`  stamped  loop/.nightshift`);
   log("");
   log("Next:");
-  log(`  1. loop/config points at ${vars.PLAN}${opts.plan ? "" : " (a one-task smoke plan init wrote; replace it once a task has landed)"}${vars.MERGE_MODE === "wait" ? `; EXPECTED_CHECKS is ${vars.EXPECTED_CHECKS ? `"${vars.EXPECTED_CHECKS}"` : "EMPTY — name your CI checks as GitHub names them, or add a final gate job"}` : "; MERGE_MODE=protected reads the required checks from GitHub"}.`);
+  log(`  1. loop/config points at ${vars.PLAN}${written.includes(vars.PLAN) ? " (a one-task smoke plan init wrote; replace it once a task has landed)" : ""}${vars.MERGE_MODE === "wait" ? `; EXPECTED_CHECKS is ${vars.EXPECTED_CHECKS ? `"${vars.EXPECTED_CHECKS}"` : "EMPTY — name your CI checks as GitHub names them, or add a final gate job"}` : "; MERGE_MODE=protected reads the required checks from GitHub"}.`);
   log("  2. scripts/check must end with CHECK OK — edit the steps to match your CI.");
   log("  3. node <plugin>/scripts/preflight.mjs   # gh auth, timeout(1), branch protection, kill switch, the verifier");
   log("  4. loop/land.sh --dry-run               # says which task it would pick, touches nothing");
