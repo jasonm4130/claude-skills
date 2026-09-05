@@ -32,6 +32,9 @@ Live record of the first unattended Nightwatch v0 run (ambient, six specs), kept
 | 01:01 | **ui-shell FAILED at unit 1 in four minutes ($0.53), zero commits.** Its acceptance command `cargo run --bin uicheck` writes `uicheck.png` to the repo root; Reconcile saw an untracked file, reported the tree dirty, and the engine's "not clean at start of unit 1" rule failed the outcome. Launcher moved to ui-features (unit 8 of 8, the last), whose acceptance writes the same file. |
 | 01:02 | Stop-gap for the running unit: `/uicheck.png` and `/windowcheck.png` added to the clone's `.git/info/exclude`, in place before ui-features' Reconcile ran the command (the file appeared at 01:03 with `git status` clean). Engine fix committed: the launcher runs `git clean -fdq` after every unit and both prompts say an acceptance-written file is not dirt. |
 | 01:06 | ui-features BLOCKED at planning ($1.55): spec 04 depends on 01, 02 and 03, none landed on the integration branch. Correct, and the `Depends:` line of v1 item 2 would have skipped it for free. Launcher moved to 05-wer, the first unit on the fully patched engine. |
+| 01:32 | wer unit 1, "`wer --via <rate>`: does the resampler cost words": `b45ca46`, $5.55, eval ok (one low note: the transcode cache keys on rate and speaker only). First clean unit on the fully patched engine. |
+| 01:34 | wer unit 2 Reconcile reported every acceptance command passing at `b45ca46`; the planner still chose a unit (the `calls` fixture set) because the Outcome asks for more than the acceptance tests. A spec whose acceptance passes before its Outcome is done is a spec gap: `nightwatch:spec` should refuse it. |
+| 01:45 | **wer BLOCKED at unit 2 on a real spec defect.** Acceptance item 5 builds each Earnings-21 reference from tokens with `ts` under 300 s, but every `.nlp` reference file has empty `ts`/`endTs` columns. The worker made no edits and left the facts: media is plain (not LFS), the first three sorted ids are 4320211, 4330115, 4341191, header order is `token|speaker|ts|endTs|punctuation|case|tags|wer_tags`, lines are CRLF. Jason decides the replacement rule (truncate audio to 300 s and use the whole reference, or drop the bound). |
 
 ## Fixed before launch (all in the engine now)
 
@@ -70,6 +73,7 @@ Unit 2: `search` is callable over MCP even though `tools/list` hides it, because
 
 ## Open for Jason in the morning
 
+- Fix spec 05's acceptance item 5 (no per-token timestamps in Earnings-21 `.nlp` files) then `--only 05-wer`.
 - Resume ui-shell too: `--only 03-ui-shell` (branch exists with zero commits; it costs nothing to keep).
 - Resume both kept branches: `run.sh <clone> <specs> --only 02-session-tools` (should PASS on Reconcile plus Verify: all three units are committed), then `--only 01-ui-api` (two units left). Both before the batch push.
 - Disposition of the Codex audit P1 (launcher lock as the answer, or something else).
