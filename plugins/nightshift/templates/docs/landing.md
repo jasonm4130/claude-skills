@@ -48,7 +48,8 @@ human-closed PR on any task stops the plan until someone acts.
 - `~/.local/state/nightshift/{{NAME}}/journal.md` is one line per event, and
   every stop says why: `STOP: frozen`, `STOP: task 3 is blocked`,
   `STOP: done: 2 task(s) landed tonight`.
-- Each task's run has a directory beside it, `YYYY-MM-DD-tN/`, holding the
+- Each run of a task has its own directory beside it,
+  `YYYY-MM-DD-HHMMSS-<plan>-tN/`, holding the
   brief, every generator and skeptic transcript, the verifier log, and the
   merge log.
 - `gh pr list --label land:blocked` is what needs a human. Read the PR body:
