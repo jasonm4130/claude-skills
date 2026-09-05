@@ -114,3 +114,39 @@ Each item: the change, the evidence, the cost, and the one-word answer it needs.
 25. Sessions: open a second session when an unrelated topic arrives; unlock 1Password before any long dispatch; long workflows notify on completion; front-load the constraints that arrive as prompts 2 and 3. No split-at-hours rule, no handoff or retro revival. Evidence: duration not the tell [E4.9]; 9.6-19.8 h stalls [E4.12]; p=0.600/0.597 [E4.8]; 68e1fc37 [E1.6]. Cost: habit, one notification hook. yes/no
 26. One number monthly: plan-equivalent cost per merged, non-reverted PR, tooling versus product; weekly, the count of repos at 20+ commits. Evidence: measurement gap [R1.9]; the one allocation metric that moved [E3.13]. Cost: ten minutes a month. yes/no
 27. Confirm "no change" on: the Fable/Opus session default [E6.13]; spend on avoiding compaction [E6.9]; lowering `autoCompactWindow` until /usage flags long context at 10%+ [E1.2, E6.4, R4.14]; tightening workflow-model-guard's predicate [E1.3, R4.13]; the local skeptic [R5.7]; spec-kit [R5.5]; Playwright or GitHub MCP [R5.6]; an error-triage subscription [R5.8]; reviving handoff or retro [E4.8]. Cost: none. yes/no
+
+## 7. Decisions, 2026-09-05
+
+Jason answered the 27 items one at a time. Where the question put to him differed in shape from the item above, the shape he answered is the one recorded.
+
+| # | Answer | Shape decided |
+|---|---|---|
+| 1 | yes | `SKEPTIC_BUDGET` 5, empty verdict is its own error arm, back-port ambient 624012f, nightshift patch, refresh both repos |
+| 2 | later | three unattended nights, after item 1 lands |
+| 3 | yes | regenerate `autoMode.environment` from a real repo; one sentence naming classifier-gated commands at the plan gate |
+| 4 | research first | not a deletion: a study of what best-in-class LLM code-navigation tooling looks like in repos, then decide |
+| 5 | later | /usage, /insights, /skill-doctor diff |
+| 6 | yes, plus guidance | Sonnet readers in the fan-out phases, and written routing guidance on when Sonnet's rework costs more than Opus's first pass |
+| 7 | yes | UserPromptSubmit nudge in gates on fan-out words, ending in a spec file and a two-minute pre-mortem |
+| 8 | yes, reworded | keep "(Recommended)"; rule 1 becomes understand-the-goal-first, one question when the next step is obvious, a structured gate before multi-step or irreversible work |
+| 9 | yes | global CLAUDE.md under 12,288 B, gate 5 in bytes, code half of harness-behaviours.md scoped |
+| 10 | close | close #49 and #50; ten-minute Friday sweep |
+| 11 | no | |
+| 12 | yes | accept no cross-vendor reviewer on the unattended stream in writing; SKEPTIC.md clean-pass clause; revert and override rate beside the landed count; one codex diff pass over the nine landed PRs |
+| 13 | yes | codex-review: cap at five ranked findings, end a chain on a round with nothing unique, resume open chains on the same artifact |
+| 14 | yes | fronts: claude-skills (Nightwatch), transcoder, ambient; brok-stacks is ongoing homelab upkeep, not a front; games and skopia marked done and left deployed; one blog post through social-mcp and content-ops within a fortnight |
+| 15 | yes | emitOffer fix (landed as PR #102), retire handoff, no new skill until /skill-doctor has run |
+| 16 | yes, and rename | heredoc stripping and read-only leading binaries in the guard; Nightshift becomes **Nightwatch**; design how it runs without blocking daytime work |
+| 17 | yes, as a design pass | Explore and worker frontmatter fixes, inside a whole-system pass over the agent definitions in conjunction with Nightwatch |
+| 18 | hook | closing demand as a Stop hook, eight-block ceiling |
+| 19 | yes | positive-check rule and numbered decision list in the workflow report contract |
+| 20 | yes | `subagentPromptCacheTtl: 1h`, re-measure after a week; one uniform-vs-mixed night |
+| 21 | yes | Sonnet 5 worker with Opus 5 advisor (`advisorModel: opus`, inherited by subagents; a Fable main gets no advisor by the pairing rule); Fable coordinates; Fable-plus-Fable deferred; two-week count of advisor calls that changed the approach |
+| 22 | yes, two skills | ablation cases for writing-artifacts and adr, folded into the gates-config plan's eval task |
+| 23 | yes, quarterly | `reviewBy` date in each plugin.json, enforced by the repo-consistency test; first dates 2026-12-05 |
+| 24 | yes | five-line decision record (decision, alternatives, evidence, reversibility, review date) in the adr skill's template and the Nightwatch plan header |
+| 25 | yes, nudge only | first-prompt nudge to restate goal and success criterion; the item-18 Stop hook carries the closing line |
+| 26 | yes | monthly cost-per-merged-PR script under `scripts/`, run by hand |
+| 27 | confirmed | no change to: one task per PR; whole-branch codex review; the gates guards beyond items 7 and 16; the Max plan; Coach's commit habit |
+
+Item 27 as originally listed (session default, compaction spend, `autoCompactWindow`, workflow-model-guard's predicate, local skeptic, spec-kit, Playwright and GitHub MCP, error triage, handoff or retro revival) was not put to Jason by name; it stands as "no change" until he says otherwise.
