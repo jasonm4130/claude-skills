@@ -73,7 +73,11 @@ take_lock() { ( set -C; echo $$ > "$LOCK" ) 2>/dev/null; }   # noclobber: create
 if ! take_lock; then
   owner=$(cat "$LOCK" 2>/dev/null)
   if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then echo "STOP: launcher pid $owner already owns $NAME (lock $LOCK)" >&2; exit 2; fi
-  rm -f "$LOCK"; take_lock || { echo "STOP: lost the race for $LOCK" >&2; exit 2; }
+  # A dead owner's lock is taken over by renaming it away: mv is atomic, so of two
+  # launchers that both saw the stale lock only one removes it, and neither can
+  # remove the other's fresh lock.
+  mv "$LOCK" "$LOCK.stale.$$" 2>/dev/null && rm -f "$LOCK.stale.$$"
+  take_lock || { echo "STOP: lost the race for $LOCK" >&2; exit 2; }
 fi
 trap 'rm -f "$LOCK"' EXIT
 DECISIONS=$STATE/decisions.jsonl
