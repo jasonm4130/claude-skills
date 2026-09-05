@@ -25,6 +25,62 @@ Requirements: `gh` (authenticated), Node 18+, coreutils `timeout` (macOS:
 `brew install coreutils`), macOS for the launchd schedule (the loop itself is
 bash and runs anywhere).
 
+## Nightwatch
+
+Nightwatch is the newer, spec-driven way to run an overnight session: one
+outcome, one spec, one clone, no plan file. A spec walks Outcome →
+Acceptance → Non-goals → Context; the launcher runs it as a queue of
+headless `claude -p` units in a clone that never pushes, landing each PASS
+onto one integration branch and leaving one PR for the morning.
+
+```
+spec (Outcome/Acceptance/Non-goals/Context) → clone → units (Reconcile →
+Implement → Verify → Eval, one claude -p each) → land onto an integration
+branch on PASS → one PR in the morning
+```
+
+A spec header carries four lines above the first `## ` heading — only
+`Repo:` is required, the rest apply when they do:
+
+| Header | Meaning |
+|---|---|
+| `Repo:` | where the outcome lives (documentation; the clone is the launcher's first argument) |
+| `Depends: <slug>[, ...]` | don't start until each named spec has a landed SHA the landing branch (or `origin/<BASE>`) can reach |
+| `Units: <n>` | cap this spec at `n` units, overriding the launcher's default |
+| `Writes: <path>[, ...]` | files an acceptance command creates, so the morning's PR body can quote their logs |
+
+The launcher (`nightwatch/run.sh <clone> <specs-dir> [--dry-run] [--only
+<slug>[,...]]`) takes its knobs from the environment: `STATE_VAR`
+(`LANDING_STATE`), `DEADLINE` (`7h`), `UNIT_BUDGET` (`$8`), `UNIT_TIMEOUT`
+(`150m`), `MAX_UNITS` (`8`, unless the spec says `Units:`), `MAIN_MODEL`
+(`sonnet`), `BASE` (`main`). While it runs, `$STATE/control` (append-only,
+`>>` only) takes `stop`, `skip <slug>` and `requeue <slug>` at the next unit
+boundary, and a `$STATE/pause` file holds the queue there until it is
+removed.
+
+Three commands, no plan file:
+
+- `node nightwatch/lint-spec.mjs --specs-dir <dir> [spec.md]` — catches a
+  spec defect before it costs a night: an unnamed `cargo run --` binary, an
+  unpinned `cargo test` filter, an artifact missing its `Writes:` line, a
+  dependency cycle.
+- `nightwatch/run.sh <clone> <specs-dir>` — the launcher.
+- `node nightwatch/morning.mjs <state-dir> [--clone <path>]` — reads the
+  journal and every outcome's result and verify logs, reports each spec's
+  state, cost and eval concerns, writes `pr-body.md`, and (with
+  `--verdict <slug>[@<sha>] <merged|reverted|overridden|discarded>`) records
+  what happened to a landing afterward.
+
+Two skills: `nightwatch:spec` writes and lints a spec with the user;
+`nightwatch:watch` runs preflight, launches `run.sh`, arms the journal and
+workflow-journal monitors, and knows the interventions above. Design:
+[`2026-09-05-nightwatch-redesign.md`](https://github.com/jasonm4130/claude-skills/blob/main/docs/research/2026-09-05-nightwatch-redesign.md).
+First-night log:
+[`2026-09-05-nightwatch-first-night.md`](https://github.com/jasonm4130/claude-skills/blob/main/docs/research/2026-09-05-nightwatch-first-night.md).
+
+Nightwatch will replace the task-per-PR loop below once the loop's existing
+worktrees are drained; until then both run side by side.
+
 ## A night
 
 ```
@@ -45,7 +101,7 @@ Everything project-specific is in `loop/config`; the journal is in
 `~/.local/state/nightshift/<repo>/journal.md`, with one
 `YYYY-MM-DD-HHMMSS-<plan>-tN/` directory per run of a task beside it.
 
-## The three skills
+## The three loop skills
 
 | Skill | When | What it leaves behind |
 |---|---|---|
