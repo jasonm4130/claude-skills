@@ -106,3 +106,15 @@ Unit 2: `search` is callable over MCP even though `tools/list` hides it, because
 - Whether the three unit-1 eval concerns should be fixed on the branch before the PR.
 - One PR for the batch or one per landed outcome (v1 plan open question 3).
 - The docs-consolidate nudge has been firing (117 commits); deferred, not run.
+
+## Day two, 2026-09-06: batch 2, "initialize nightwatch"
+
+Goal set by Jason: open a session in transcoder, say "initialize nightwatch", and have it work without us. Plan: `docs/plans/2026-09-06-nightwatch-v1-batch2-init.md` (Codex chain `b1de5b71a909`: three REVISE rounds and an audit, nine unique findings, all folded). Decisions worth keeping:
+
+- **Init touches nothing on GitHub.** Jason asked whether setup would burn CI as ambient's macOS job did the day before. The first draft opened a `scripts/check` PR per repo; dropped. A repo without a check gets a generated one in `~/.local/state/nightwatch/<name>/check`, and the engine, linter and spec skill take the command from the config.
+- **The launcher runs the check itself before landing** (Codex twice: a hash around the unit is bypassable by swap-run-restore). For a generated check it verifies `CHECK_SHA` then runs it; for a repo-owned check it runs the base branch's copy and flags a changed script for the morning (Jason's disposition of the audit P1).
+- **Guards travel with the launcher** via `--settings` hooks (probe: a settings hook denied a command in a headless `claude -p`), paths double-quoted because the engine's wrapper is `bash -c '<command>'`.
+- **Preflight is step 1** and covers `timeout` and `ANTHROPIC_API_KEY`, the two things the launcher and engine refuse.
+- Landing branch untouched since cut is moved to `origin/<base>` at launch; a dry run must show `verify.allPass` and `clean` before the launcher says `dry run complete`.
+
+Implementation: Workflow `wf_6aadb516-60d` in worktree `scratchpad/nw-v2`, branch `nightwatch-v1-batch2` (Opus on Tasks 1 and 2, Sonnet worker on 3). Then diff review, merge into `nightwatch-redesign`, PR to main, plugin publish, and the headless acceptance in transcoder.
