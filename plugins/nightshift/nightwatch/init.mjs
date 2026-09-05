@@ -322,6 +322,11 @@ export function run(opts = {}) {
   if (existsSync(join(repo, "scripts", "check"))) {
     check = "scripts/check";
     add("check", "skipped", "repo has scripts/check");
+  } else if (!o.checkCmds.length && existsSync(join(state, "check"))) {
+    // A previous init generated one; a re-run (or --report) keeps it unless --check-cmd rewrites it.
+    check = join(state, "check");
+    checkSha = sha256(readFileSync(check, "utf8"));
+    add("check", "skipped", `generated check at ${check} kept; pass --check-cmd to rewrite it`);
   } else if (!o.checkCmds.length) {
     add("check", "needs you", "pass --check-cmd once per CI step; --report lists the candidates");
     return { steps, ok: false, suggestions };
@@ -348,9 +353,8 @@ export function run(opts = {}) {
     add("check", "done", `${script} passes in the clone`);
   }
   // A path the rendering rule cannot quote would break every consumer downstream.
-  let rendered;
   try {
-    rendered = checkCmd(check);
+    checkCmd(check);
   } catch (e) {
     add("check", "failed", e.message);
     return { steps, ok: false, suggestions };

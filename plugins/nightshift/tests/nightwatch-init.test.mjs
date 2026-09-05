@@ -216,6 +216,25 @@ test("--check-cmd lines become a generated check, proved in the clone, and the r
   assert.equal(/(^| )pr( |$)/m.test(readFileSync(r.ghLog, "utf8")), false, "init never calls gh pr");
 });
 
+test("a re-run keeps the generated check, so --report and a second init do not dead-end", () => {
+  const r = workingRepo(undefined, { check: false });
+  const first = initJson(r, ["--repo", r.repo, "--clone-root", r.cloneRoot, "--no-dry-run", "--check-cmd", "echo one"]);
+  assert.equal(first.code, 0, first.stdout + first.stderr);
+  const script = join(stateDir(r), "check");
+  const shaBefore = readConfig(r).CHECK_SHA;
+
+  const again = initJson(r, ["--repo", r.repo, "--clone-root", r.cloneRoot, "--no-dry-run"]);
+  assert.equal(again.code, 0, again.stdout + again.stderr);
+  assert.equal(again.by("check").status, "skipped");
+  assert.match(again.by("check").detail, /generated check at .* kept/);
+  assert.equal(readConfig(r).CHECK, script);
+  assert.equal(readConfig(r).CHECK_SHA, shaBefore);
+
+  const report = initJson(r, ["--repo", r.repo, "--clone-root", r.cloneRoot, "--report"]);
+  assert.equal(report.by("check").status, "skipped");
+  assert.equal(report.steps.some((s) => s.status === "needs you" && s.step === "check"), false);
+});
+
 test("a --check-cmd that fails in the clone is a failed step, and writes no config", () => {
   const r = workingRepo(undefined, { check: false });
 
