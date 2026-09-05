@@ -57,7 +57,7 @@ const RECONCILE = {
     branchLog: { type: 'array', items: { type: 'string' }, description: 'git log <landingBranch>..HEAD --oneline, oldest first' },
     activeUnit: { type: 'string', description: 'contents of active-unit.md if it exists, else empty' },
     acceptance: { type: 'array', items: CMD },
-    allPass: { type: 'boolean', description: 'every acceptance command exited 0 with its expected output' },
+    allPass: { type: 'boolean', description: 'every acceptance command did what the spec says: exited 0 with the named output, or exited non-zero with the named message when the spec says it must fail' },
     checkRan: { type: 'boolean' },
     notes: { type: 'string' },
   },
@@ -151,7 +151,9 @@ Do not implement anything. Do not run cargo or the tests.`,
 const plan = plan0 && { blockedReason: '', remaining: '', ...plan0 }
 if (!plan) return await finish('FAILED', { summary: 'Plan agent returned nothing' })
 log(`Plan u${unit}: ${plan.decision} — ${plan.unitTitle}`)
-if (plan.decision === 'done') return await finish('PASS', { unitTitle: 'outcome complete', summary: plan.remaining, verify: { results: recon.acceptance, allPass: true, checkOk: true, clean: true } })
+// The planner saying "done" is a claim; Reconcile's own acceptance run is the evidence.
+if (plan.decision === 'done' && recon.allPass) return await finish('PASS', { unitTitle: 'outcome complete', summary: plan.remaining, verify: { results: recon.acceptance, allPass: true, checkOk: true, clean: true } })
+if (plan.decision === 'done') return await finish('PARTIAL', { unitTitle: 'planner says done, acceptance disagrees', summary: `${plan.remaining} Reconcile: ${recon.notes}`, verify: { results: recon.acceptance, allPass: false, checkOk: recon.checkRan, clean: recon.clean } })
 if (plan.decision === 'blocked') return await finish('BLOCKED', { unitTitle: plan.unitTitle, blockedReason: plan.blockedReason, summary: plan.remaining })
 
 // ---------- Implement ----------
@@ -169,7 +171,7 @@ log(`Implement u${unit}: ${impl.status}, ${impl.commits.length} commit(s)`)
 if (impl.status === 'blocked') return await finish('BLOCKED', { unitTitle: plan.unitTitle, blockedReason: impl.blockedReason, summary: impl.summary, commits: impl.commits })
 
 // ---------- Verify (with one repair round) ----------
-const verifyPrompt = `${RULES}Verify the current state of the branch. Run \`git status --porcelain\` (clean means empty; an untracked file that an acceptance command itself writes, such as a screenshot, is not dirt: delete it after the command). Run the repo check command and then every command under the spec's Acceptance heading. ${RUNCMD('verify')}Report what happened; change nothing; commit nothing. allPass is true only when every command exited 0 AND printed what the spec says it should. It is fine and expected for outcome-specific acceptance commands to still fail after an early unit; report it exactly.`
+const verifyPrompt = `${RULES}Verify the current state of the branch. Run \`git status --porcelain\` (clean means empty; an untracked file that an acceptance command itself writes, such as a screenshot, is not dirt: delete it after the command). Run the repo check command and then every command under the spec's Acceptance heading. ${RUNCMD('verify')}Report what happened; change nothing; commit nothing. allPass is true only when every command did what the spec says it should: exited 0 and printed the named output, or, for a command the spec says must fail, exited non-zero with the named message (that is a pass, report it as one with its real exit code). It is fine and expected for outcome-specific acceptance commands to still fail after an early unit; report it exactly.`
 phase('Verify')
 let verify = await agent(verifyPrompt, { label: `verify:u${unit}`, phase: 'Verify', schema: VERIFY, model: 'sonnet', effort: 'low' })
 if (!verify) return await finish('FAILED', { unitTitle: plan.unitTitle, summary: 'Verify agent returned nothing', commits: impl.commits })
