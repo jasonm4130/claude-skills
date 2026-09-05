@@ -82,7 +82,7 @@ the kill switch before it merges.
 
 ## Cost
 
-One task spends at most `(GEN_BUDGET + SKEPTIC_BUDGET) × (REPAIR_ROUNDS + 1)`
+One task spends at most `(GEN_BUDGET + 2 × SKEPTIC_BUDGET) × (REPAIR_ROUNDS + 1)` (the skeptic runs twice in a round only when its first verdict is empty)
 dollars on the API, which with the defaults in `loop/config` is $10, and a
 night is capped at `MAX` tasks. CI cost is the usual per-PR run.
 
