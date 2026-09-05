@@ -90,7 +90,7 @@ function checkBacktickSpans(item, problems) {
     if (/^cargo run(?: --release)? --/.test(cmd) && !/--bin\b/.test(cmd)) {
       problems.push({ line, msg: `cargo run without --bin: \`${cmd}\`` });
     }
-    if (/^cargo test\s+\S+/.test(cmd)) {
+    if (/^cargo test\s+\S+/.test(cmd) && !/^cargo test\s+-/.test(cmd)) {
       const pinned = /\b\d+\s+(?:passed|tests)\b/i.test(item.text) || /\bexactly\b/i.test(item.text);
       if (!pinned) problems.push({ line, msg: `cargo test filter without a pinned count: \`${cmd}\`` });
     }
@@ -100,15 +100,39 @@ function checkBacktickSpans(item, problems) {
   }
 }
 
+// Splits item text into clauses on sentence-ending `.` or `;` so the
+// write-verb gate scopes to the clause that actually names the write, not
+// the whole (often multi-assertion) item — "leaves session.json unchanged"
+// and "a written artifact" should not share a verdict just because they
+// share an item. A `.` counts as a boundary only when followed by
+// whitespace or end-of-text, so it does not split a filename's own
+// extension dot (`uicheck.png`).
+function clausesOf(text) {
+  const clauses = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const next = text[i + 1];
+    if ((c === "." || c === ";") && (next === undefined || /\s/.test(next))) {
+      clauses.push({ text: text.slice(start, i + 1), start });
+      start = i + 1;
+    }
+  }
+  if (start < text.length) clauses.push({ text: text.slice(start), start });
+  return clauses;
+}
+
 function checkWrittenArtifacts(item, writes, problems) {
-  if (!WRITE_VERB_RE.test(item.text)) return;
-  WRITE_EXT_RE.lastIndex = 0;
-  let m;
-  while ((m = WRITE_EXT_RE.exec(item.text))) {
-    const path = m[0];
-    const line = lineAt(item, m.index);
-    if (!writes.some((w) => w === path || w.endsWith(`/${path}`) || path.endsWith(`/${w}`))) {
-      problems.push({ line, msg: `mentions ${path} without a Writes: header entry` });
+  for (const clause of clausesOf(item.text)) {
+    if (!WRITE_VERB_RE.test(clause.text)) continue;
+    WRITE_EXT_RE.lastIndex = 0;
+    let m;
+    while ((m = WRITE_EXT_RE.exec(clause.text))) {
+      const path = m[0];
+      const line = lineAt(item, clause.start + m.index);
+      if (!writes.some((w) => w === path || w.endsWith(`/${path}`) || path.endsWith(`/${w}`))) {
+        problems.push({ line, msg: `mentions ${path} without a Writes: header entry` });
+      }
     }
   }
 }
