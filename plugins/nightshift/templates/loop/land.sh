@@ -168,9 +168,10 @@ fresh_branch() { # fresh_branch <branch>: the branch at origin/<base>, no leftov
   # fresh branch's push is rejected as non-fast-forward and the night stops.
   if git -C "$repo" show-ref -q --verify "refs/remotes/origin/$1"; then
     local keep="$1-stranded-$(date +%Y%m%d%H%M%S)"
+    gw push -q origin "refs/remotes/origin/$1:refs/heads/$keep" 2>/dev/null \
+      || die "stranded remote branch $1 (no PR) could not be kept as $keep; a human decides what to do with it"
     log "  stranded remote branch $1 (no PR); kept as $keep, name freed"
-    gw push -q origin "refs/remotes/origin/$1:refs/heads/$keep" 2>/dev/null || true
-    gw push -q origin --delete "$1" 2>/dev/null || true
+    gw push -q origin --delete "$1" 2>/dev/null || die "could not free branch name $1"
   fi
   gw switch -q -c "$1" "origin/$BASE"
 }

@@ -11,8 +11,8 @@
 //   - `git commit --no-verify` (the pre-commit hook is part of the gate)
 //   - `git commit` while `.github/workflows/**` is staged (a pull request runs
 //     its own copy of ci.yml, so a worker could weaken the gate in the same PR
-//     the gate then approves), or while anything under `.claude/` is staged
-//     (these hooks and the allow rules live there)
+//     the gate then approves), or while anything under `.claude/` or `loop/`
+//     is staged (the hooks, the allow rules, and the loop's config live there)
 //   - a writing `gh api` call (`-X`/`--method` other than GET, or `-f`/`-F`/
 //     `--field`/`--raw-field`/`--input`): the REST merge endpoint is `gh pr
 //     merge` by another name
@@ -46,11 +46,16 @@ function readStdin() {
 const GIT = String.raw`(?:^|[\s;&|(\`{])(?:(?:command|exec|builtin)\s+(?:-\w+\s+)*|env\s+(?:\w+=\S*\s+)*|\\|[^\s;&|"']*/)?["']?git["']?\s+(?:(?:-[A-Za-z]|--[\w-]+)(?:[=\s]+[^\s;&|]+)?\s+)*`;
 const gitRe = (sub, flags = "") => new RegExp(GIT + sub, flags);
 
-/** Branch names a push must never target: main, plus BASE from loop/config. */
+/**
+ * Branch names a push must never target: main, plus BASE from the COMMITTED
+ * loop/config (`git show HEAD:loop/config`). The working copy is the
+ * generator's to edit, so it is never consulted; and a commit that stages
+ * loop/ is denied below, so HEAD's copy is a human's.
+ */
 export function protectedBranches(cwd) {
   const out = new Set(["main"]);
   try {
-    const cfg = readFileSync(join(cwd || process.cwd(), "loop", "config"), "utf8");
+    const cfg = execFileSync("git", ["show", "HEAD:loop/config"], { cwd: cwd || process.cwd(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     const m = cfg.match(/^:\s*"\$\{BASE:=([^}]+)\}"/m);
     if (m) out.add(m[1].trim());
   } catch {}
@@ -80,8 +85,8 @@ export function judge(command, stagedPaths, bases = new Set(["main"])) {
   if (gitRe(String.raw`commit\b`).test(c)) {
     const wf = (stagedPaths || []).filter((p) => p.startsWith(".github/workflows/"));
     if (wf.length) reasons.push(`a commit that touches ${wf.join(", ")} can weaken the gate that judges it; a human lands workflow changes`);
-    const guards = (stagedPaths || []).filter((p) => p.startsWith(".claude/"));
-    if (guards.length) reasons.push(`a commit that touches ${guards.join(", ")} changes the guards this session runs under; a human lands those`);
+    const guards = (stagedPaths || []).filter((p) => p.startsWith(".claude/") || p.startsWith("loop/"));
+    if (guards.length) reasons.push(`a commit that touches ${guards.join(", ")} changes the guards or the loop this session runs under; a human lands those`);
   }
   // `gh api` reaches every REST endpoint the textual rules above name — the
   // merge endpoint, repository variables, refs. Reads are fine; anything that

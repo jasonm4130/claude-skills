@@ -35,6 +35,7 @@ export function nightshiftRepo({ plan = PLAN, planPath = "docs/plans/smoke.md", 
   git("init", "-q", "-b", "main");
   git("config", "user.email", "t@example.com");
   git("config", "user.name", "t");
+  git("config", "commit.gpgsign", "false"); // a global signing key (1Password, gpg) would prompt and hang the test
   git("remote", "add", "origin", origin);
   mkdirSync(join(dir, "docs", "plans"), { recursive: true });
   writeFileSync(join(dir, planPath), plan);

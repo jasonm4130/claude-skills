@@ -18,6 +18,7 @@ function repo(opts = {}) {
   git("init", "-q", "-b", "main");
   git("config", "user.email", "t@example.com");
   git("config", "user.name", "t");
+  git("config", "commit.gpgsign", "false"); // a global signing key would prompt and hang the test
   // No origin on purpose: probeMergeMode must fall back to wait without gh.
   if (opts.node) writeFileSync(join(dir, "package.json"), '{"name":"x","scripts":{"test":"node --test"}}\n');
   if (opts.workflows) {

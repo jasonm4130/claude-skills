@@ -57,10 +57,17 @@ test("no-route-around-ci: the configured base branch is protected like main", ()
   assert.deepEqual(routeJudge("git push origin HEAD:release", []), [], "unconfigured: only main");
   const dir = mkdtempSync(join(tmpdir(), "ns-base-"));
   try {
+    const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "ignore" });
+    git("init", "-q", "-b", "main"); git("config", "user.email", "t@x"); git("config", "user.name", "t"); git("config", "commit.gpgsign", "false");
     mkdirSync(join(dir, "loop"));
     writeFileSync(join(dir, "loop", "config"), ': "${PLAN:=p.md}"\n: "${BASE:=release}"\n');
+    assert.deepEqual([...protectedBranches(dir)], ["main"], "uncommitted config is not consulted");
+    git("add", "loop/config"); git("commit", "-q", "-m", "cfg");
     assert.deepEqual([...protectedBranches(dir)].sort(), ["main", "release"]);
-    assert.deepEqual([...protectedBranches(join(dir, "nowhere"))], ["main"]);
+    writeFileSync(join(dir, "loop", "config"), ': "${BASE:=scratch}"\n');
+    assert.deepEqual([...protectedBranches(dir)].sort(), ["main", "release"], "a working-copy edit changes nothing");
+    assert.ok(routeJudge("git commit -m x", ["loop/config"]).length, "and committing it is denied");
+    assert.deepEqual([...protectedBranches(join(tmpdir()))], ["main"]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -107,6 +114,7 @@ function repo() {
   git("init", "-q", "-b", "main");
   git("config", "user.email", "t@example.com");
   git("config", "user.name", "t");
+  git("config", "commit.gpgsign", "false"); // a global signing key would prompt and hang the test
   mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
   mkdirSync(join(dir, "src"), { recursive: true });
   writeFileSync(join(dir, "src", "a.rs"), "fn a() {}\n#[cfg(test)]\nmod t {\n    #[test]\n    fn x() {}\n}\n");
