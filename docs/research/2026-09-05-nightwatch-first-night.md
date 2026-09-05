@@ -37,6 +37,10 @@ Live record of the first unattended Nightwatch v0 run (ambient, six specs), kept
 | 01:45 | **wer BLOCKED at unit 2 on a real spec defect.** Acceptance item 5 builds each Earnings-21 reference from tokens with `ts` under 300 s, but every `.nlp` reference file has empty `ts`/`endTs` columns. The worker made no edits and left the facts: media is plain (not LFS), the first three sorted ids are 4320211, 4330115, 4341191, header order is `token|speaker|ts|endTs|punctuation|case|tags|wer_tags`, lines are CRLF. Jason decides the replacement rule (truncate audio to 300 s and use the whole reference, or drop the bound). |
 | 02:05 | live-asr unit 1, "src/bench.rs, the pure queue arithmetic and its tests": `5f1f9be` + `aa9ee26`, eval ok. |
 | 02:26 | live-asr unit 2, "asrbench binary: replay in blocks, time each stage, feed the queue simulation": `0957844`, eval ok, no concerns. Remaining: the three dated sections in `docs/developing/measurements.md` (unit 3, needs a real benchmark run on the symlinked models). |
+| 02:56 | live-asr unit 3, "drainbench waits for the decoder and counts its passes": `e875439`, $4.58, eval ok. |
+| 03:15 | Engine: `07b88a2`. live-asr unit 4 had every acceptance item passing but Verify said `allPass: false` because two commands the spec says must fail exit non-zero; the prompt defined a pass as exit 0. Fixed, and the planner's "done" now needs Reconcile's own all-pass as evidence instead of being trusted (it used to fabricate `allPass: true`). |
+| 03:18 | live-asr unit 4, "the measurements sections and the verdict": `982db41`, $4.41, three low concerns (rounding artefacts in the shown arithmetic, Verdict subsection undated, overshoot number in the second sentence). |
+| 03:39 | **live-asr PASS** at unit 5 (`4597105`, $4.21): `allPass: true`, eval ok, no concerns. Fast-forwarded onto `nightwatch/2026-09-05`, six commits ahead of `origin/main`. Run ended: 1 of 6 outcomes landed, 4 h 44 min, 16 units. |
 
 ## Fixed before launch (all in the engine now)
 
@@ -52,6 +56,19 @@ Live record of the first unattended Nightwatch v0 run (ambient, six specs), kept
 - `20a0f74`: every Reconcile and Verify command runs through `bash -c '<cmd>' > <log> 2>&1; echo exit=$?` into `u<n>-logs/`, so the morning reads real output, not the agent's tail. Live from unit 2 because the Workflow re-reads the script per unit. Also folded Codex round 3 (single integration-branch owner for parallel clones; terminal states are local branches plus journal, no draft PRs).
 - `ec6090d`: `run.sh` takes `launcher.lock` per repo; a second launcher on the same repo exits 2 with the owning pid. Answers the Codex audit's P1 (two launchers would both build `nightwatch/<date>` and only one could push). Not active in the running launcher.
 - Codex chain e8145224000a closed: rounds 1–3 REVISE (3+3, 3+4, 2+1 findings), audit CONCERNS with that one P1, outcome `audit-concerns-unattended`, 11 counted unique. Jason's disposition of the P1 is still owed; the lock is my proposed answer.
+
+## How the night ended
+
+| outcome | state | commits | cost | what the morning does |
+|---|---|---|---|---|
+| 06-live-asr | PASS, landed | 6 | $24.07 | nothing; it is on the integration branch |
+| 01-ui-api | BLOCKED (typo, fixed by hand as `68b4723`) | 5 | $27.00 | `--only 01-ui-api`: two units left (export; config/roster/speakers) |
+| 02-session-tools | FAILED (schema bug; work complete) | 3 | $11.23 | `--only 02-session-tools`: expect PASS on Reconcile |
+| 05-wer | BLOCKED (spec defect: no `ts` in Earnings-21) | 1 | $8.34 | fix acceptance item 5, then `--only 05-wer` |
+| 03-ui-shell | FAILED (artefact counted as dirt) | 0 | $0.53 | `--only 03-ui-shell` after 01 and 02 land (it depends on them) |
+| 04-ui-features | BLOCKED (depends on 01–03) | 0 | $1.55 | last, after 03 |
+
+Live run total: 16 units, ~$72.70, 22:55 to 03:39. Every failure but one (the Earnings-21 timestamps) was the harness, and every harness failure has a fix committed on `nightwatch-redesign` (`20a0f74`, `ec6090d`, `95f00b2`, `ac5c32f`, `88b5dc9`, `07b88a2`). The patched engine ran live-asr's five units and wer's unit 1 without a harness fault. Code quality per the evaluator: 16 units, one high concern (the typo), the rest low and mostly cosmetic.
 
 ## Eval concerns so far (all low, none blocking)
 
@@ -77,6 +94,7 @@ Unit 2: `search` is callable over MCP even though `tools/list` hides it, because
 
 - Fix spec 05's acceptance item 5 (no per-token timestamps in Earnings-21 `.nlp` files) then `--only 05-wer`.
 - Resume ui-shell too: `--only 03-ui-shell` (branch exists with zero commits; it costs nothing to keep).
+- Resume order matters for the fast-forward: 02 first (three commits, all-pass expected), then 01, then 03, then 04, then 05 once its spec is fixed. Each resume is one `run.sh <clone> <specs> --only <slug>`.
 - Resume both kept branches: `run.sh <clone> <specs> --only 02-session-tools` (should PASS on Reconcile plus Verify: all three units are committed), then `--only 01-ui-api` (two units left). Both before the batch push.
 - Disposition of the Codex audit P1 (launcher lock as the answer, or something else).
 - Whether the three unit-1 eval concerns should be fixed on the branch before the PR.

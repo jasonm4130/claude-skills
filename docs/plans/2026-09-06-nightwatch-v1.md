@@ -2,13 +2,16 @@
 
 Written 2026-09-05 23:10 while the first unattended run (ambient, six specs) was in unit 1. Each item is shaped as an outcome with an acceptance check so it can become a spec under `docs/specs/` and be landed by Nightwatch itself. Order is by what the first night is most likely to need in the morning. Fill §0 from the journal before choosing.
 
-## 0. What the night showed (fill in the morning)
+## 0. What the night showed
 
-- Outcomes landed / partial / blocked / failed, from `~/.local/state/nightwatch/ambient/journal.md`.
-- Cost per unit and per landed outcome, from `decisions.jsonl` (`jq -s 'map(.cost) | add'`).
-- Wall clock per unit, and how much of it was the three `scripts/check` runs (Reconcile at unit 1, the worker before commit, Verify).
-- Any FAILED with "no result file": the workflow died; read the unit's stderr and the workflow journal under `~/.claude/projects/-Users-jasonmatthew-Work-Git-nightwatch-ambient/`.
-- Eval concerns raised, and how many Jason agrees with after reading the diff.
+Filled 2026-09-06 03:45 from `docs/research/2026-09-05-nightwatch-first-night.md`, which has the timeline and evidence.
+
+- Landed 1 of 6 (live-asr, 6 commits, $24). Blocked 3 (ui-api on a typo, wer on a spec defect, ui-features on dependencies). Failed 2, both harness bugs (session-tools with its work complete; ui-shell before any work). Every harness bug fixed the same night: six commits on `nightwatch-redesign`.
+- 16 units, ~$72.70, 4 h 44 min. Median unit ~21 min and ~$4.60; range $0.53 to $8.09. Roughly a third of each unit's wall clock is `scripts/check` (three runs per unit), the rest planner and worker time.
+- No unit died to the 600 s ceiling; the result-file recorder held. Every unit's cost stayed under the $15 cap, so the cap was never tested.
+- Eval: one high concern in 16 units (a CI-only typo check), correct but disproportionate as a block. Nine low concerns, two of them real small bugs on ui-api (`search` reachable over MCP; `limit: 0` returns one hit).
+- The spec format worked: planners produced sensible unit sequences from the Outcome plus Acceptance and recognised done units from the branch log without a handoff file. The failures were in what specs said (bare `cargo run --`, vacuous `cargo test x::`, an acceptance that passes before the Outcome is done, a data assumption nobody checked) and in the engine's definitions (dirty, all-pass, done).
+- Reordering this plan by what the night showed: item 1 (morning tool, reading the per-unit logs), then a new item for spec linting inside `nightwatch:spec` (test counts pinned, `--bin` named, acceptance-written files declared, must-fail commands marked), then item 2 (parallel outcomes with `Depends:`, which would have saved ui-features' $1.55 and let wer and live-asr run beside ui-api).
 
 ## 1. Morning tooling
 
