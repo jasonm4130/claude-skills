@@ -103,9 +103,10 @@ export function resolveDataDir(fallbackName) {
  *
  * `systemMessage` on UserPromptSubmit is the documented user-visible channel --
  * "Claude Code shows it in the transcript before Claude processes the prompt" --
- * and it neither blocks nor erases the prompt, unlike exiting 2. The two fields
- * are not exclusive, so the model keeps its instruction and the human gets the
- * ask.
+ * and it neither blocks nor erases the prompt, unlike exiting 2. It belongs at
+ * the payload ROOT: nested inside `hookSpecificOutput` the host ignores it, and
+ * nothing errors, so the offer is simply never shown. The two fields are not
+ * exclusive, so the model keeps its instruction and the human gets the ask.
  *
  * @param {string} eventName
  * @param {string} systemMessage   shown to the user
@@ -113,11 +114,8 @@ export function resolveDataDir(fallbackName) {
  */
 export function emitOffer(eventName, systemMessage, additionalContext) {
   const payload = {
-    hookSpecificOutput: {
-      hookEventName: eventName,
-      systemMessage,
-      additionalContext,
-    },
+    systemMessage,
+    hookSpecificOutput: { hookEventName: eventName, additionalContext },
   };
   process.stdout.write(JSON.stringify(payload) + "\n");
 }

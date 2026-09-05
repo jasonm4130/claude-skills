@@ -123,8 +123,8 @@ test("consumer emits context, records the repo as offered, and never re-asks", (
   const out = run(consumeScript, { session_id: "s7" }, dataDir);
   const parsed = JSON.parse(out);
   assert.equal(parsed.hookSpecificOutput.hookEventName, "UserPromptSubmit");
-  assert.match(parsed.hookSpecificOutput.systemMessage, /has a CLAUDE\.md but no CONTEXT\.md/);
-  assert.match(parsed.hookSpecificOutput.systemMessage, /once per repo, ever/);
+  assert.match(parsed.systemMessage, /has a CLAUDE\.md but no CONTEXT\.md/);
+  assert.match(parsed.systemMessage, /once per repo, ever/);
   assert.match(parsed.hookSpecificOutput.additionalContext, /Do not start one unprompted/);
   assert.ok(!existsSync(flag), "flag should be consumed");
 
@@ -150,9 +150,9 @@ test("concurrent sessions in one repo: only one offer wins", (t) => {
 
   const spoke = [outA, outB].filter((o) => o.trim().length > 0);
   assert.equal(spoke.length, 1, "exactly one session may make the offer");
-  const winner = JSON.parse(spoke[0]).hookSpecificOutput;
+  const winner = JSON.parse(spoke[0]);
   assert.match(winner.systemMessage, /no CONTEXT\.md/);
-  assert.match(winner.additionalContext, /Do not start one unprompted/);
+  assert.match(winner.hookSpecificOutput.additionalContext, /Do not start one unprompted/);
 });
 
 test("a nudge that never reached the user does not burn the one ask", (t) => {
@@ -256,4 +256,17 @@ test("a deeply nested edit still finds the repo root", (t) => {
     .split("\n")
     .filter(Boolean);
   assert.deepEqual(lines, [repo]);
+});
+
+// The offer only reaches a human if `systemMessage` sits at the payload root;
+// nested under hookSpecificOutput, Claude Code drops it silently.
+test("the offer's systemMessage is at the payload root, where Claude Code reads it", (t) => {
+  const repo = mkRepo(["CLAUDE.md"]);
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const dataDir = mkDataDir(t);
+  editAndStop(repo, "s9", dataDir);
+  const parsed = JSON.parse(run(consumeScript, { session_id: "s9" }, dataDir));
+  assert.match(parsed.systemMessage, /has a CLAUDE\.md but no CONTEXT\.md/);
+  assert.equal(parsed.hookSpecificOutput.systemMessage, undefined);
+  assert.equal(parsed.hookSpecificOutput.hookEventName, "UserPromptSubmit");
 });

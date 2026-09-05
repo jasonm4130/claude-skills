@@ -179,7 +179,8 @@ test("interleaving: a worthy session appended during the interview survives clea
   );
   assert.equal(chk.code, 0);
   {
-    const { systemMessage, additionalContext } = JSON.parse(chk.stdout).hookSpecificOutput;
+    const { systemMessage, hookSpecificOutput: { additionalContext } } =
+      JSON.parse(chk.stdout);
     assert.match(
       systemMessage,
       /1 retro-worthy session/,
