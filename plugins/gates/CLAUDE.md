@@ -159,7 +159,7 @@ Codex-reviewed: 3 rounds + audit, chain `881f87716802`, 14 unique findings.
   message or echo string does not fire (that segment starts with `git`/`echo`), but
   `mkdir app && cd app && npm create vite` does.
 - **Name the skill plugin-qualified** — the `ask` reason says
-  `superpowers-core:brainstorming`, not "the brainstorming skill".
+  `nightshift:plan`, not "the plan skill".
 
 ### design-gate gotchas
 

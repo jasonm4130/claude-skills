@@ -112,7 +112,7 @@ the guard never blocks a commit by accident.
 
 ## The design gate
 
-The brainstorming skill says, in prose:
+The `nightshift:plan` skill says, in prose:
 
 > Do NOT ... write any code, scaffold any project, or take any implementation
 > action until you have presented a design and the user has approved it.
