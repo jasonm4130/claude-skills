@@ -48,7 +48,8 @@ human-closed PR on any task stops the plan until someone acts.
 - `~/.local/state/nightshift/claude-skills/journal.md` is one line per event, and
   every stop says why: `STOP: frozen`, `STOP: task 3 is blocked`,
   `STOP: done: 2 task(s) landed tonight`.
-- Each task's run has a directory beside it, `YYYY-MM-DD-tN/`, holding the
+- Each run of a task has its own directory beside it,
+  `YYYY-MM-DD-HHMMSS-<plan>-tN/`, holding the
   brief, every generator and skeptic transcript, the verifier log, and the
   merge log.
 - `gh pr list --label land:blocked` is what needs a human. Read the PR body:
@@ -93,6 +94,7 @@ night is capped at `MAX` tasks. CI cost is the usual per-PR run.
 2. Try one task in daylight from the terminal and watch it:
 
    ```sh
+   for l in land land:blocked land:retry; do gh label create "$l"; done
    gh variable set LANDING_STATE --body run
    MAX=1 loop/land.sh
    gh variable set LANDING_STATE --body frozen

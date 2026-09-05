@@ -282,7 +282,7 @@ $(tail -30 "$run_dir/merge.log" 2>/dev/null)
 run_task() { # run_task <n> <title>
   local n=$1 title=$2 branch feedback="" round=0 verdict="" rc
   branch=$(branch_for "$n")
-  run_dir=$STATE_DIR/$(date +%F)-t$n
+  run_dir=$STATE_DIR/$(date +%F-%H%M%S)-$slug-t$n
   mkdir -p "$run_dir"
   log "task $n: $title → $branch"
 
@@ -372,7 +372,7 @@ while IFS=$'\t' read -r n title; do
     [ "$landed" -lt "$MAX" ] || stop "$MAX task(s) landed, that is the night"
     past_deadline && stop "deadline $DEADLINE reached"
     log "task $n: resuming on open PR #$pr"
-    run_dir=$STATE_DIR/$(date +%F)-t$n; mkdir -p "$run_dir"; round=0
+    run_dir=$STATE_DIR/$(date +%F-%H%M%S)-$slug-t$n; mkdir -p "$run_dir"; round=0
     land_pr "$n" "$pr" || stop "task $n did not land"
     landed=$((landed + 1))
   else
