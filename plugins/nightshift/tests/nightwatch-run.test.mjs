@@ -444,3 +444,63 @@ test("the hook files --print-settings names deny a force push and a test deletio
   const ok = fire(tests, { tool_name: "Bash", tool_input: { command: "git commit -m x" }, cwd: hookRepo }, hookRepo);
   assert.equal(ok.stdout, "", "a commit that touches no test must pass");
 });
+
+// ---- Codex diff review round 1: four holes around the launcher's own check ----
+
+test("a unit that rewrites the config's CHECK for the next run is FAILED, the config is restored, and the night ends", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A"), "02-b.md": spec("B") } });
+  const check = genCheck(join(r.root, "gen"), "check", "echo CHECK OK");
+  const stateDir = writeConfig(r.home, "r", { CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: check.path, CHECK_SHA: check.sha });
+  const before = readFileSync(join(stateDir, "config"), "utf8");
+  // The worker leaves the trusted script alone and poisons the config instead: a trivial check2 for next time.
+  const poison = [
+    `printf '#!/usr/bin/env bash\\necho CHECK OK\\n' > "${join(r.root, "gen", "check2")}"; chmod 755 "${join(r.root, "gen", "check2")}"`,
+    `sed -i '' -e 's#^CHECK=.*#CHECK=${join(r.root, "gen", "check2")}#' -e 's#^CHECK_SHA=.*#CHECK_SHA=deadbeef#' "${join(stateDir, "config")}"`,
+    PASS_UNIT,
+  ].join("\n");
+  const out = runNightwatch(r, { positional: ["r"], stateName: "r", env: { FAKE_NW_SCRIPT: poison } });
+
+  assert.equal(out.code, 1);
+  assert.match(out.journal, /STOP: config changed during 01-a unit 1; restored it/);
+  assert.match(out.journal, /01-a: FAILED; branch/);
+  assert.doesNotMatch(out.journal, /PASS, landed on/);
+  assert.doesNotMatch(out.journal, /02-b:/);
+  assert.equal(readFileSync(join(stateDir, "config"), "utf8"), before);
+});
+
+test("the launcher's own check runs under UNIT_TIMEOUT, so a hanging check cannot hold the night", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  const check = genCheck(join(r.root, "gen"), "check", "sleep 30; echo CHECK OK");
+  writeConfig(r.home, "r", { CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: check.path, CHECK_SHA: check.sha });
+  const out = runNightwatch(r, { positional: ["r"], stateName: "r", env: { FAKE_NW_SCRIPT: PASS_UNIT, UNIT_TIMEOUT: "2s" }, timeout: 60000 });
+
+  assert.match(out.journal, /01-a: launcher check: exit=124/);
+  assert.doesNotMatch(out.journal, /PASS, landed on/);
+});
+
+test("a clone path with no slash, such as `.` from inside the clone, is a clone and not a name", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  const res = spawnSync("bash", [RUN_SH, ".", r.specsDir, "--print-settings"], {
+    cwd: r.clone, encoding: "utf8",
+    env: { PATH: `${r.bin}:${process.env.PATH}`, HOME: r.home, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+  });
+
+  assert.equal(res.status, 0, res.stderr);
+  assert.doesNotMatch(res.stderr, /no config for/);
+  assert.match(res.stdout, /"hooks"/);
+});
+
+test("a repo whose scripts/check is a committed symlink still passes the launcher's check", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  writeFileSync(join(r.clone, "scripts", "check-common"), "#!/usr/bin/env bash\ncd \"$(dirname \"$0\")/..\" && test -f README.md && echo CHECK OK\n");
+  chmodSync(join(r.clone, "scripts", "check-common"), 0o755);
+  execFileSync("rm", [join(r.clone, "scripts", "check")]);
+  execFileSync("ln", ["-s", "check-common", join(r.clone, "scripts", "check")]);
+  r.git("add", "-A"); r.git("commit", "-q", "-m", "check is a symlink"); r.git("push", "-q", "origin", "main");
+  const out = runNightwatch(r, { env: { FAKE_NW_SCRIPT: PASS_UNIT } });
+
+  assert.equal(out.code, 0, out.stderr);
+  assert.match(out.journal, /01-a: PASS, landed on/);
+  const lg = readFileSync(join(r.state, "outcomes", "01-a", "u1-logs", "launcher-check.log"), "utf8").trim().split("\n");
+  assert.deepEqual(lg.slice(-2), ["CHECK OK", "exit=0"]);
+});

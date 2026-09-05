@@ -88,15 +88,32 @@ read_config() { # read_config <file>
     esac
   done <"$1"
 }
+cfgfile=""
 case "$target" in
   */*) CLONE=$target; NAME=$(basename "$target") ;;
   *)
-    cfgfile=$HOME/.local/state/nightwatch/$target/config
-    [ -f "$cfgfile" ] || { echo "no config for $target; run init.mjs" >&2; exit 64; }
-    read_config "$cfgfile"
-    CLONE=$cfg_CLONE; NAME=${cfg_NAME:-$target}
-    [ -n "$CLONE" ] || { echo "STOP: $cfgfile has no CLONE" >&2; exit 64; } ;;
+    if [ -f "$HOME/.local/state/nightwatch/$target/config" ]; then
+      cfgfile=$HOME/.local/state/nightwatch/$target/config
+      read_config "$cfgfile"
+      CLONE=$cfg_CLONE; NAME=${cfg_NAME:-$target}
+      [ -n "$CLONE" ] || { echo "STOP: $cfgfile has no CLONE" >&2; exit 64; }
+    elif [ -d "$target" ]; then   # `.` or `repo`: a clone path with no slash in it
+      CLONE=$target; NAME=$(basename "$(cd "$target" && pwd -P)")
+    else
+      echo "no config for $target; run init.mjs" >&2; exit 64
+    fi ;;
 esac
+# The worker can write the config too (the state dir is on its --add-dir). The launcher
+# holds the text it started with and refuses to go on if a unit changed it.
+cfg_snapshot=""
+[ -n "$cfgfile" ] && cfg_snapshot=$(cat "$cfgfile")
+config_intact() { # config_intact <slug> <unit>; restores the file and returns 1 when it changed
+  [ -n "$cfgfile" ] || return 0
+  [ "$(cat "$cfgfile" 2>/dev/null)" = "$cfg_snapshot" ] && return 0
+  printf '%s\n' "$cfg_snapshot" >"$cfgfile"
+  log "STOP: config changed during $1 unit $2; restored it, nothing lands, the night ends"
+  return 1
+}
 SPECS=${specs_arg:-$cfg_SPECS}
 [ -n "$SPECS" ] || { echo "usage: run.sh <name-or-clone> <specs-dir>; no SPECS in the config either" >&2; exit 64; }
 
@@ -437,24 +454,33 @@ unit_run() { # unit_run <spec-path> <unit-index> <check-verified 0|1> → writes
 # branch never gates its own landing. That copy is written beside the real one
 # inside the clone: a check script resolves its paths from $0, so running it
 # from anywhere else would silently change what it checks.
+# Under UNIT_TIMEOUT when `timeout` exists (coreutils on macOS; init's preflight requires it), so a
+# check that hangs cannot hold the launcher past the deadline and the kill switch.
+bounded() { if command -v timeout >/dev/null 2>&1; then timeout "$(secs "$UNIT_TIMEOUT")" "$@"; else "$@"; fi; }
 launcher_check_reason=""
 launcher_check() { # launcher_check <slug> <unit>
   local slug=$1 logdir=$STATE/outcomes/$1/u$2-logs
   local lg=$logdir/launcher-check.log sha code last base_copy
   launcher_check_reason=""
   mkdir -p "$logdir"
+  local base_path hops
   if [ -n "$CHECK_SHA" ]; then
     sha=$(shasum -a 256 "$CHECK" 2>/dev/null | awk '{print $1}')
     [ "$sha" = "$CHECK_SHA" ] || { launcher_check_reason="script changed"; return 1; }
-    bash -c "$CHECK_CMD" >"$lg" 2>&1 </dev/null; code=$?
+    bounded bash -c "$CHECK_CMD" >"$lg" 2>&1 </dev/null; code=$?
   else
+    # A committed symlink (scripts/check -> check-common) shows as its link text; follow it in the tree.
+    base_path=$CHECK; hops=0
+    while [ "$(git ls-tree "origin/$BASE" -- "$base_path" 2>/dev/null | awk '{print $1}')" = 120000 ] && [ $hops -lt 3 ]; do
+      base_path=$(dirname "$base_path")/$(git show "origin/$BASE:$base_path" 2>/dev/null); hops=$((hops+1))
+    done
     base_copy=$(dirname "$CHECK")/.nw-base-check
-    if ! git show "origin/$BASE:$CHECK" >"$base_copy" 2>/dev/null; then
+    if ! git show "origin/$BASE:$base_path" >"$base_copy" 2>/dev/null; then
       rm -f "$base_copy"; launcher_check_reason="origin/$BASE has no $CHECK"; return 1
     fi
-    git diff --quiet "origin/$BASE" HEAD -- "$CHECK" 2>/dev/null ||
+    git diff --quiet "origin/$BASE" HEAD -- "$CHECK" "$base_path" 2>/dev/null ||
       log "$slug: check script changed on this branch; review it in the PR"
-    bash "$base_copy" >"$lg" 2>&1 </dev/null; code=$?
+    bounded bash "$base_copy" >"$lg" 2>&1 </dev/null; code=$?
     rm -f "$base_copy"
   fi
   printf 'exit=%s\n' "$code" >>"$lg"
@@ -467,6 +493,7 @@ launcher_check() { # launcher_check <slug> <unit>
 # ---------- the queue ----------
 landed=0
 dry_failed=0
+config_tampered=0
 i=0
 # `while :` rather than a bounded loop: the boundary drain runs even when the
 # queue looks exhausted, so a `requeue` appended during the last unit is seen.
@@ -520,6 +547,7 @@ while :; do
         final=FAILED
       fi ;;
   esac
+  config_intact "$slug" "$n" || { final=FAILED; config_tampered=1; }
   # Untracked, non-ignored files after a unit are artefacts an acceptance command wrote (a screenshot,
   # a report): the worker commits what it makes. Drop them; stash only tracked modifications.
   git clean -fdq || true
@@ -548,9 +576,11 @@ while :; do
     KILLED) log "STOP: kill switch during $slug; branch $branch kept"; break ;;
     *) log "$slug: $final; branch $branch kept with $(git rev-list --count "$LANDING".."$branch") commit(s) for the morning" ;;
   esac
+  [ "$config_tampered" = 1 ] && break
 done
 git switch -q "$LANDING" 2>/dev/null || true
 ahead=$(git rev-list --count "origin/$BASE..$LANDING" 2>/dev/null || echo "?")
 log "end: $landed outcome(s) landed on $LANDING; $ahead commit(s) ahead of origin/$BASE. Morning: git -C $CLONE push -u origin $LANDING && gh pr create"
 [ "$dry_failed" = 1 ] && exit 1
+[ "$config_tampered" = 1 ] && exit 1
 exit 0

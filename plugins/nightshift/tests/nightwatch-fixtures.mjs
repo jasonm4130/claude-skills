@@ -204,9 +204,11 @@ esac
 exit 0
 `;
 
-// `caffeinate` is macOS-only and `timeout` comes from coreutils: preflight only
-// asks whether they are on PATH, and nothing in these tests invokes either.
+// `caffeinate` is macOS-only and `timeout` comes from coreutils: preflight asks
+// whether they are on PATH. The launcher's own check runs under `timeout`, so
+// that shim must actually run its command; it just drops the duration.
 const NOOP_BIN = "#!/bin/bash\nexit 0\n";
+const TIMEOUT_BIN = "#!/bin/bash\nshift\nexec \"$@\"\n";
 
 /**
  * A working checkout with a bare origin, an isolated HOME, and fakes on PATH.
@@ -250,7 +252,7 @@ export function workingRepo(dir, { check = true, name = "r", homeName = "home", 
   writeFileSync(join(bin, "gh"), FAKE_GH_INIT);
   writeFileSync(join(bin, "claude"), FAKE_CLAUDE);
   writeFileSync(join(bin, "caffeinate"), NOOP_BIN);
-  writeFileSync(join(bin, "timeout"), NOOP_BIN);
+  writeFileSync(join(bin, "timeout"), TIMEOUT_BIN);
   for (const f of ["gh", "claude", "caffeinate", "timeout"]) chmodSync(join(bin, f), 0o755);
 
   return {
