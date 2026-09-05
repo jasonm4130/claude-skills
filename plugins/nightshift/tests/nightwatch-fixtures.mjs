@@ -13,7 +13,7 @@
 // and prints a driver envelope (cost and turns) on stdout, exactly as the real
 // `claude -p --output-format json` does.
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -151,6 +151,119 @@ export function writeConfig(home, name, kv = {}) {
 /** `git branch --list` in the clone, one name per line. */
 export function branches(r) {
   return execFileSync("git", ["branch", "--format=%(refname:short)"], { cwd: r.clone, encoding: "utf8" }).trim().split("\n").filter(Boolean);
+}
+
+// ---- the working repo `init.mjs` is pointed at -------------------------------
+// Not a clone: the checkout a person is sitting in when they say "initialize
+// nightwatch". `init.mjs` clones from its origin, so everything the launcher
+// later reads (scripts/check, the workflow) is committed and pushed here.
+
+const CI_YML = `name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo nextest run
+      - run: echo hello world
+`;
+
+// Discriminating on purpose: it passes only when run against the repo root, so
+// a test that reads CHECK OK has positively proved where it ran.
+const REPO_CHECK = `#!/usr/bin/env bash
+cd "$(dirname "$0")/.." || exit 1
+test -f README.md || { echo "wrong cwd"; exit 1; }
+echo CHECK OK
+`;
+
+// `#!/bin/bash`, not `/usr/bin/env bash`: the preflight tests run with a PATH
+// that holds nothing but this bin directory, and `env` resolves through PATH.
+const FAKE_GH_INIT = String.raw`#!/bin/bash
+# Fake gh for the init tests: records every argv line, and keeps the kill switch
+# in a file, so a set is observable by the next get.
+log=$FAKE_GH_LOG
+[ -n "$log" ] || log=/dev/null
+printf '%s\n' "$*" >> "$log"
+sf=$FAKE_GH_STATE_FILE
+case "$1 $2" in
+  "auth status") exit 0 ;;
+  "variable get")
+    v=""
+    if [ -n "$sf" ] && [ -f "$sf" ]; then v=$(cat "$sf"); fi
+    [ -n "$v" ] || v=$FAKE_GH_STATE
+    if [ -z "$v" ] || [ "$v" = unset ]; then echo "variable not found" >&2; exit 1; fi
+    printf '%s\n' "$v" ;;
+  "variable set")
+    v=""
+    while [ $# -gt 0 ]; do [ "$1" = --body ] && v=$2; shift; done
+    if [ -n "$sf" ]; then printf '%s' "$v" > "$sf"; fi ;;
+esac
+exit 0
+`;
+
+// `caffeinate` is macOS-only and `timeout` comes from coreutils: preflight only
+// asks whether they are on PATH, and nothing in these tests invokes either.
+const NOOP_BIN = "#!/bin/bash\nexit 0\n";
+
+/**
+ * A working checkout with a bare origin, an isolated HOME, and fakes on PATH.
+ * `check` writes a committed `scripts/check`; `homeName` lets a test put HOME
+ * behind a directory whose name has a space.
+ */
+export function workingRepo(dir, { check = true, name = "r", homeName = "home", base = "main" } = {}) {
+  // Physical path: `git rev-parse --show-toplevel` resolves symlinks, and on
+  // macOS $TMPDIR is one, so a logical root would not compare equal to it.
+  const root = realpathSync(dir || mkdtempSync(join(tmpdir(), "nw-init-")));
+  const origin = join(root, "origin", "o", "r.git");
+  mkdirSync(join(root, "origin", "o"), { recursive: true });
+  execFileSync("git", ["init", "-q", "--bare", "-b", base, origin]);
+
+  const repo = join(root, "work", name);
+  mkdirSync(repo, { recursive: true });
+  const git = (...a) => execFileSync("git", a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  git("init", "-q", "-b", base);
+  git("config", "user.email", "t@example.com");
+  git("config", "user.name", "t");
+  git("config", "commit.gpgsign", "false");
+  git("remote", "add", "origin", origin);
+  writeFileSync(join(repo, "README.md"), "# init fixture\n");
+  mkdirSync(join(repo, ".github", "workflows"), { recursive: true });
+  writeFileSync(join(repo, ".github", "workflows", "ci.yml"), CI_YML);
+  if (check) {
+    mkdirSync(join(repo, "scripts"), { recursive: true });
+    writeFileSync(join(repo, "scripts", "check"), REPO_CHECK);
+    chmodSync(join(repo, "scripts", "check"), 0o755);
+  }
+  git("add", "-A");
+  git("commit", "-q", "-m", "init");
+  git("push", "-q", "-u", "origin", base);
+  // `origin/HEAD`, which is where init.mjs learns the base branch from.
+  git("remote", "set-head", "origin", "-a");
+
+  const home = join(root, homeName);
+  mkdirSync(home, { recursive: true });
+  const bin = join(root, "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "gh"), FAKE_GH_INIT);
+  writeFileSync(join(bin, "claude"), FAKE_CLAUDE);
+  writeFileSync(join(bin, "caffeinate"), NOOP_BIN);
+  writeFileSync(join(bin, "timeout"), NOOP_BIN);
+  for (const f of ["gh", "claude", "caffeinate", "timeout"]) chmodSync(join(bin, f), 0o755);
+
+  return {
+    root,
+    repo,
+    origin,
+    home,
+    bin,
+    cloneRoot: join(home, "clones"),
+    ghLog: join(root, "gh.log"),
+    switchFile: join(root, "gh-state"),
+    git,
+  };
 }
 
 /** A commit object that no ref reaches — a landed row pointing here is stale. */
