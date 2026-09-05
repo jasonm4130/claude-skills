@@ -118,6 +118,33 @@ All from official docs, vLLM's Claude Code page, or the established facts unless
 3. Row 2 only if 1 and 3 both fail to hit, or if the 27B's decode makes the run too slow.
 4. Row 4 is optional, one evening, accept or reject on its own `/v1/messages` behaviour.
 
+## Trial results (same day, task 1 skeptic replay, M5 Max)
+
+Same prompt, worktree and diff as the loop's Opus run. Bench: `claude -p` in plan mode with `--tools Read,Grep,Glob,Bash`, auto-memory and attribution header off, no `--max-budget-usd` on local backends.
+
+| Backend | Model | Wall | Turns | Verdict | Prefix reuse |
+|---|---|---|---|---|---|
+| Anthropic (in loop) | Claude Opus 5 | 178 s | 14 | OK, verified the host binary's hook schema | Anthropic cache: 422k read / 52k written |
+| vllm-mlx 0.4.1 | Qwen3.8-27B-8bit | cut at 45 min | 4 | none | none (hybrid); 8 to 16 min per turn |
+| vllm-mlx 0.4.1 batched | Qwen3-Coder-30B-A3B-8bit | 322 s | 8 | OK, rambling, verified nothing beyond the diff | partial (2.4k to 6.6k of 13k to 35k) |
+| vllm-mlx 0.4.1 batched | Ornith-1.5-35B-A3B-8bit | 1048 s | 31 | none: thorough, never converged, final turn looped 13k tokens | none |
+| Rapid-MLX 0.13.4 | Ornith-1.5-35B-A3B-8bit | 189 s | 12 | OK, near Opus quality (file:line checks of every task step) | none |
+| Rapid-MLX + `--relocate-mid-conversation-system` | Ornith | 327 s | 19 | OK | none (flag does not cover the Anthropic route) |
+| Rapid-MLX + folding proxy | Ornith | 161 s | 15 | correct review, ended via ExitPlanMode without the `VERDICT:` line | 10 hits; turns 3+ prefill 400 to 2,200 tokens |
+| Rapid-MLX + folding proxy | Qwen3-Coder-Next-80B-A3B-6bit | 48 s | 7 | false refutation: claimed a test lacks the assertion it quotes, flagged unrelated code | hits from turn 3 |
+
+Read of the table: Ornith on Rapid-MLX is the only local combination that matched Opus's verdict with Opus-grade evidence, and with the folding proxy it does so in Opus's wall time. Coder-Next is the fastest and the least trustworthy. Every row is n=1; run three replays per row before adopting one.
+
+What broke prefix reuse, in order of discovery:
+
+1. `--max-kv-size` selects a RotatingKVCache (non-trimmable). Drop it.
+2. `--max-budget-usd` adds a `USD budget: $x/$y` line to the system prompt that changes every turn. Drop it for local backends.
+3. Claude Code appends a `<total_tokens>N tokens left</total_tokens>` system-role message to `messages` every turn. Hoisting it into the leading system block (my first proxy, Rapid-MLX's default, and Rapid-MLX even with `--relocate-mid-conversation-system` on the Anthropic route) grows the system block by one line per turn and shifts everything after it. Folding it into the preceding user message keeps the prefix stable; that is the proxy's current behaviour.
+4. Lazily loaded CLAUDE.md contents are appended to the system prompt after the first reads under a directory that has one: a one-off shift per directory, not per turn.
+5. vllm-mlx renders tool-call history as `[Calling tool: …]` text unless the parser class declares `SUPPORTS_NATIVE_TOOL_FORMAT`; Ornith mimicked the text form after a few turns. `qwen` and `qwen3_xml` declare it, `qwen3_coder` (the CLI name) did not in this run. Rapid-MLX renders natively and the same model reviewed cleanly.
+
+Side traffic seen on the local server: Claude Code's security monitor (a two-stage harm classifier, `<transcript>` plus `Respond with <severity>N</severity>`) runs on the small-fast model after Bash calls, 10 times in one run, 23k tokens each. Point `ANTHROPIC_SMALL_FAST_MODEL` at something tiny if it matters.
+
 ## Angle: OpenRouter instead of local
 
 Separate Sonnet worker, same day. Verified vs remembered as marked inline.
