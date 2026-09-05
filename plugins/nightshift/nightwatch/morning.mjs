@@ -73,6 +73,7 @@ function readJournal(stateDir) {
     stamp = runs.length ? runs[runs.length - 1] : "";
   }
   const name = (startLine.match(/start: ([^,]+),/) || [, ""])[1];
+  const base = (startLine.match(/\bbase (\S+),/) || [, "main"])[1]; // journals before the field predate BASE support
   const tail = startIdx === -1 ? [] : lines.slice(startIdx + 1).filter(Boolean);
 
   // The landing branch is named when it is cut or resumed, above the start line.
@@ -85,7 +86,7 @@ function readJournal(stateDir) {
     const m = line.match(/landed on (\S+) at |ahead of origin\/\S+/);
     if (m && m[1]) landing = m[1];
   }
-  return { lines, startIdx, startLine, startTs: localTs(startLine.slice(0, 19)), stamp, name, tail, landing };
+  return { lines, startIdx, startLine, startTs: localTs(startLine.slice(0, 19)), stamp, name, base, tail, landing };
 }
 
 // One record per slug, in the order the journal first mentions it: the queue
@@ -283,7 +284,7 @@ function buildText(stateDir, j, outcomes, earlier, endTs, opts) {
     out.push("next:");
     out.push(`  git -C ${opts.clone} push -u origin ${j.landing}`);
     out.push(
-      `  gh pr create --base main --head ${j.landing} --title "${prTitle(j, outcomes)}" --body-file ${join(stateDir, "pr-body.md")}`,
+      `  gh pr create --base ${j.base} --head ${j.landing} --title "${prTitle(j, outcomes)}" --body-file ${join(stateDir, "pr-body.md")}`,
     );
   } else if (!opts.clone) {
     out.push("pass --clone <path> for the push and pull-request commands");

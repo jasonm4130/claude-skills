@@ -69,8 +69,13 @@ mkdir -p "$RUN"
 JOURNAL=$STATE/journal.md
 # One launcher per repo: two would both build $LANDING in separate clones and only one could ever push it.
 LOCK=$STATE/launcher.lock
-if [ -s "$LOCK" ] && kill -0 "$(cat "$LOCK")" 2>/dev/null; then echo "STOP: launcher pid $(cat "$LOCK") already owns $NAME (lock $LOCK)" >&2; exit 2; fi
-echo $$ > "$LOCK"; trap 'rm -f "$LOCK"' EXIT
+take_lock() { ( set -C; echo $$ > "$LOCK" ) 2>/dev/null; }   # noclobber: create-or-fail is one syscall
+if ! take_lock; then
+  owner=$(cat "$LOCK" 2>/dev/null)
+  if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then echo "STOP: launcher pid $owner already owns $NAME (lock $LOCK)" >&2; exit 2; fi
+  rm -f "$LOCK"; take_lock || { echo "STOP: lost the race for $LOCK" >&2; exit 2; }
+fi
+trap 'rm -f "$LOCK"' EXIT
 DECISIONS=$STATE/decisions.jsonl
 LANDEDF=$STATE/landed
 CONTROL=$STATE/control
@@ -187,6 +192,8 @@ verify_evidence() { # verify_evidence <result-json>
   done <<EOF
 $(jq -r '(.verify.results // [])[] | [(.log // ""), (.exit // ""), (.command // "")] | @tsv' "$1" 2>/dev/null)
 EOF
+  # A PASS that verified nothing is not a PASS: no command, no log, no evidence.
+  [ "$evidence_total" -gt 0 ] || { evidence_bad=1; evidence_cmd="(no verify results in the result file)"; }
 }
 
 # The claude -p child must not inherit this session's identity (a nested claude
@@ -212,6 +219,9 @@ git fetch -q origin || { log "STOP: git fetch failed"; exit 1; }
 if git show-ref --verify --quiet "refs/heads/$LANDING"; then
   git switch -q "$LANDING"
   log "landing branch $LANDING exists at $(git rev-parse --short HEAD); continuing on it"
+elif git show-ref --verify --quiet "refs/remotes/origin/$LANDING"; then
+  git switch -q -c "$LANDING" --track "origin/$LANDING" || { log "STOP: cannot track origin/$LANDING"; exit 1; }
+  log "landing branch $LANDING exists on origin at $(git rev-parse --short HEAD); continuing on it"
 else
   git switch -q -c "$LANDING" "origin/$BASE" || { log "STOP: cannot cut $LANDING from origin/$BASE"; exit 1; }
   log "landing branch $LANDING cut from origin/$BASE at $(git rev-parse --short HEAD)"
@@ -228,7 +238,7 @@ for spec in "$SPECS"/*.md; do
   fi
   queue[$qn]=$spec; qn=$((qn + 1))
 done
-log "start: $NAME, run $stamp, queue $qn spec(s), deadline $DEADLINE, unit budget \$$UNIT_BUDGET, max $MAX_UNITS units$( [ $dry = 1 ] && echo ' (dry run)')"
+log "start: $NAME, run $stamp, base $BASE, queue $qn spec(s), deadline $DEADLINE, unit budget \$$UNIT_BUDGET, max $MAX_UNITS units$( [ $dry = 1 ] && echo ' (dry run)')"
 
 # ---------- one unit ----------
 unit_run() { # unit_run <spec-path> <unit-index> <check-verified 0|1> → writes $RUN/<slug>-u<n>.json, prints state

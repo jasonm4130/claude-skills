@@ -166,6 +166,8 @@ const base = (state, extra = {}) => ({ state, unit: 1, unitTitle: `${state} unit
 export const PASS_UNIT = [COMMIT, WRITE_LOG, writeResult(base("PASS", { verify: VERIFY_OK }))].join("\n");
 /** PASS whose verify log names a file nothing wrote. */
 export const PASS_NO_LOG = [COMMIT, writeResult(base("PASS", { verify: VERIFY_OK }))].join("\n");
+/** PASS that verified nothing at all: no command, no log, so no evidence. */
+export const PASS_NO_RESULTS = [COMMIT, writeResult(base("PASS", { verify: { results: [], allPass: true, checkOk: true, clean: true } }))].join("\n");
 /** CONTINUE: the launcher runs another unit. */
 export const CONTINUE_UNIT = [COMMIT, writeResult(base("CONTINUE"))].join("\n");
 /** FAILED, with work committed: the branch is kept for the morning. */

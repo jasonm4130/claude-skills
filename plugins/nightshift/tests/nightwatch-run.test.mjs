@@ -11,6 +11,7 @@ import {
   DIED_UNIT,
   FAILED_UNIT,
   PASS_NO_LOG,
+  PASS_NO_RESULTS,
   PASS_UNIT,
   branches,
   nightwatchRepo,
@@ -104,6 +105,16 @@ test("a PASS whose verify log is missing is downgraded and nothing lands", () =>
   assert.equal(out.landed, "");
   assert.match(out.journal, /end: 0 outcome\(s\) landed/);
   assert.equal(branches(r).some((b) => b.endsWith("/01-a")), true);
+});
+
+test("a PASS with no verify results at all is downgraded, not landed", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A", "Units: 1") } });
+  const out = runNightwatch(r, { env: { FAKE_NW_SCRIPT: PASS_NO_RESULTS } });
+
+  assert.match(out.journal, /01-a u1: PARTIAL/);
+  assert.match(out.journal, /verify evidence missing for \(no verify results in the result file\)/);
+  assert.equal(out.landed, "");
+  assert.match(out.journal, /end: 0 outcome\(s\) landed/);
 });
 
 test("a landed row carries five fields and this run's stamp", () => {
