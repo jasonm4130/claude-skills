@@ -178,6 +178,9 @@ for spec in "$SPECS"/*.md; do
     esac
   done
   [ -n "$final" ] || final=PARTIAL
+  # Untracked, non-ignored files after a unit are artefacts an acceptance command wrote (a screenshot,
+  # a report): the worker commits what it makes. Drop them; stash only tracked modifications.
+  git clean -fdq || true
   [ -z "$(git status --porcelain)" ] || { log "  $slug: tree left dirty; stashing to nightwatch/$slug-dirty"; git stash push -q -m "nightwatch/$slug-dirty" || true; }
   case "$final" in
     PASS)
