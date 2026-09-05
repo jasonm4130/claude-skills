@@ -82,7 +82,7 @@ if ! take_lock; then
   fi
   take_lock || { echo "STOP: lost the race for $LOCK" >&2; exit 2; }
 fi
-trap 'rm -f "$LOCK"' EXIT
+trap '[ "$(cat "$LOCK" 2>/dev/null)" = "$$" ] && rm -f "$LOCK"' EXIT   # only ever remove our own lock
 # The lock names its holder; a launcher that finds another pid there has been
 # displaced (a takeover race, or an operator) and ends the night at the next boundary.
 holds_lock() { [ "$(cat "$LOCK" 2>/dev/null)" = "$$" ] || { log "STOP: $LOCK is held by $(cat "$LOCK" 2>/dev/null || echo nobody), not this launcher"; return 1; }; }
@@ -362,6 +362,7 @@ while :; do
     fi
     past_deadline && { log "  $slug: deadline reached after unit $((n-1)); PARTIAL"; final=PARTIAL; break; }
     switch_says_run || { final=KILLED; break; }
+    holds_lock || { final=KILLED; break; }
     st=$(unit_run "$spec" "$n" "$cv")
     case "$st" in
       CONTINUE) cv=1; continue ;;
