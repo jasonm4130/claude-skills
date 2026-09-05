@@ -22,6 +22,9 @@ Live record of the first unattended Nightwatch v0 run (ambient, six specs), kept
 | 23:35 | ui-api unit 2, "`search` across every transcript": commit `e8003cd`, check green, Eval four low concerns. |
 | 23:38 | Spec fix while running: acceptance lines in specs 01 and 02 said `cargo run -- <verb>`, which exits 101 (15 binaries, no `default-run`), so those outcomes could never reach PASS. Rewritten to `cargo run --bin ambient -- <verb>`; the launcher re-reads the spec each unit. |
 | 23:55 | ui-api unit 3, "Session metadata: name, tags, notes, pinned": commit `0cb8887`, check green, Eval "ok". Only `cargo test session::delete` (the delete unit) still fails acceptance. |
+| 00:19 | ui-api unit 4, "delete a session, never a live one; writers take the lock": commit `e949ad1`, $8.09, check green, delete lands with 7 tests. Eval raised one HIGH: `unparseable` in a doc comment fails `crate-ci/typos` in CI, which `scripts/check` does not run. Engine rule high → BLOCKED fired: **ui-api BLOCKED** with 4 commits kept, launcher moved to session-tools. |
+| 00:25 | Typo fixed on the blocked branch from a worktree: `68b4723 session: spell unparsable the way typos wants it` (`typos src/session.rs` clean). Resume ui-api in the morning with `--only 01-ui-api`; two units remain (export; config/roster/speakers). |
+| 00:26 | Engine: `95f00b2` adds one eval-repair round (worker fixes the named high concerns, re-verify, re-eval) before BLOCKED. Live from the next unit that starts after it; session-tools unit 1 started on the old script. |
 
 ## Fixed before launch (all in the engine now)
 
@@ -52,7 +55,9 @@ Unit 2: `search` is callable over MCP even though `tools/list` hides it, because
 4. **Eval concerns vanish unless someone reads the journals.** Item 1 of the v1 plan (morning tool) should print them per unit; the result file already carries them.
 5. **Cost per unit is in `decisions.jsonl`, wall clock is not.** Add `startedAt`/`endedAt` to the record line.
 6. **Verify skipped a command and reported a guessed exit code.** Unit 3's verifier wrote "not independently verified" for `cargo test session::delete` and `u3-logs/` has no log for it (nine verify logs for ten commands). The schema should require a log path per result and the workflow should refuse a result whose log is missing; cheap, and it closes the gap the command logs were added for.
-7. **Parallel outcomes** (v1 item 2) are where the sequential frustration goes; the lock and single-owner rule from tonight are the prerequisites and are in.
+7. **A high eval concern blocked a whole outcome over a one-word typo.** The evaluator was right (CI would fail) and the rule did what the design said, but the cost was the remaining ui-api units tonight. Fixed in `95f00b2` with a repair round. The deeper fix is in ambient: `scripts/check` should run `typos` when installed so local check equals CI; that is a spec for tomorrow.
+8. **Vacuous acceptance commands.** `cargo test export::` exits 0 with zero tests; the spec's acceptance line cannot tell "passed" from "nothing ran". The verifier caught it by judgment, which is the thing we are trying not to depend on. Specs should pin counts (`cargo test export:: 2>&1 | grep -q '7 passed'`), and `nightwatch:spec` (v1 item 5) should refuse a bare `cargo test <filter>`.
+9. **Parallel outcomes** (v1 item 2) are where the sequential frustration goes; the lock and single-owner rule from tonight are the prerequisites and are in.
 
 ## Open for Jason in the morning
 
