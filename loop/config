@@ -1,0 +1,33 @@
+# Nightshift configuration for this repository. Sourced by loop/land.sh and
+# loop/merge-pr.sh; the environment wins over anything here, so
+# `MAX=1 loop/land.sh` works.
+#
+# PLAN is the one line that changes: the plan being landed, relative to the
+# repo root, with `# Task N` headings. Changing it is a pull request, so what
+# the loop works on tonight is always something a human committed.
+: "${PLAN:=docs/plans/2026-09-05-nightshift-smoke.md}"
+: "${BASE:=main}"
+
+# The verifier. Must print CHECK OK as its last line on success.
+: "${CHECK_CMD:=scripts/check}"
+
+# Hands a pull request to the gate: waits for CI, merges. Empty means a
+# workflow on the default branch merges instead and the loop only watches.
+: "${MERGE_CMD:=./loop/merge-pr.sh --stay}"
+# protected: the base branch has required checks; their names are read from
+# the API. wait: no branch protection; merge-pr.sh waits for EXPECTED_CHECKS.
+: "${MERGE_MODE:=protected}"
+# wait mode only: the CI check names that must register and pass, as GitHub
+# names them (a matrix job is `name (os)`, not `name`). One final `gate` job
+# that needs every other job is the robust shape: one name, nothing to miss.
+: "${EXPECTED_CHECKS:=}"
+
+# Money and time per task. GEN_BUDGET is spent up to (REPAIR_ROUNDS + 1) times,
+# SKEPTIC_BUDGET the same, so a task costs at most
+# (GEN_BUDGET + SKEPTIC_BUDGET) * (REPAIR_ROUNDS + 1) dollars.
+: "${MODEL:=opus}"
+: "${GEN_BUDGET:=4}"
+: "${SKEPTIC_BUDGET:=1}"
+: "${REPAIR_ROUNDS:=1}"
+: "${MAX:=3}"
+: "${DEADLINE:=6h}"

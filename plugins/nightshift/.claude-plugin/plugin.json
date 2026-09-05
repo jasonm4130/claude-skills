@@ -1,7 +1,7 @@
 {
   "name": "nightshift",
   "description": "Plan by day, land by night, triage in the morning. `plan` turns an idea into a plan the loop can land unattended (self-contained `# Task N` sections, empty Open Questions, one Codex pass, opened as a PR). `init` scaffolds the overnight landing loop into the current repo — loop/land.sh, a quiet verifier, two PreToolUse guards the generator cannot loosen, a merge script that waits for CI and re-reads the kill switch — and proves it with a preflight and a dry run. `morning` reads the journal and the land:blocked PRs and says what needs a human. The loop itself is committed in your repo, not in this plugin: it runs `claude -p --setting-sources project`, where installed plugins never load.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "Jason Matthew",
     "email": "jasonm4130@gmail.com"
