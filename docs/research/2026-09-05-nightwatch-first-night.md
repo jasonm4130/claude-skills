@@ -70,6 +70,12 @@ Live record of the first unattended Nightwatch v0 run (ambient, six specs), kept
 
 Live run total: 16 units, ~$72.70, 22:55 to 03:39. Every failure but one (the Earnings-21 timestamps) was the harness, and every harness failure has a fix committed on `nightwatch-redesign` (`20a0f74`, `ec6090d`, `95f00b2`, `ac5c32f`, `88b5dc9`, `07b88a2`). The patched engine ran live-asr's five units and wer's unit 1 without a harness fault. Code quality per the evaluator: 16 units, one high concern (the typo), the rest low and mostly cosmetic.
 
+## Day after: batch 1 and the relaunch
+
+- 07:00–07:45: v1 batch 1 (`docs/plans/2026-09-06-nightwatch-v1-batch1.md`) built by a native Workflow in a worktree: launcher orders (`Depends:`, `Units:`, `Writes:`, append-only control file with offset, `pause`, `landed` rows with ancestry check, PARTIAL when the workflow dies with work, PASS needs verified logs), `lint-spec.mjs` + `nightwatch:spec`, `morning.mjs` (+ legacy `runs/` layout), `nightwatch:watch` playbook, docs, version bump. Codex plan review: 3 rounds + audit (9 unique findings folded, two audit concerns amended at Jason's choice). Codex diff review: 3 rounds + audit, 7 findings folded (empty-verify PASS, remote landing branch, PR base, three rounds on the launcher lock). 60 tests green, shellcheck clean.
+- Specs re-linted to `SPEC OK (6 specs)`: test counts pinned from the night's logs, `Writes:` on wer, `Depends:` on ui-shell (01) and ui-features (01, 02, 03), wer item 5 rewritten (first 300 s of audio, whole `.nlp` reference), ui-api items 11 and 12 for the two eval bugs.
+- 07:50 relaunch, detached (`Popen` with its own session; a background Bash call has a 10-minute ceiling and was stopped before it spent a unit): `DATE=2026-09-05` so the kept `nw/2026-09-05/*` branches resume and everything lands on `nightwatch/2026-09-05`; queue 01, 02, 03, 04, 05; `landed` backfilled with live-asr's row so 03/04's `Depends:` can be satisfied by the ancestry check.
+
 ## Eval concerns so far (all low, none blocking)
 
 Unit 1: two error-message strings drifted on `-32602` paths no test pins (`no such method` vs `no such tool`; missing `arguments` wording); `docs/developing/api.md`'s `sessions` example omits the `dir` field that `SessionSummary` always serialises; the spec's "every method has a JSON example and a test that feeds it" constraint is only met via the mcp tests for `sessions` and `transcript`. Later units inherit the third.
