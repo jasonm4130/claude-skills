@@ -45,6 +45,10 @@ stamp=$(date +%Y%m%d-%H%M%S)
 RUN=$STATE/runs/$stamp
 mkdir -p "$RUN"
 JOURNAL=$STATE/journal.md
+# One launcher per repo: two would both build $LANDING in separate clones and only one could ever push it.
+LOCK=$STATE/launcher.lock
+if [ -s "$LOCK" ] && kill -0 "$(cat "$LOCK")" 2>/dev/null; then echo "STOP: launcher pid $(cat "$LOCK") already owns $NAME (lock $LOCK)" >&2; exit 2; fi
+echo $$ > "$LOCK"; trap 'rm -f "$LOCK"' EXIT
 DECISIONS=$STATE/decisions.jsonl
 
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$JOURNAL" >&2; } # stderr: stdout carries unit states
