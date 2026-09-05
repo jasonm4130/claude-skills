@@ -54,6 +54,16 @@ on ubuntu+macos (Node 24), runs the SDD bash smoke tests, runs `go-guards`
 (the `plugins/gates/go/` unit tests, a rebuild-and-compare against the committed
 binary, plus the differential test), and runs `version-bump-check` (see Releasing).
 
+## Nightshift
+
+`plugins/nightshift` ships the overnight landing loop as templates plus a scaffolder.
+Its `tests/` answer "does the code work" (init, preflight, the hooks, `task-brief`,
+`land.sh --dry-run`, all against throwaway repos with a fake `gh`); a repo's own
+`loop/` answers "does the night work". Templates are the source of truth: a repo
+that ran `init` picks up a template fix with `init.mjs --check` then `--update`,
+which touches only files still at their stamped hash. Plans the loop lands live in
+`docs/plans/`.
+
 ## Updating an installed plugin
 
 Claude Code keys "update available" off a plugin's **version**, so an update only

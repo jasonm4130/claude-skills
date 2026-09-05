@@ -34,6 +34,7 @@ references one machine's paths, prose calibration, or state, it belongs in dotfi
 | `gates` | Four PreToolUse gates — docs-drift commit gate, scaffold-before-design gate, Workflow and Agent model tiering — plus a non-blocking docs-consolidation nudge | Node 18+ | `/plugin install gates@jasonm4130-claude-skills` |
 | `handoff` | On-demand `/handoff` resume doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
 | `landing-loop` | Outer loop for unattended delivery: lands every task of an approved plan as one PR each, CI-gated, merged through the repo's merge command | `subagent-driven-development` · `gh` | `/plugin install landing-loop@jasonm4130-claude-skills` |
+| `nightshift` | Plan by day, land by night, triage in the morning — scaffolds the overnight landing loop (one task per CI-gated PR, guards the generator cannot loosen, kill switch) into a repo | `gh` · Node 18+ · `timeout` · macOS for launchd | `/plugin install nightshift@jasonm4130-claude-skills` |
 | `session-retro` | Session retrospectives that capture learnings to memory | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
 | `subagent-driven-development` | Deterministic workflow-driven implement/review/fix loop | – | `/plugin install subagent-driven-development@jasonm4130-claude-skills` |

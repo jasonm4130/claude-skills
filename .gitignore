@@ -14,3 +14,5 @@ tmp/
 # artifact that is deliberately committed (see rust/README.md).
 rust/target/
 /.claude/handoffs/
+# claude plugin eval output; the cases are committed, the runs are not.
+plugins/*/evals/results/
