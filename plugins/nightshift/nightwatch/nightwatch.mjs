@@ -25,6 +25,7 @@ export const meta = {
     { title: 'Implement', detail: 'the worker agent (Sonnet + Opus advisor) commits on the outcome branch' },
     { title: 'Verify', detail: 'acceptance commands and the repo check, captured verbatim' },
     { title: 'Eval', detail: 'Opus flags correctness-affecting gaps only', model: 'opus' },
+    { title: 'Record', detail: 'writes the unit result file the launcher reads' },
   ],
 }
 
@@ -107,16 +108,26 @@ const EVAL = {
 const result = (state, extra) => ({
   state, unit, unitTitle: '', summary: '', blockedReason: '', commits: [], verify: null, eval: null, ...extra,
 })
+// The launcher reads this file, not the driver's reply: under headless claude -p the
+// Workflow runs as a background task, and a driver that answers before it finishes
+// invents a state. A result that never reaches the file is a dead unit.
+const resultPath = `${a.runDir}/u${unit}.result.json`
+const finish = async (state, extra) => {
+  const out = result(state, extra)
+  await agent(`Write the following JSON to ${resultPath} with the Write tool, byte for byte, then reply DONE. Do nothing else.\n\n${JSON.stringify(out)}`,
+    { label: `record:u${unit}:${state}`, phase: 'Record', model: 'sonnet', effort: 'low' })
+  return out
+}
 
 // ---------- Reconcile ----------
 phase('Reconcile')
 const needCheck = unit === 1 || !a.checkVerified
 const recon = await agent(`${RULES}Reconcile the state of the outcome branch. Run: \`git status --porcelain\`, \`git rev-parse --short HEAD\`, \`git log ${a.landingBranch}..HEAD --oneline --reverse\`. Read ${activeUnit} if it exists. Then run every command under the spec's Acceptance heading, each with \`timeout 20m\`, capturing exit code and the last 40 lines verbatim. ${needCheck ? 'Include the repo check command (scripts/check or whatever the spec names) in that run.' : 'Skip the repo check command (scripts/check) this time; the previous unit verified it. Run the outcome-specific commands only.'} allPass is true only when every acceptance command exited 0 AND printed what the spec says it should. Do not fix anything. Do not commit.`,
   { label: `reconcile:u${unit}`, phase: 'Reconcile', schema: RECONCILE, model: 'sonnet', effort: 'low' })
-if (!recon) return result('FAILED', { summary: 'Reconcile agent returned nothing' })
+if (!recon) return await finish('FAILED', { summary: 'Reconcile agent returned nothing' })
 log(`Reconcile u${unit}: head ${recon.head}, ${recon.branchLog.length} commits on branch, acceptance ${recon.acceptance.filter(x => x.exit === 0).length}/${recon.acceptance.length} exit 0, allPass=${recon.allPass}`)
-if (!recon.clean) return result('FAILED', { summary: `working tree not clean at start of unit ${unit}: ${recon.notes}` })
-if (a.dryRun) return result('DRYRUN', { summary: recon.notes, verify: { results: recon.acceptance, allPass: recon.allPass, checkOk: recon.checkRan && recon.allPass, clean: recon.clean } })
+if (!recon.clean) return await finish('FAILED', { summary: `working tree not clean at start of unit ${unit}: ${recon.notes}` })
+if (a.dryRun) return await finish('DRYRUN', { summary: recon.notes, verify: { results: recon.acceptance, allPass: recon.allPass, checkOk: recon.checkRan && recon.allPass, clean: recon.clean } })
 
 // ---------- Plan ----------
 phase('Plan')
@@ -132,10 +143,10 @@ Decide one of:
 
 Do not implement anything. Do not run cargo or the tests.`,
   { label: `plan:u${unit}`, phase: 'Plan', schema: PLAN, model: 'opus', effort: 'high' })
-if (!plan) return result('FAILED', { summary: 'Plan agent returned nothing' })
+if (!plan) return await finish('FAILED', { summary: 'Plan agent returned nothing' })
 log(`Plan u${unit}: ${plan.decision} — ${plan.unitTitle}`)
-if (plan.decision === 'done') return result('PASS', { unitTitle: 'outcome complete', summary: plan.remaining, verify: { results: recon.acceptance, allPass: true, checkOk: true, clean: true } })
-if (plan.decision === 'blocked') return result('BLOCKED', { unitTitle: plan.unitTitle, blockedReason: plan.blockedReason, summary: plan.remaining })
+if (plan.decision === 'done') return await finish('PASS', { unitTitle: 'outcome complete', summary: plan.remaining, verify: { results: recon.acceptance, allPass: true, checkOk: true, clean: true } })
+if (plan.decision === 'blocked') return await finish('BLOCKED', { unitTitle: plan.unitTitle, blockedReason: plan.blockedReason, summary: plan.remaining })
 
 // ---------- Implement ----------
 phase('Implement')
@@ -146,15 +157,15 @@ ${plan.brief}
 ${extra}
 Run the repo check (scripts/check, or what the spec names) before committing; commit only when it passes. Commit with \`git add <specific paths>\` then \`git commit -m "<what and why>"\`, never \`git commit -a\`. Several commits are fine. If you cannot finish, leave the tree clean (commit what is verified, or \`git stash\` nothing: revert unverified edits with \`git checkout -- <paths>\`) and report blocked with the reason. Return the commits you made.`
 let impl = await agent(implPrompt(''), { label: `implement:u${unit}`, phase: 'Implement', schema: IMPL, agentType: 'worker', effort: 'medium' })
-if (!impl) return result('FAILED', { unitTitle: plan.unitTitle, summary: 'Implement agent returned nothing' })
+if (!impl) return await finish('FAILED', { unitTitle: plan.unitTitle, summary: 'Implement agent returned nothing' })
 log(`Implement u${unit}: ${impl.status}, ${impl.commits.length} commit(s)`)
-if (impl.status === 'blocked') return result('BLOCKED', { unitTitle: plan.unitTitle, blockedReason: impl.blockedReason, summary: impl.summary, commits: impl.commits })
+if (impl.status === 'blocked') return await finish('BLOCKED', { unitTitle: plan.unitTitle, blockedReason: impl.blockedReason, summary: impl.summary, commits: impl.commits })
 
 // ---------- Verify (with one repair round) ----------
 const verifyPrompt = `${RULES}Verify the current state of the branch. Run \`git status --porcelain\` (clean means empty). Run the repo check command and then every command under the spec's Acceptance heading, each with \`timeout 20m\`, capturing exit code and the last 40 lines verbatim. Report what happened; change nothing; commit nothing. allPass is true only when every command exited 0 AND printed what the spec says it should. It is fine and expected for outcome-specific acceptance commands to still fail after an early unit; report it exactly.`
 phase('Verify')
 let verify = await agent(verifyPrompt, { label: `verify:u${unit}`, phase: 'Verify', schema: VERIFY, model: 'sonnet', effort: 'low' })
-if (!verify) return result('FAILED', { unitTitle: plan.unitTitle, summary: 'Verify agent returned nothing', commits: impl.commits })
+if (!verify) return await finish('FAILED', { unitTitle: plan.unitTitle, summary: 'Verify agent returned nothing', commits: impl.commits })
 log(`Verify u${unit}: check ${verify.checkOk ? 'ok' : 'FAILED'}, clean=${verify.clean}, acceptance ${verify.results.filter(x => x.exit === 0).length}/${verify.results.length} exit 0`)
 
 if (!verify.checkOk || !verify.clean) {
@@ -165,10 +176,10 @@ if (!verify.checkOk || !verify.clean) {
   if (repair) { impl = { ...repair, commits: [...impl.commits, ...repair.commits] } }
   phase('Verify')
   verify = await agent(verifyPrompt, { label: `verify:u${unit}:after-repair`, phase: 'Verify', schema: VERIFY, model: 'sonnet', effort: 'low' })
-  if (!verify) return result('FAILED', { unitTitle: plan.unitTitle, summary: 'Verify agent returned nothing after repair', commits: impl.commits })
+  if (!verify) return await finish('FAILED', { unitTitle: plan.unitTitle, summary: 'Verify agent returned nothing after repair', commits: impl.commits })
   log(`Verify u${unit} after repair: check ${verify.checkOk ? 'ok' : 'FAILED'}, clean=${verify.clean}`)
   if (!verify.checkOk || !verify.clean) {
-    return result('FAILED', { unitTitle: plan.unitTitle, summary: `repo check ${verify.checkOk ? 'ok' : 'failed'} and tree ${verify.clean ? 'clean' : 'dirty'} after one repair round`, commits: impl.commits, verify })
+    return await finish('FAILED', { unitTitle: plan.unitTitle, summary: `repo check ${verify.checkOk ? 'ok' : 'failed'} and tree ${verify.clean ? 'clean' : 'dirty'} after one repair round`, commits: impl.commits, verify })
   }
 }
 
@@ -185,7 +196,7 @@ ${JSON.stringify(verify)}`,
 const evalResult = ev || { verdict: 'concerns', concerns: [{ what: 'Eval agent returned nothing', where: '', severity: 'high' }] }
 log(`Eval u${unit}: ${evalResult.verdict}, ${evalResult.concerns.length} concern(s)`)
 if (evalResult.concerns.some(c => c.severity === 'high')) {
-  return result('BLOCKED', { unitTitle: plan.unitTitle, blockedReason: evalResult.concerns.filter(c => c.severity === 'high').map(c => `${c.what} (${c.where})`).join('; '), summary: impl.summary, commits: impl.commits, verify, eval: evalResult })
+  return await finish('BLOCKED', { unitTitle: plan.unitTitle, blockedReason: evalResult.concerns.filter(c => c.severity === 'high').map(c => `${c.what} (${c.where})`).join('; '), summary: impl.summary, commits: impl.commits, verify, eval: evalResult })
 }
 
-return result(verify.allPass ? 'PASS' : 'CONTINUE', { unitTitle: plan.unitTitle, summary: `${impl.summary} Remaining: ${plan.remaining}`, commits: impl.commits, verify, eval: evalResult })
+return await finish(verify.allPass ? 'PASS' : 'CONTINUE', { unitTitle: plan.unitTitle, summary: `${impl.summary} Remaining: ${plan.remaining}`, commits: impl.commits, verify, eval: evalResult })

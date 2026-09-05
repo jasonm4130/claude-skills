@@ -30,7 +30,7 @@ done
 : "${STATE_VAR:=LANDING_STATE}"      # repo variable; anything but "run" stops the night
 : "${DEADLINE:=7h}"                  # no new unit after this
 : "${UNIT_BUDGET:=8}"                # --max-budget-usd per unit (one claude -p)
-: "${UNIT_TIMEOUT:=90m}"             # wall clock per unit
+: "${UNIT_TIMEOUT:=150m}"            # wall clock per unit (three repo checks plus a worker)
 : "${MAX_UNITS:=8}"                  # per outcome
 : "${MAIN_MODEL:=sonnet}"            # the claude -p driver; phases pick their own models
 : "${SETTING_SOURCES:=user,project}" # user, so the worker agent and the advisor resolve
@@ -68,7 +68,7 @@ unsigned=(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=commit.gpgsign GIT_CONFIG_VALUE_0=
 # The user settings set CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1, and a claude that sees
 # it forces default permission mode, where every unlisted tool is a prompt nobody
 # answers. The run is isolated in its own clone, so opt out for the child.
-noscrub=(CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0)
+noscrub=(CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0)  # the Workflow is a background task; never give up on it
 scrub=(-u CLAUDECODE -u CLAUDE_CODE_SUBPROCESS_ENV_SCRUB -u CLAUDE_CODE_CHILD_SESSION
   -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_CODE_MESSAGING_SOCKET
   -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_PID -u CLAUDE_EFFORT)
@@ -100,7 +100,7 @@ unit_run() { # unit_run <spec-path> <unit-index> <check-verified 0|1> → writes
     --argjson unit "$n" --argjson max "$MAX_UNITS" --arg runDir "$RUN/$slug" --argjson cv "$( [ "$cv" = 1 ] && echo true || echo false )" --argjson dry "$( [ $dry = 1 ] && echo true || echo false )" \
     '{repo:$repo, spec:$spec, branch:$branch, landingBranch:$landing, unit:$unit, maxUnits:$max, runDir:$runDir, checkVerified:$cv, dryRun:$dry}')
   mkdir -p "$RUN/$slug"
-  prompt="Run the Workflow tool with scriptPath \"$here/nightwatch.mjs\" and args $argsjson (pass args as a JSON object, not a string). Do nothing else before it, and nothing after it except this: reply with the object the workflow returned, as JSON, unchanged. If the workflow throws or is aborted, reply with {\"state\":\"FAILED\",\"unitTitle\":\"\",\"summary\":\"<the error text>\",\"blockedReason\":\"\",\"commits\":[]}."
+  prompt="Run the Workflow tool with scriptPath \"$here/nightwatch.mjs\" and args $argsjson (pass args as a JSON object, not a string). The workflow runs in the background and can take over an hour: do not answer while it is still running, and never invent its result. When it has returned, reply with the object it returned, as JSON, unchanged. If it throws or is aborted, reply with {\"state\":\"FAILED\",\"unitTitle\":\"\",\"summary\":\"<the error text>\",\"blockedReason\":\"\",\"commits\":[]}."
   # The child gets its own process group (set -m) so the watchdog can kill the
   # whole tree mid-unit: on the wall-clock cap, or when the repo variable stops
   # saying run. That is the phone kill; nothing in the old loop had it.
@@ -128,9 +128,16 @@ unit_run() { # unit_run <spec-path> <unit-index> <check-verified 0|1> → writes
   local cost turns
   cost=$(jq -r '.total_cost_usd // 0' "$out" 2>/dev/null || echo 0)
   turns=$(jq -r '.num_turns // 0' "$out" 2>/dev/null || echo 0)
-  state=$(jq -r '(.structured_output // .result) | if type == "string" then (try fromjson catch {}) else . end | .state // empty' "$out" 2>/dev/null)
-  title=$(jq -r '(.structured_output // .result) | if type == "string" then (try fromjson catch {}) else . end | .unitTitle // ""' "$out" 2>/dev/null)
-  summary=$(jq -r '(.structured_output // .result) | if type == "string" then (try fromjson catch {}) else . end | (.blockedReason // "") + " " + (.summary // "")' "$out" 2>/dev/null | tr '\n' ' ' | cut -c1-400)
+  # The unit's own record, written by the workflow's last agent; the driver's reply
+  # is only a fallback for cost and turns. No file means the workflow never finished.
+  local res=$RUN/$slug/u$n.result.json
+  if [ -s "$res" ]; then
+    state=$(jq -r '.state // empty' "$res" 2>/dev/null)
+    title=$(jq -r '.unitTitle // ""' "$res" 2>/dev/null)
+    summary=$(jq -r '(.blockedReason // "") + " " + (.summary // "")' "$res" 2>/dev/null | tr '\n' ' ' | cut -c1-400)
+  else
+    state=FAILED; title=""; summary="no result file from the workflow (killed, crashed, or the driver quit early): $(grep -v '^$' "$RUN/$slug-u$n.stderr" 2>/dev/null | tail -1 | cut -c1-200)"
+  fi
   [ -n "$state" ] || state=FAILED
   log "  $slug u$n: $state — $title (\$$cost, $turns turns) $summary"
   record "$slug" "$n" "$state" "$out"
