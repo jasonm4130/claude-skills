@@ -73,7 +73,9 @@ done
 cfg_NAME=""; cfg_CLONE=""; cfg_SPECS=""; cfg_BASE=""; cfg_STATE_VAR=""; cfg_CHECK=""; cfg_CHECK_SHA=""
 read_config() { # read_config <file>
   local k v
-  while IFS='=' read -r k v; do
+  # `|| [ -n "$k" ]`: a hand-edited config with no trailing newline would
+  # otherwise lose its last key, and that key is usually CHECK_SHA.
+  while IFS='=' read -r k v || [ -n "$k" ]; do
     case "$k" in ''|*[!A-Z_]*) continue ;; esac
     case "$k" in
       NAME) cfg_NAME=$v ;;
@@ -304,6 +306,10 @@ unsigned=(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=commit.gpgsign GIT_CONFIG_VALUE_0=
 # it forces default permission mode, where every unlisted tool is a prompt nobody
 # answers. The run is isolated in its own clone, so opt out for the child.
 noscrub=(CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0)  # the Workflow is a background task; never give up on it
+# BASE also travels in --settings, but the route guard reads it from its own
+# environment: set it here too rather than depend on settings.env reaching a
+# hook subprocess, or base-branch protection silently degrades to main only.
+noscrub+=("BASE=$BASE")
 scrub=(-u CLAUDECODE -u CLAUDE_CODE_SUBPROCESS_ENV_SCRUB -u CLAUDE_CODE_CHILD_SESSION
   -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_CODE_MESSAGING_SOCKET
   -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_PID -u CLAUDE_EFFORT)
