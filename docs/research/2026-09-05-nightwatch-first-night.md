@@ -21,6 +21,7 @@ Live record of the first unattended Nightwatch v0 run (ambient, six specs), kept
 | 23:22 | unit 2 Implement started. First unit to run under the launcher-owned command logs (`u2-logs/reconcile-{1..4}.log`, each ending `exit=0`). |
 | 23:35 | ui-api unit 2, "`search` across every transcript": commit `e8003cd`, check green, Eval four low concerns. |
 | 23:38 | Spec fix while running: acceptance lines in specs 01 and 02 said `cargo run -- <verb>`, which exits 101 (15 binaries, no `default-run`), so those outcomes could never reach PASS. Rewritten to `cargo run --bin ambient -- <verb>`; the launcher re-reads the spec each unit. |
+| 23:55 | ui-api unit 3, "Session metadata: name, tags, notes, pinned": commit `0cb8887`, check green, Eval "ok". Only `cargo test session::delete` (the delete unit) still fails acceptance. |
 
 ## Fixed before launch (all in the engine now)
 
@@ -50,7 +51,8 @@ Unit 2: `search` is callable over MCP even though `tools/list` hides it, because
 3. **The planner reads a done brief and infers the next unit.** It worked at unit 2, but Record should overwrite `active-unit.md` with a "done: <title>, next: <hint>" stub so the inference is not load-bearing.
 4. **Eval concerns vanish unless someone reads the journals.** Item 1 of the v1 plan (morning tool) should print them per unit; the result file already carries them.
 5. **Cost per unit is in `decisions.jsonl`, wall clock is not.** Add `startedAt`/`endedAt` to the record line.
-6. **Parallel outcomes** (v1 item 2) are where the sequential frustration goes; the lock and single-owner rule from tonight are the prerequisites and are in.
+6. **Verify skipped a command and reported a guessed exit code.** Unit 3's verifier wrote "not independently verified" for `cargo test session::delete` and `u3-logs/` has no log for it (nine verify logs for ten commands). The schema should require a log path per result and the workflow should refuse a result whose log is missing; cheap, and it closes the gap the command logs were added for.
+7. **Parallel outcomes** (v1 item 2) are where the sequential frustration goes; the lock and single-owner rule from tonight are the prerequisites and are in.
 
 ## Open for Jason in the morning
 
