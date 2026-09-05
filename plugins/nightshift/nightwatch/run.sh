@@ -76,10 +76,16 @@ if ! take_lock; then
   # A dead owner's lock is taken over by renaming it away: mv is atomic, so of two
   # launchers that both saw the stale lock only one removes it, and neither can
   # remove the other's fresh lock.
-  mv "$LOCK" "$LOCK.stale.$$" 2>/dev/null && rm -f "$LOCK.stale.$$"
+  if mv "$LOCK" "$LOCK.stale.$$" 2>/dev/null; then
+    if [ "$(cat "$LOCK.stale.$$" 2>/dev/null)" = "$owner" ]; then rm -f "$LOCK.stale.$$"
+    else mv "$LOCK.stale.$$" "$LOCK" 2>/dev/null; echo "STOP: $LOCK changed hands while being taken over" >&2; exit 2; fi   # we grabbed a fresh lock, not the stale one
+  fi
   take_lock || { echo "STOP: lost the race for $LOCK" >&2; exit 2; }
 fi
 trap 'rm -f "$LOCK"' EXIT
+# The lock names its holder; a launcher that finds another pid there has been
+# displaced (a takeover race, or an operator) and ends the night at the next boundary.
+holds_lock() { [ "$(cat "$LOCK" 2>/dev/null)" = "$$" ] || { log "STOP: $LOCK is held by $(cat "$LOCK" 2>/dev/null || echo nobody), not this launcher"; return 1; }; }
 DECISIONS=$STATE/decisions.jsonl
 LANDEDF=$STATE/landed
 CONTROL=$STATE/control
@@ -335,6 +341,7 @@ while :; do
   case " $ctl_skip " in *" $slug "*) log "$slug: skipped (control file)"; continue ;; esac
   past_deadline && { log "STOP: deadline $DEADLINE reached before $slug"; break; }
   switch_says_run || break
+  holds_lock || break
   branch=nw/$DATE/$slug   # not under $LANDING: a ref cannot be both a file and a directory
   git switch -q "$LANDING"
   deps_met "$spec" || { log "$slug: waiting on $dep_unmet"; continue; }
