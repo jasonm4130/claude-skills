@@ -92,7 +92,7 @@ fails outright on an unknown label, and the failure line carries the
 
 ## Cost
 
-A task costs at most `(GEN_BUDGET + SKEPTIC_BUDGET) × (REPAIR_ROUNDS + 1)`
+A task costs at most `(GEN_BUDGET + 2 × SKEPTIC_BUDGET) × (REPAIR_ROUNDS + 1)` (the skeptic runs twice in a round only when its first verdict is empty)
 dollars: with the defaults, $10. `MAX=3` tasks a night, `DEADLINE=6h`.
 
 ## Keeping a repo current
