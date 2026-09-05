@@ -31,6 +31,7 @@ Live record of the first unattended Nightwatch v0 run (ambient, six specs), kept
 | 00:59 | Engine: schemas now require only load-bearing fields (`status`/`commits`/`summary` for Implement, and so on) and the script fills the rest with defaults. Live from the unit after ui-shell unit 1. |
 | 01:01 | **ui-shell FAILED at unit 1 in four minutes ($0.53), zero commits.** Its acceptance command `cargo run --bin uicheck` writes `uicheck.png` to the repo root; Reconcile saw an untracked file, reported the tree dirty, and the engine's "not clean at start of unit 1" rule failed the outcome. Launcher moved to ui-features (unit 8 of 8, the last), whose acceptance writes the same file. |
 | 01:02 | Stop-gap for the running unit: `/uicheck.png` and `/windowcheck.png` added to the clone's `.git/info/exclude`, in place before ui-features' Reconcile ran the command (the file appeared at 01:03 with `git status` clean). Engine fix committed: the launcher runs `git clean -fdq` after every unit and both prompts say an acceptance-written file is not dirt. |
+| 01:06 | ui-features BLOCKED at planning ($1.55): spec 04 depends on 01, 02 and 03, none landed on the integration branch. Correct, and the `Depends:` line of v1 item 2 would have skipped it for free. Launcher moved to 05-wer, the first unit on the fully patched engine. |
 
 ## Fixed before launch (all in the engine now)
 
@@ -55,7 +56,7 @@ Unit 2: `search` is callable over MCP even though `tools/list` hides it, because
 
 ## Observations and what to change (v1 candidates, ranked)
 
-1. **`MAX_UNITS=8` is the binding cap, not time or money.** At ~20 min and ~$6.50 per unit, eight units are ~2.7 h and ~$52 against a 7 h deadline and $15 per unit. ui-api alone needs three or four units, so tonight touches two or three of six specs. Make the cap per spec (`MAX_UNITS_PER_SPEC`) and let the deadline bound the run.
+1. **`MAX_UNITS=8` is per outcome, and the deadline is the run's cap.** At ~20 min and ~$6.50 per unit an outcome can spend ~2.7 h and ~$52 before the launcher moves on; six specs in a 7 h night means two or three get real time unless they finish early. Per-spec unit caps in the spec header (`Units: 4`) would let a small spec stop hogging a night.
 2. **Three `scripts/check` runs per unit** (Reconcile at unit 1, worker before commit, Verify). Reconcile after unit 1 could skip `check` when the branch head equals the last verified head; Verify must keep it.
 3. **The planner reads a done brief and infers the next unit.** It worked at unit 2, but Record should overwrite `active-unit.md` with a "done: <title>, next: <hint>" stub so the inference is not load-bearing.
 4. **Eval concerns vanish unless someone reads the journals.** Item 1 of the v1 plan (morning tool) should print them per unit; the result file already carries them.
