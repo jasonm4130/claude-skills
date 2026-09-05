@@ -65,6 +65,7 @@ Print, verbatim from the landing doc, the first night by daylight:
 
 ```
 gh variable set LANDING_STATE --body frozen     # the switch exists, and is off
+for l in land land:blocked land:retry; do gh label create "$l"; done
 # merge the scaffold PR, then:
 node <plugin>/scripts/preflight.mjs             # all ok
 gh variable set LANDING_STATE --body run

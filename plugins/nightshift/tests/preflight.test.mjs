@@ -79,6 +79,18 @@ test("protection and MERGE_MODE must agree; wait mode needs real check names; an
   } finally { rmSync(repo.root, { recursive: true, force: true }); }
 });
 
+test("the three PR labels must exist: gh pr create --label fails outright on an unknown label", () => {
+  const repo = nightshiftRepo();
+  try {
+    setConfig(repo, "EXPECTED_CHECKS", "gate");
+    let r = run(repo, { FAKE_GH_STATE: "frozen", FAKE_GH_CHECK_RUNS: "gate" });
+    assert.match(r.out, /ok   labels .*land, land:blocked, land:retry/);
+    r = run(repo, { FAKE_GH_STATE: "frozen", FAKE_GH_CHECK_RUNS: "gate", FAKE_GH_LABELS: "land" });
+    assert.equal(r.status, 1);
+    assert.match(r.out, /FAIL labels .*missing: land:blocked, land:retry — .*gh label create 'land:blocked'; gh label create 'land:retry'/);
+  } finally { rmSync(repo.root, { recursive: true, force: true }); }
+});
+
 test("readConfig: config defaults, environment wins; originSlug parses ssh and https", () => {
   const repo = nightshiftRepo();
   try {

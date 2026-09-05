@@ -93,6 +93,7 @@ night is capped at `MAX` tasks. CI cost is the usual per-PR run.
 2. Try one task in daylight from the terminal and watch it:
 
    ```sh
+   for l in land land:blocked land:retry; do gh label create "$l"; done
    gh variable set LANDING_STATE --body run
    MAX=1 loop/land.sh
    gh variable set LANDING_STATE --body frozen

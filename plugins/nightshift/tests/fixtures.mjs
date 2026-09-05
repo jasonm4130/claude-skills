@@ -60,6 +60,7 @@ args="$*"
 case "$1 $2" in
   "auth status") exit 0 ;;
   "variable get") v=\${FAKE_GH_STATE:-}; [ -n "$v" ] || { echo "variable not found" >&2; exit 1; }; echo "$v" ;;
+  "label list") printf '%s\\n' "\${FAKE_GH_LABELS-land,land:blocked,land:retry}" | tr ',' '\\n' | grep . ; exit 0 ;;
   "pr list")
     case "$args" in
       *"--state open"*) printf '%s\\n' "\${FAKE_GH_OPEN_PR:-}" | grep . ;;

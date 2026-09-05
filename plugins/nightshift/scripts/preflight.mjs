@@ -116,6 +116,21 @@ export function run(argv = process.argv.slice(2), log = console.log) {
     }
   }
 
+  // land.sh labels every PR it opens; `gh pr create --label` fails outright when
+  // the label does not exist, and the loop then sees no PR and blocks the task.
+  if (slug) {
+    const want = [cfg.LABEL || "land", cfg.BLOCKED_LABEL || "land:blocked", cfg.RETRY_LABEL || "land:retry"];
+    const ll = sh("gh", ["label", "list", "--json", "name", "--jq", ".[].name"]);
+    if (!ll.ok) warn("labels", `could not list labels: ${(ll.err || ll.out).split("\n")[0]}`);
+    else {
+      const have = new Set(ll.out.split("\n").filter(Boolean));
+      const missing = want.filter((l) => !have.has(l));
+      missing.length
+        ? fail("labels", `missing: ${missing.join(", ")} — land.sh opens every PR with --label and gh refuses an unknown label; create them: ${missing.map((l) => `gh label create '${l}'`).join("; ")}`)
+        : ok("labels", want.join(", "));
+    }
+  }
+
   if (cfg.MERGE_MODE === "wait") {
     const expected = cfg.EXPECTED_CHECKS.split(/\s+/).filter(Boolean);
     // Names as GitHub reports them, from the latest commit on the base branch.
