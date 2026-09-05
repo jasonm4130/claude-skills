@@ -92,8 +92,8 @@ placeholder patterns; names and types match across tasks.
 
 ## 4. Prove it and open it
 
-1. **Extractability.** For each N: `loop/task-brief <plan> N /dev/null`
-   must exit 0. A task that does not extract does not exist to the loop.
+1. **Extractability.** For each N: `loop/task-brief <plan> N "$(mktemp)"`
+   must exit 0 (it refuses an empty output file, so `/dev/null` reads as "not found"). A task that does not extract does not exist to the loop.
    (No `loop/` in this repo yet? Say `/nightshift:init` comes first.)
 2. **Open Questions empty.** Each line there is a question you ask now,
    one at a time, and fold in. "None" is a claim you have checked.
