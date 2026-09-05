@@ -84,7 +84,10 @@ checks to register and pass, re-reads the switch, and merges once.
 protection; `MERGE_MODE=wait` uses `EXPECTED_CHECKS` from `loop/config`,
 which `init` pre-fills only when a `gate` CI job exists (job ids are not
 check names; a matrix job is `name (os)`). `preflight.mjs` lists the names
-GitHub actually reports so the human can fill the rest.
+GitHub actually reports so the human can fill the rest. It also checks that the
+three labels (`land`, `land:blocked`, `land:retry`) exist: `gh pr create --label`
+fails outright on an unknown label, and the failure line carries the
+`gh label create` commands.
 
 ## Cost
 
