@@ -42,6 +42,7 @@ UNIT=$(printf '%s' "$prompt" | sed -n 's/.*"unit":\([0-9][0-9]*\).*/\1/p')
 RUNDIR=$(printf '%s' "$prompt" | sed -n 's/.*"runDir":"\([^"]*\)".*/\1/p')
 SLUG=$(basename "$RUNDIR")
 STATEDIR=$(cd "$RUNDIR/../.." && pwd)
+printf '%s\n' "$prompt" >> "$STATEDIR/prompts.log"
 RESULT=$RUNDIR/u$UNIT.result.json
 export REPO SPEC UNIT SLUG RUNDIR STATEDIR RESULT
 cd "$REPO" || exit 1
@@ -70,7 +71,12 @@ export function nightwatchRepo({ specs = {} } = {}) {
   // scripts/check is committed: preflight refuses a dirty clone and `git clean -fdq`
   // runs after every unit, so an uncommitted fixture file would vanish mid-run.
   mkdirSync(join(clone, "scripts"), { recursive: true });
-  writeFileSync(join(clone, "scripts", "check"), "#!/usr/bin/env bash\necho CHECK OK\n");
+  // Discriminating on purpose: it passes only from the clone root, so a test
+  // that reads CHECK OK has positively proved where the launcher ran it.
+  writeFileSync(
+    join(clone, "scripts", "check"),
+    '#!/usr/bin/env bash\ncd "$(dirname "$0")/.." || exit 1\ntest -f README.md || { echo "wrong cwd"; exit 1; }\necho CHECK OK\n',
+  );
   chmodSync(join(clone, "scripts", "check"), 0o755);
   writeFileSync(join(clone, "README.md"), "# nightwatch fixture\n");
   git("add", "-A");
@@ -95,8 +101,8 @@ export function nightwatchRepo({ specs = {} } = {}) {
 }
 
 /** Run the launcher against a fixture. Returns its output and the state files. */
-export function runNightwatch(r, { env = {}, args = [], timeout = 120000 } = {}) {
-  const res = spawnSync("bash", [RUN_SH, r.clone, r.specsDir, ...args], {
+export function runNightwatch(r, { env = {}, args = [], timeout = 120000, positional, runSh = RUN_SH, stateName } = {}) {
+  const res = spawnSync("bash", [runSh, ...(positional || [r.clone, r.specsDir]), ...args], {
     encoding: "utf8",
     timeout,
     env: {
@@ -112,15 +118,34 @@ export function runNightwatch(r, { env = {}, args = [], timeout = 120000 } = {})
     },
   });
   const slurp = (p) => (existsSync(p) ? readFileSync(p, "utf8") : "");
+  // `run.sh <name>` keeps its state under that name, not under the clone's basename.
+  const st = stateName ? join(r.home, ".local", "state", "nightwatch", stateName) : r.state;
   return {
     code: res.status,
     stdout: res.stdout || "",
     stderr: res.stderr || "",
-    journal: slurp(join(r.state, "journal.md")),
-    decisions: slurp(join(r.state, "decisions.jsonl")),
-    landed: slurp(join(r.state, "landed")),
-    controlOffset: slurp(join(r.state, "control.offset")).trim(),
+    state: st,
+    journal: slurp(join(st, "journal.md")),
+    decisions: slurp(join(st, "decisions.jsonl")),
+    landed: slurp(join(st, "landed")),
+    controlOffset: slurp(join(st, "control.offset")).trim(),
+    prompts: slurp(join(st, "prompts.log")),
   };
+}
+
+/**
+ * The config file `init.mjs` writes and `run.sh <name>` reads. Returns the
+ * state directory it created.
+ */
+export function writeConfig(home, name, kv = {}) {
+  const dir = join(home, ".local", "state", "nightwatch", name);
+  mkdirSync(dir, { recursive: true });
+  const text = Object.entries({ NAME: name, ...kv })
+    .filter(([, v]) => v !== undefined && v !== null)
+    .map(([k, v]) => `${k}=${v}`)
+    .join("\n");
+  writeFileSync(join(dir, "config"), `${text}\n`);
+  return dir;
 }
 
 /** `git branch --list` in the clone, one name per line. */

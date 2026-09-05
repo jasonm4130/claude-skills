@@ -201,6 +201,46 @@ test("CLI: prints one line per problem, <file>:<line>: <problem>, and exits 1", 
   });
 });
 
+// The check command is the repo's, not this file's: the Nightwatch config
+// names it and run.sh, the engine and the linter all take it from there.
+const withCheck = (cmd) => VALID.replace("scripts/check", cmd);
+
+test("--check names the repo's check command, and the default stays scripts/check", () => {
+  const custom = withCheck("/x/check");
+  assert.deepEqual(lintSpec(custom, { check: "/x/check" }), []);
+  assert.deepEqual(lintSpec(VALID, {}), []);
+  assert.deepEqual(lintSpec(VALID, { check: "/x/check" }), [
+    "10: Acceptance has no /x/check line naming CHECK OK",
+  ]);
+  assert.deepEqual(lintSpec(custom, {}), [
+    "10: Acceptance has no scripts/check line naming CHECK OK",
+  ]);
+});
+
+test("--check accepts the double-quoted rendering of a check path with a space", () => {
+  const quoted = '"/tmp/a b/check"';
+  assert.deepEqual(lintSpec(withCheck(quoted), { check: quoted }), []);
+});
+
+test("CLI: --check is passed through and its absence keeps the default", () => {
+  withDir((dir) => {
+    writeFileSync(join(dir, "01-a.md"), withCheck("/x/check"));
+    const out = execFileSync(process.execPath, [LINT, "--specs-dir", dir, "--check", "/x/check"], { encoding: "utf8" });
+    assert.equal(out.trim(), "SPEC OK (1 specs)");
+
+    let failed = "";
+    let code = 0;
+    try {
+      execFileSync(process.execPath, [LINT, "--specs-dir", dir], { encoding: "utf8" });
+    } catch (e) {
+      failed = e.stdout;
+      code = e.status;
+    }
+    assert.equal(code, 1);
+    assert.match(failed, /^01-a\.md:10: Acceptance has no scripts\/check line naming CHECK OK$/m);
+  });
+});
+
 test("CLI: SPEC OK (<n> specs) and exit 0 on a clean dir", () => {
   withDir((dir) => {
     writeFileSync(join(dir, "01-a.md"), VALID);

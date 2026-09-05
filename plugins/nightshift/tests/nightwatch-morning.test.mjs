@@ -9,7 +9,7 @@
 // checked-in fixture cannot know its own absolute path. `verify-3.log` is
 // deliberately absent, so the missing-evidence rendering is covered.
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -142,6 +142,22 @@ test("--verdict <slug>@<sha> picks that landing, not the latest for the slug", (
     const line = JSON.parse(cli([state, "--verdict", `00-plumbing@${sha}`, "reverted"]).trim());
     assert.equal(line.run, "20260904-220000");
     assert.equal(line.landedSha, sha);
+  });
+});
+
+test("a bare name resolves to the state dir under HOME, and --clone defaults to the config's", () => {
+  withState((state) => {
+    // A temp HOME so the real ~/.local/state is never read or written.
+    const home = mkdtempSync(join(tmpdir(), "nw-home-"));
+    const named = join(home, ".local", "state", "nightwatch", "ambient");
+    mkdirSync(dirname(named), { recursive: true });
+    cpSync(state, named, { recursive: true });
+    writeFileSync(join(named, "config"), "NAME=ambient\nCLONE=/w/clone\nBASE=main\nCHECK=scripts/check\n");
+
+    const text = cli(["ambient"], { env: { ...process.env, HOME: home } });
+    assert.match(text, /Nightwatch morning: ambient/);
+    assert.match(text, /git -C \/w\/clone push -u origin nightwatch\/2026-09-05/);
+    rmSync(home, { recursive: true, force: true });
   });
 });
 

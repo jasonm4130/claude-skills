@@ -3,12 +3,13 @@
 // what it cost, what the eval flagged, and the pull request body written from
 // the logs the acceptance commands actually wrote.
 //
-//   node morning.mjs <state-dir> [--clone <path>]
-//   node morning.mjs <state-dir> --verdict <slug>[@<landed-sha>] <merged|reverted|overridden|discarded> [--note "..."]
+//   node morning.mjs <name-or-state-dir> [--clone <path>]
+//   node morning.mjs <name-or-state-dir> --verdict <slug>[@<landed-sha>] <merged|reverted|overridden|discarded> [--note "..."]
 //
-// <state-dir> is ~/.local/state/nightwatch/<name>. `--clone` adds the two
-// commands the morning ends with (push the landing branch, open the pull
-// request); they are printed, never run. Nothing here shells out or touches
+// <state-dir> is ~/.local/state/nightwatch/<name>; an argument with no `/` is
+// that name. `--clone` adds the two commands the morning ends with (push the
+// landing branch, open the pull request), and defaults to the CLONE the state
+// dir's `config` names; they are printed, never run. Nothing here shells out or touches
 // the network: every fact comes from the state directory.
 //
 // What it reads, all written by run.sh and nightwatch.mjs:
@@ -23,6 +24,7 @@
 // under "earlier runs" so a stale night is never counted as this one.
 
 import { existsSync, readFileSync, readdirSync, appendFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
 const VERDICTS = ["merged", "reverted", "overridden", "discarded"];
@@ -94,7 +96,7 @@ function readJournal(stateDir) {
 function walkJournal(tail) {
   const byslug = new Map();
   const touch = (slug, ts) => {
-    if (!byslug.has(slug)) byslug.set(slug, { slug, state: "", branch: "", detail: "", firstTs: ts, lastTs: ts });
+    if (!byslug.has(slug)) byslug.set(slug, { slug, state: "", branch: "", detail: "", checkChanged: "", firstTs: ts, lastTs: ts });
     const o = byslug.get(slug);
     if (Number.isFinite(ts)) o.lastTs = ts;
     return o;
@@ -116,6 +118,10 @@ function walkJournal(tail) {
       const o = touch(m[1], ts);
       o.state = "waiting";
       o.detail = `on ${m[2]}`;
+    } else if ((m = rest.match(/^(\S+): (check script changed on this branch.*)$/))) {
+      // The launcher ran the base branch's copy, so this outcome is landable —
+      // but the script it ships differs from the one that judged it.
+      touch(m[1], ts).checkChanged = m[2];
     } else if ((m = rest.match(/^(\S+): skipped/))) {
       touch(m[1], ts).state = "skipped";
     } else if ((m = rest.match(/^(\S+): PASS, landed on \S+ at (\S+)/))) {
@@ -196,7 +202,7 @@ export function report(stateDir, opts = {}) {
   const units = unitRows(rows).filter((r) => r.run === j.stamp);
   const landed = readLanded(stateDir);
 
-  for (const r of units) if (!byslug.has(r.spec)) byslug.set(r.spec, { slug: r.spec, state: "", branch: "", detail: "", firstTs: NaN, lastTs: NaN });
+  for (const r of units) if (!byslug.has(r.spec)) byslug.set(r.spec, { slug: r.spec, state: "", branch: "", detail: "", checkChanged: "", firstTs: NaN, lastTs: NaN });
 
   const outcomes = [];
   for (const o of byslug.values()) {
@@ -230,6 +236,7 @@ export function report(stateDir, opts = {}) {
       slug: o.slug,
       state,
       detail: o.detail,
+      checkChanged: o.checkChanged || "",
       branch: o.branch || last?.branch || "",
       units: mine.length,
       cost,
@@ -264,6 +271,7 @@ function buildText(stateDir, j, outcomes, earlier, endTs, opts) {
       if (o.detail) bits.push(o.detail);
     }
     out.push(bits.filter(Boolean).join("  "));
+    if (o.checkChanged) out.push(`    ${o.checkChanged}`);
     if (o.state === "BLOCKED" && o.blockedReason) out.push(`    blocked: ${o.blockedReason}`);
     for (const c of o.concerns) out.push(`    u${c.unit} ${c.severity}: ${c.what}${c.where ? ` (${c.where})` : ""}`);
   }
@@ -353,12 +361,26 @@ export function recordVerdict(stateDir, target, verdict, note) {
 
 // ---------- cli ----------
 
+// `KEY=value` lines, the same file run.sh reads. Absent is not an error: a
+// state dir predating init.mjs simply has no defaults to offer.
+function readConfig(stateDir) {
+  const cfg = {};
+  for (const line of readText(join(stateDir, "config")).split("\n")) {
+    const m = line.match(/^([A-Z_]+)=(.*)$/);
+    if (m) cfg[m[1]] = m[2];
+  }
+  return cfg;
+}
+
 function main(argv) {
-  const stateDir = argv[0];
-  if (!stateDir || stateDir.startsWith("--")) {
-    process.stderr.write("usage: morning.mjs <state-dir> [--clone <path>] [--verdict <slug>[@<sha>] <verdict> [--note ...]]\n");
+  const arg = argv[0];
+  if (!arg || arg.startsWith("--")) {
+    process.stderr.write("usage: morning.mjs <name-or-state-dir> [--clone <path>] [--verdict <slug>[@<sha>] <verdict> [--note ...]]\n");
     return 64;
   }
+  // A bare name is the repo name init.mjs registered; anything with a path
+  // separator is the state directory itself.
+  const stateDir = arg.includes("/") ? arg : join(homedir(), ".local", "state", "nightwatch", arg);
   if (!existsSync(join(stateDir, "journal.md"))) {
     process.stderr.write(`no journal at ${join(stateDir, "journal.md")}\n`);
     return 1;
@@ -384,7 +406,7 @@ function main(argv) {
       return 1;
     }
   }
-  const { text, prBody } = report(stateDir, { clone });
+  const { text, prBody } = report(stateDir, { clone: clone || readConfig(stateDir).CLONE || "" });
   writeFileSync(join(stateDir, "pr-body.md"), prBody);
   process.stdout.write(text);
   return 0;

@@ -4,12 +4,23 @@
 # integration branch cut from main. The morning pushes that branch and opens
 # one PR; branch protection on main is untouched.
 #
-#   nightwatch/run.sh <clone> <specs-dir> [--dry-run] [--only <slug>[,<slug>...]]
+#   nightwatch/run.sh <name-or-clone> [<specs-dir>] [--dry-run]
+#                     [--only <slug>[,<slug>...]] [--print-settings]
+#
+# A first argument with no `/` is a repo name: everything else comes from
+# ~/.local/state/nightwatch/<name>/config, which `init.mjs` writes. Plain
+# `KEY=value` lines, no quoting and no expansion: NAME, REPO, ORIGIN, CLONE,
+# SPECS, BASE, STATE_VAR, CHECK (the repo's check command, `scripts/check` or
+# an absolute path), CHECK_SHA (sha256 of a generated check; absent for a
+# repo-owned one). Precedence is env > argument > config. `--print-settings`
+# prints the two JSON documents the child gets — the `--settings` object on the
+# first line, the workflow `args` object (per-unit fields empty) on the second
+# — and exits without touching the clone or the lock.
 #
 # Layout it expects:
 #   <clone>                 a git clone of the repo, origin = GitHub, clean
 #   <specs-dir>/NN-slug.md  specs in queue order (Outcome / Acceptance / Non-goals / Context)
-#   ~/.local/state/nightwatch/<name>/   journal.md, decisions.jsonl, landed, control, runs/<stamp>/
+#   ~/.local/state/nightwatch/<name>/   config, journal.md, decisions.jsonl, landed, control, runs/<stamp>/
 #
 # Spec header lines, between the `# title` line and the first `## ` heading:
 #   Repo: <path>              where the outcome lives (documentation; the clone is argv[1])
@@ -37,18 +48,60 @@
 set -uo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
-CLONE=${1:?clone dir}; SPECS=${2:?specs dir}; shift 2
-dry=0; only=""
+# An env var beats an argument beats the config, so remember what the
+# environment already carried before the config is allowed to fill anything in.
+env_BASE=${BASE:-}; env_STATE_VAR=${STATE_VAR:-}; env_CHECK=${CHECK:-}
+
+[ $# -ge 1 ] || { echo "usage: run.sh <name-or-clone> [<specs-dir>] [--dry-run] [--only a,b] [--print-settings]" >&2; exit 64; }
+target=$1; shift
+specs_arg=""
+if [ $# -gt 0 ]; then case "$1" in --*) ;; *) specs_arg=$1; shift ;; esac; fi
+dry=0; only=""; print_settings=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) dry=1 ;;
     --only) only=$2; shift ;;
+    --print-settings) print_settings=1 ;;
     *) echo "unknown arg $1" >&2; exit 64 ;;
   esac
   shift
 done
 
-: "${STATE_VAR:=LANDING_STATE}"      # repo variable; anything but "run" stops the night
+# ---------- the config ----------
+# Plain KEY=value lines. Unknown keys are ignored, so a newer init.mjs can add
+# one without breaking an older launcher.
+cfg_NAME=""; cfg_CLONE=""; cfg_SPECS=""; cfg_BASE=""; cfg_STATE_VAR=""; cfg_CHECK=""; cfg_CHECK_SHA=""
+read_config() { # read_config <file>
+  local k v
+  while IFS='=' read -r k v; do
+    case "$k" in ''|*[!A-Z_]*) continue ;; esac
+    case "$k" in
+      NAME) cfg_NAME=$v ;;
+      CLONE) cfg_CLONE=$v ;;
+      SPECS) cfg_SPECS=$v ;;
+      BASE) cfg_BASE=$v ;;
+      STATE_VAR) cfg_STATE_VAR=$v ;;
+      CHECK) cfg_CHECK=$v ;;
+      CHECK_SHA) cfg_CHECK_SHA=$v ;;
+    esac
+  done <"$1"
+}
+case "$target" in
+  */*) CLONE=$target; NAME=$(basename "$target") ;;
+  *)
+    cfgfile=$HOME/.local/state/nightwatch/$target/config
+    [ -f "$cfgfile" ] || { echo "no config for $target; run init.mjs" >&2; exit 64; }
+    read_config "$cfgfile"
+    CLONE=$cfg_CLONE; NAME=${cfg_NAME:-$target}
+    [ -n "$CLONE" ] || { echo "STOP: $cfgfile has no CLONE" >&2; exit 64; } ;;
+esac
+SPECS=${specs_arg:-$cfg_SPECS}
+[ -n "$SPECS" ] || { echo "usage: run.sh <name-or-clone> <specs-dir>; no SPECS in the config either" >&2; exit 64; }
+
+STATE_VAR=${env_STATE_VAR:-${cfg_STATE_VAR:-LANDING_STATE}}  # repo variable; anything but "run" stops the night
+BASE=${env_BASE:-${cfg_BASE:-main}}
+CHECK=${env_CHECK:-${cfg_CHECK:-scripts/check}}              # the repo's check command; scripts/check, or a raw absolute path
+CHECK_SHA=${cfg_CHECK_SHA:-}                                 # set only for a check init.mjs generated
 : "${DEADLINE:=7h}"                  # no new unit after this
 : "${UNIT_BUDGET:=8}"                # --max-budget-usd per unit (one claude -p)
 : "${UNIT_TIMEOUT:=150m}"            # wall clock per unit (three repo checks plus a worker)
@@ -58,11 +111,48 @@ done
 : "${POLL_S:=30}"                    # watchdog and pause poll interval; the tests set it low
 : "${DATE:=$(date +%Y-%m-%d)}"
 : "${LANDING:=nightwatch/$DATE}"
-: "${BASE:=main}"
 
-CLONE=$(cd "$CLONE" && pwd); SPECS=$(cd "$SPECS" && pwd)
-NAME=$(basename "$CLONE")
+# One rendering of CHECK for every consumer: the launcher's own run, the args
+# JSON the engine reads, and the Acceptance line the linter matches. Double
+# quotes, not single, because the engine wraps each command in `bash -c '…'`.
+case "$CHECK" in
+  *[!A-Za-z0-9_./-]*)
+    case "$CHECK" in *[\"\$\`\\]*) echo "STOP: check path cannot be quoted" >&2; exit 1 ;; esac
+    CHECK_CMD="\"$CHECK\"" ;;
+  *) CHECK_CMD=$CHECK ;;
+esac
+
+CLONE=$(cd "$CLONE" && pwd) || { echo "STOP: clone $CLONE does not exist" >&2; exit 1; }
+SPECS=$(cd "$SPECS" && pwd) || { echo "STOP: specs dir $SPECS does not exist" >&2; exit 1; }
 STATE=$HOME/.local/state/nightwatch/$NAME
+
+# ---------- the child's settings ----------
+# The two guards reach the headless child through --settings, which names the
+# plugin's own hook files by absolute path. Each command is `node '<path>'`, so
+# a plugin path carrying a single quote would break out of the shell word.
+hooks_dir=$(cd "$here/../templates/hooks" && pwd -P) || { echo "STOP: cannot resolve $here/../templates/hooks" >&2; exit 1; }
+case "$hooks_dir" in *"'"*) echo "STOP: plugin path contains a quote" >&2; exit 1 ;; esac
+# BASE reaches the route guard as an environment variable, so it protects the
+# repo's base branch as well as the main it always protects.
+SETTINGS=$(jq -nc --arg base "$BASE" \
+  --arg g1 "node '$hooks_dir/no-route-around-ci.mjs'" \
+  --arg g2 "node '$hooks_dir/tests-are-readonly.mjs'" \
+  '{env: {CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "0", BASE: $base},
+    hooks: {PreToolUse: [{matcher: "Bash", hooks: [{type: "command", command: $g1}, {type: "command", command: $g2}]}]}}')
+
+args_json() { # args_json <spec> <branch> <slug> <unit> <max-units> <check-verified 0|1>
+  jq -nc --arg repo "$CLONE" --arg spec "$1" --arg branch "$2" --arg landing "$LANDING" \
+    --argjson unit "$4" --argjson max "$5" --arg runDir "$STATE/outcomes/$3" --arg check "$CHECK_CMD" \
+    --argjson cv "$( [ "$6" = 1 ] && echo true || echo false )" --argjson dry "$( [ $dry = 1 ] && echo true || echo false )" \
+    '{repo:$repo, spec:$spec, branch:$branch, landingBranch:$landing, unit:$unit, maxUnits:$max, runDir:$runDir, check:$check, checkVerified:$cv, dryRun:$dry}'
+}
+
+if [ "$print_settings" = 1 ]; then
+  printf '%s\n' "$SETTINGS"
+  args_json "" "" "" 0 "$MAX_UNITS" 0
+  exit 0
+fi
+
 stamp=$(date +%Y%m%d-%H%M%S)
 RUN=$STATE/runs/$stamp
 mkdir -p "$RUN"
@@ -228,7 +318,15 @@ command -v claude >/dev/null || { log "STOP: claude not on PATH"; exit 1; }
 git fetch -q origin || { log "STOP: git fetch failed"; exit 1; }
 if git show-ref --verify --quiet "refs/heads/$LANDING"; then
   git switch -q "$LANDING"
-  log "landing branch $LANDING exists at $(git rev-parse --short HEAD); continuing on it"
+  # Nothing landed on it yet and origin/$BASE has moved: a relaunch on the same
+  # date should build on today's base, not on yesterday's. A landing branch
+  # carrying its own commits is left exactly where it is.
+  if git merge-base --is-ancestor "$LANDING" "origin/$BASE" 2>/dev/null; then
+    git reset -q --hard "origin/$BASE"
+    log "landing branch $LANDING moved to origin/$BASE at $(git rev-parse --short HEAD)"
+  else
+    log "landing branch $LANDING exists at $(git rev-parse --short HEAD); continuing on it"
+  fi
 elif git show-ref --verify --quiet "refs/remotes/origin/$LANDING"; then
   git switch -q -c "$LANDING" --track "origin/$LANDING" || { log "STOP: cannot track origin/$LANDING"; exit 1; }
   log "landing branch $LANDING exists on origin at $(git rev-parse --short HEAD); continuing on it"
@@ -255,9 +353,7 @@ unit_run() { # unit_run <spec-path> <unit-index> <check-verified 0|1> → writes
   local spec=$1 n=$2 cv=$3
   local out=$RUN/$slug-u$n.json
   local argsjson prompt head_before startedAt endedAt t_start t_end
-  argsjson=$(jq -nc --arg repo "$CLONE" --arg spec "$spec" --arg branch "$branch" --arg landing "$LANDING" \
-    --argjson unit "$n" --argjson max "$units" --arg runDir "$STATE/outcomes/$slug" --argjson cv "$( [ "$cv" = 1 ] && echo true || echo false )" --argjson dry "$( [ $dry = 1 ] && echo true || echo false )" \
-    '{repo:$repo, spec:$spec, branch:$branch, landingBranch:$landing, unit:$unit, maxUnits:$max, runDir:$runDir, checkVerified:$cv, dryRun:$dry}')
+  argsjson=$(args_json "$spec" "$branch" "$slug" "$n" "$units" "$cv")
   # The brief and the result files live per outcome, not per launch, so a relaunch
   # after a kill sees the unit that was in flight. A stale result from an earlier
   # launch must not be mistaken for this unit's, so it is removed first. The spec
@@ -275,7 +371,7 @@ unit_run() { # unit_run <spec-path> <unit-index> <check-verified 0|1> → writes
   (env "${scrub[@]}" "${unsigned[@]}" "${noscrub[@]}" claude -p "$prompt" \
       --permission-mode auto --permission-prompts none --add-dir "$STATE" --add-dir "$SPECS" --add-dir "$here" \
       --allowedTools "Workflow,Agent,Read,Write,Edit,Bash,Glob,Grep,ToolSearch,Skill,WebFetch,WebSearch,StructuredOutput,advisor" \
-      --setting-sources "$SETTING_SOURCES" --settings '{"env":{"CLAUDE_CODE_SUBPROCESS_ENV_SCRUB":"0"}}' --no-session-persistence \
+      --setting-sources "$SETTING_SOURCES" --settings "$SETTINGS" --no-session-persistence \
       --max-budget-usd "$UNIT_BUDGET" --model "$MAIN_MODEL" --output-format json --json-schema "$UNIT_SCHEMA" \
       </dev/null) >"$out" 2>"$RUN/$slug-u$n.stderr" &
   local pid=$! t0 ticks=0 killed=""
@@ -326,8 +422,45 @@ unit_run() { # unit_run <spec-path> <unit-index> <check-verified 0|1> → writes
   echo "$state"
 }
 
+# ---------- the launcher's own check ----------
+# The worker can rewrite the check: the state dir is on its --add-dir and Bash
+# is unrestricted. So before anything lands, the launcher runs the check itself
+# from the clone, and refuses the outcome unless the script is the one it was
+# handed and the run ends CHECK OK. For a repo-owned check it runs the BASE
+# branch's copy against the worker's tree, so a weakened script on the outcome
+# branch never gates its own landing. That copy is written beside the real one
+# inside the clone: a check script resolves its paths from $0, so running it
+# from anywhere else would silently change what it checks.
+launcher_check_reason=""
+launcher_check() { # launcher_check <slug> <unit>
+  local slug=$1 logdir=$STATE/outcomes/$1/u$2-logs
+  local lg=$logdir/launcher-check.log sha code last base_copy
+  launcher_check_reason=""
+  mkdir -p "$logdir"
+  if [ -n "$CHECK_SHA" ]; then
+    sha=$(shasum -a 256 "$CHECK" 2>/dev/null | awk '{print $1}')
+    [ "$sha" = "$CHECK_SHA" ] || { launcher_check_reason="script changed"; return 1; }
+    bash -c "$CHECK_CMD" >"$lg" 2>&1 </dev/null; code=$?
+  else
+    base_copy=$(dirname "$CHECK")/.nw-base-check
+    if ! git show "origin/$BASE:$CHECK" >"$base_copy" 2>/dev/null; then
+      rm -f "$base_copy"; launcher_check_reason="origin/$BASE has no $CHECK"; return 1
+    fi
+    git diff --quiet "origin/$BASE" HEAD -- "$CHECK" 2>/dev/null ||
+      log "$slug: check script changed on this branch; review it in the PR"
+    bash "$base_copy" >"$lg" 2>&1 </dev/null; code=$?
+    rm -f "$base_copy"
+  fi
+  printf 'exit=%s\n' "$code" >>"$lg"
+  [ "$code" = 0 ] || { launcher_check_reason="exit=$code"; return 1; }
+  last=$(tail -n 2 "$lg" | head -1)
+  [ "$last" = "CHECK OK" ] || { launcher_check_reason="last line was not CHECK OK"; return 1; }
+  return 0
+}
+
 # ---------- the queue ----------
 landed=0
+dry_failed=0
 i=0
 # `while :` rather than a bounded loop: the boundary drain runs even when the
 # queue looks exhausted, so a `requeue` appended during the last unit is seen.
@@ -352,7 +485,7 @@ while :; do
   else
     git switch -q -c "$branch"; log "$slug: branch $branch cut from $LANDING"
   fi
-  cv=0; final=""
+  cv=0; final=""; n=0
   for n in $(seq 1 "$units"); do
     if [ "$n" -gt 1 ]; then
       drain_control
@@ -371,6 +504,16 @@ while :; do
     esac
   done
   [ -n "$final" ] || final=PARTIAL
+  # The only guarantee that survives a worker who can write the check: a run the
+  # worker did not perform, on the tree it is asking to land.
+  case "$final" in
+    PASS|DRYRUN)
+      if ! launcher_check "$slug" "$n"; then
+        log "$slug: launcher check: $launcher_check_reason"
+        [ "$final" = DRYRUN ] && dry_failed=1
+        final=FAILED
+      fi ;;
+  esac
   # Untracked, non-ignored files after a unit are artefacts an acceptance command wrote (a screenshot,
   # a report): the worker commits what it makes. Drop them; stash only tracked modifications.
   git clean -fdq || true
@@ -384,7 +527,18 @@ while :; do
         printf '%s\t%s\t%s\t%s\t%s\n' "$slug" "$stamp" "$base_sha" "$(git rev-parse HEAD)" "$spec" >>"$LANDEDF"
         log "$slug: PASS, landed on $LANDING at $(git rev-parse --short HEAD)"; git branch -q -d "$branch"
       else log "$slug: PASS but fast-forward onto $LANDING failed; branch kept for the morning"; fi ;;
-    DRYRUN) log "$slug: dry run complete"; git switch -q "$LANDING"; git branch -q -D "$branch" ;;
+    DRYRUN)
+      # A dry run that reconciled but could not run the acceptance commands is a
+      # broken setup, not a proof of one: say so and fail the launch.
+      res=$STATE/outcomes/$slug/u$n.result.json
+      if [ "$(jq -r '.verify.allPass // false' "$res" 2>/dev/null)" = true ] &&
+         [ "$(jq -r '.verify.clean // false' "$res" 2>/dev/null)" = true ]; then
+        log "$slug: dry run complete"
+      else
+        log "$slug: dry run FAILED: $(jq -r '.summary // ""' "$res" 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
+        dry_failed=1
+      fi
+      git switch -q "$LANDING"; git branch -q -D "$branch" ;;
     KILLED) log "STOP: kill switch during $slug; branch $branch kept"; break ;;
     *) log "$slug: $final; branch $branch kept with $(git rev-list --count "$LANDING".."$branch") commit(s) for the morning" ;;
   esac
@@ -392,3 +546,5 @@ done
 git switch -q "$LANDING" 2>/dev/null || true
 ahead=$(git rev-list --count "origin/$BASE..$LANDING" 2>/dev/null || echo "?")
 log "end: $landed outcome(s) landed on $LANDING; $ahead commit(s) ahead of origin/$BASE. Morning: git -C $CLONE push -u origin $LANDING && gh pr create"
+[ "$dry_failed" = 1 ] && exit 1
+exit 0

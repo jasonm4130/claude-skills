@@ -8,7 +8,11 @@
 // `Writes:` header, and a `Depends:` graph that is broken, self-referential
 // or cyclic.
 //
-//   node lint-spec.mjs --specs-dir <dir> [spec.md]
+//   node lint-spec.mjs --specs-dir <dir> [--check <cmd>] [spec.md]
+//
+// `--check` names the repo's check command, as the Nightwatch config's CHECK
+// renders it; the Acceptance section must name that command against CHECK OK.
+// Defaults to `scripts/check`.
 //
 // Lints every spec in <dir> (the dependency graph needs the whole queue).
 // With a file given, reports that file's own problems plus any graph
@@ -16,7 +20,7 @@
 // problem as `<file>:<line>: <problem>` and exits 1, or `SPEC OK (<n>
 // specs)` and exits 0.
 //
-// `lintSpec(text, { slug, slugs })` returns `string[]` of `"<line>:
+// `lintSpec(text, { slug, slugs, check })` returns `string[]` of `"<line>:
 // <problem>"` (no filename — the caller knows the file). `slug` is this
 // spec's own basename-without-.md, for the self-dependency check; `slugs`
 // is every valid slug in the queue, for the unknown-dependency check.
@@ -33,6 +37,7 @@ const ARTEFACT_RE = /^(?:~|\$|\/|.*(?:^|\/)(?:\.cache|target|node_modules)\/)|\.
 const WRITE_VERB_RE = /\b(?:writes?|written|produces?|creates?|gains?|saves?|emits?)\b/i;
 const REQUIRED_HEADINGS = ["## Outcome", "## Acceptance", "## Non-goals", "## Context"];
 const ITEM_START_RE = /^\s*(?:\d+\.|[-*])\s/;
+const DEFAULT_CHECK = "scripts/check";
 
 function headerEndIndex(lines) {
   const i = lines.findIndex((l) => /^## /.test(l));
@@ -142,7 +147,7 @@ function checkWrittenArtifacts(item, writes, problems) {
   }
 }
 
-export function lintSpec(text, { slug, slugs } = {}) {
+export function lintSpec(text, { slug, slugs, check = DEFAULT_CHECK } = {}) {
   const lines = text.split("\n");
   const problems = [];
 
@@ -178,8 +183,8 @@ export function lintSpec(text, { slug, slugs } = {}) {
       if (/^## /.test(lines[i])) { sectionEnd = i; break; }
     }
     const sectionText = lines.slice(accIdx, sectionEnd).join("\n");
-    if (!(/scripts\/check/.test(sectionText) && /CHECK OK/.test(sectionText))) {
-      problems.push({ line: accIdx + 1, msg: "Acceptance has no scripts/check line naming CHECK OK" });
+    if (!(sectionText.includes(check) && sectionText.includes("CHECK OK"))) {
+      problems.push({ line: accIdx + 1, msg: `Acceptance has no ${check} line naming CHECK OK` });
     }
     for (const item of acceptanceItems(lines, accIdx + 1, sectionEnd)) {
       checkBacktickSpans(item, problems);
@@ -231,7 +236,7 @@ function findCycles(graph) {
   return cycles;
 }
 
-export function lintDir(dir, { file } = {}) {
+export function lintDir(dir, { file, check = DEFAULT_CHECK } = {}) {
   const files = readdirSync(dir)
     .filter((f) => f.endsWith(".md"))
     .sort();
@@ -241,7 +246,7 @@ export function lintDir(dir, { file } = {}) {
   const allProblems = [];
   for (const f of files) {
     const slug = f.slice(0, -3);
-    for (const p of lintSpec(texts.get(f), { slug, slugs })) {
+    for (const p of lintSpec(texts.get(f), { slug, slugs, check })) {
       const [line, ...rest] = p.split(": ");
       allProblems.push({ file: f, line: Number(line), msg: rest.join(": ") });
     }
@@ -280,14 +285,21 @@ function main() {
   const argv = process.argv.slice(2);
   const idx = argv.indexOf("--specs-dir");
   if (idx === -1 || !argv[idx + 1]) {
-    console.error("usage: lint-spec.mjs --specs-dir <dir> [spec.md]");
+    console.error("usage: lint-spec.mjs --specs-dir <dir> [--check <cmd>] [spec.md]");
     process.exit(64);
   }
   const specsDir = argv[idx + 1];
-  const rest = argv.filter((_, i) => i !== idx && i !== idx + 1);
+  const cidx = argv.indexOf("--check");
+  if (cidx !== -1 && !argv[cidx + 1]) {
+    console.error("usage: lint-spec.mjs --specs-dir <dir> [--check <cmd>] [spec.md]");
+    process.exit(64);
+  }
+  const check = cidx === -1 ? DEFAULT_CHECK : argv[cidx + 1];
+  const drop = new Set(cidx === -1 ? [idx, idx + 1] : [idx, idx + 1, cidx, cidx + 1]);
+  const rest = argv.filter((_, i) => !drop.has(i));
   const file = rest[0] ? basename(rest[0]) : undefined;
 
-  const { lines, specCount } = lintDir(specsDir, { file });
+  const { lines, specCount } = lintDir(specsDir, { file, check });
   if (lines.length) {
     for (const l of lines) console.log(l);
     process.exit(1);

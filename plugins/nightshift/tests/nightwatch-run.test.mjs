@@ -2,8 +2,11 @@
 // it is honest about. Every case runs run.sh end to end against a throwaway
 // clone with a fake `claude` that writes the unit result the test wants.
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import {
@@ -13,12 +16,37 @@ import {
   PASS_NO_LOG,
   PASS_NO_RESULTS,
   PASS_UNIT,
+  RUN_SH,
   branches,
   nightwatchRepo,
   runNightwatch,
   spec,
   unreachableCommit,
+  writeConfig,
+  writeResult,
 } from "./nightwatch-fixtures.mjs";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const PLUGIN = join(HERE, "..");
+const MORNING = join(PLUGIN, "nightwatch", "morning.mjs");
+
+/** A check script on disk, plus the CHECK_SHA the config would carry for it. */
+function genCheck(dir, name, body) {
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, name);
+  const text = `#!/usr/bin/env bash\n${body}\n`;
+  writeFileSync(path, text);
+  chmodSync(path, 0o755);
+  return { path, sha: createHash("sha256").update(text).digest("hex") };
+}
+
+/** The two JSON documents `--print-settings` prints, parsed. */
+function printSettings(r, name, { runSh = RUN_SH } = {}) {
+  const out = runNightwatch(r, { positional: [name], args: ["--print-settings"], runSh, stateName: name });
+  assert.equal(out.code, 0, out.stderr);
+  const [settingsLine, argsLine] = out.stdout.trim().split("\n");
+  return { settings: JSON.parse(settingsLine), args: JSON.parse(argsLine), out };
+}
 
 test("an unmet Depends waits: no branch, no unit, the queue moves on", () => {
   const r = nightwatchRepo({
@@ -172,4 +200,247 @@ test("--only takes a comma-separated list", () => {
   assert.match(out.journal, /01-a u1: PASS/);
   assert.match(out.journal, /03-c u1: PASS/);
   assert.equal(/02-b u1:/.test(out.journal), false);
+});
+
+// ---- a repo name is enough ------------------------------------------------
+
+test("--print-settings ships the two guards, the scrub opt-out and BASE", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  writeConfig(r.home, "r", { REPO: r.clone, ORIGIN: r.origin, CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: "/x/check" });
+
+  const { settings } = printSettings(r, "r");
+
+  assert.equal(settings.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB, "0");
+  assert.equal(settings.env.BASE, "main");
+  const entry = settings.hooks.PreToolUse[0];
+  assert.equal(entry.matcher, "Bash");
+  assert.equal(entry.hooks.length, 2);
+  assert.match(entry.hooks[0].command, /^node '.*\/no-route-around-ci\.mjs'$/);
+  assert.match(entry.hooks[1].command, /^node '.*\/tests-are-readonly\.mjs'$/);
+});
+
+test("the guard paths resolve from a plugin directory whose name has a space", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  writeConfig(r.home, "r", { CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: "/x/check" });
+  const copy = join(r.root, "nw plugin", "nightshift");
+  cpSync(PLUGIN, copy, { recursive: true });
+
+  const { settings } = printSettings(r, "r", { runSh: join(copy, "nightwatch", "run.sh") });
+
+  for (const h of settings.hooks.PreToolUse[0].hooks) {
+    const path = h.command.match(/^node '(.*)'$/)[1];
+    assert.match(path, /nw plugin\//);
+    assert.equal(existsSync(path), true, `${path} must exist on disk`);
+  }
+});
+
+test("a bare name lands exactly as the two-positional form does, with the config's check in args", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  const check = genCheck(join(r.root, "gen"), "check", "echo CHECK OK");
+  writeConfig(r.home, "r", { CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: check.path, CHECK_SHA: check.sha });
+
+  const out = runNightwatch(r, { positional: ["r"], stateName: "r", env: { FAKE_NW_SCRIPT: PASS_UNIT } });
+
+  assert.equal(out.code, 0, out.stderr);
+  assert.match(out.journal, /01-a: PASS, landed on nightwatch\//);
+  assert.match(out.landed, /^01-a\t/m);
+  assert.ok(out.prompts.includes(`"check":"${check.path}"`), out.prompts.slice(0, 400));
+});
+
+test("a bare name with no config exits 64 and says to run init", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  const out = runNightwatch(r, { positional: ["r"], stateName: "r" });
+
+  assert.equal(out.code, 64);
+  assert.match(out.stderr, /no config for r; run init\.mjs/);
+});
+
+// ---- the dry run has to prove itself --------------------------------------
+
+const DRY_UNIT = (allPass, clean) =>
+  writeResult({
+    state: "DRYRUN", unit: 1, unitTitle: "dry", summary: "acceptance did not run", blockedReason: "", commits: [],
+    verify: { results: [], allPass, checkOk: allPass, clean },
+  });
+
+test("a dry run whose acceptance did not pass is a failed launch", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  const out = runNightwatch(r, { args: ["--dry-run"], env: { FAKE_NW_SCRIPT: DRY_UNIT(false, true) } });
+
+  assert.match(out.journal, /01-a: dry run FAILED: acceptance did not run/);
+  assert.equal(out.code, 1);
+});
+
+test("a dry run that passed and left the tree clean is a complete one", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  const out = runNightwatch(r, { args: ["--dry-run"], env: { FAKE_NW_SCRIPT: DRY_UNIT(true, true) } });
+
+  assert.match(out.journal, /01-a: dry run complete/);
+  assert.equal(/dry run FAILED/.test(out.journal), false);
+  assert.equal(out.code, 0, out.stderr);
+});
+
+// ---- the landing branch --------------------------------------------------
+
+test("a landing branch with nothing on it moves forward to origin/BASE", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  r.git("branch", "nightwatch/2026-01-01");
+  writeFileSync(join(r.clone, "more.txt"), "more\n");
+  r.git("add", "-A");
+  r.git("commit", "-q", "-m", "base moved");
+  r.git("push", "-q", "origin", "main");
+
+  const out = runNightwatch(r, { env: { DATE: "2026-01-01", FAKE_NW_SCRIPT: PASS_UNIT } });
+
+  assert.match(out.journal, /landing branch nightwatch\/2026-01-01 moved to origin\/main/);
+  const landing = execFileSync("git", ["rev-parse", "nightwatch/2026-01-01~1"], { cwd: r.clone, encoding: "utf8" }).trim();
+  const base = execFileSync("git", ["rev-parse", "origin/main"], { cwd: r.clone, encoding: "utf8" }).trim();
+  assert.equal(landing, base, "the outcome landed on top of the moved base");
+});
+
+test("a landing branch carrying its own commit is left where it is", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  r.git("switch", "-q", "-c", "nightwatch/2026-01-01");
+  writeFileSync(join(r.clone, "own.txt"), "own\n");
+  r.git("add", "-A");
+  r.git("commit", "-q", "-m", "already landed something");
+  const kept = r.git("rev-parse", "HEAD");
+  r.git("switch", "-q", "main");
+  writeFileSync(join(r.clone, "more.txt"), "more\n");
+  r.git("add", "-A");
+  r.git("commit", "-q", "-m", "base moved");
+  r.git("push", "-q", "origin", "main");
+
+  const out = runNightwatch(r, { env: { DATE: "2026-01-01", FAKE_NW_SCRIPT: PASS_UNIT } });
+
+  assert.equal(/moved to origin\/main/.test(out.journal), false);
+  assert.match(out.journal, /landing branch nightwatch\/2026-01-01 exists at .*; continuing on it/);
+  const landing = execFileSync("git", ["rev-parse", "nightwatch/2026-01-01~1"], { cwd: r.clone, encoding: "utf8" }).trim();
+  assert.equal(landing, kept);
+});
+
+// ---- the launcher's own check --------------------------------------------
+
+test("a generated check the unit rewrote is a changed script, and nothing lands", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  const check = genCheck(join(r.root, "gen"), "check", "echo CHECK OK");
+  writeConfig(r.home, "r", { CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: check.path, CHECK_SHA: check.sha });
+  const script = [`printf '#!/usr/bin/env bash\\necho pwned\\necho CHECK OK\\n' > "${check.path}"`, PASS_UNIT].join("\n");
+
+  const out = runNightwatch(r, { positional: ["r"], stateName: "r", env: { FAKE_NW_SCRIPT: script } });
+
+  assert.match(out.journal, /01-a: launcher check: script changed/);
+  assert.match(out.journal, /01-a: FAILED; branch/);
+  assert.equal(out.landed, "");
+  assert.match(out.journal, /end: 0 outcome\(s\) landed/);
+});
+
+test("a generated check that exits non-zero fails the outcome the unit called PASS", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  const check = genCheck(join(r.root, "gen"), "check", "exit 1");
+  writeConfig(r.home, "r", { CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: check.path, CHECK_SHA: check.sha });
+
+  const out = runNightwatch(r, { positional: ["r"], stateName: "r", env: { FAKE_NW_SCRIPT: PASS_UNIT } });
+
+  assert.match(out.journal, /01-a: launcher check: exit=1/);
+  assert.equal(out.landed, "");
+});
+
+test("a passing generated check writes its own log and the outcome lands", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  const check = genCheck(join(r.root, "gen"), "check", "echo CHECK OK");
+  writeConfig(r.home, "r", { CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: check.path, CHECK_SHA: check.sha });
+
+  const out = runNightwatch(r, { positional: ["r"], stateName: "r", env: { FAKE_NW_SCRIPT: PASS_UNIT } });
+
+  const log = readFileSync(join(out.state, "outcomes", "01-a", "u1-logs", "launcher-check.log"), "utf8");
+  assert.equal(log, "CHECK OK\nexit=0\n");
+  assert.match(out.landed, /^01-a\t/m);
+});
+
+test("a repo-owned check rewritten on the branch is judged by the base branch's copy", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  // The base's own check fails, so a rewrite on the outcome branch cannot save it.
+  writeFileSync(join(r.clone, "scripts", "check"), "#!/usr/bin/env bash\nexit 1\n");
+  r.git("add", "-A");
+  r.git("commit", "-q", "-m", "base check fails");
+  r.git("push", "-q", "origin", "main");
+  const script = [`printf '#!/usr/bin/env bash\\necho CHECK OK\\n' > scripts/check`, PASS_UNIT].join("\n");
+
+  const out = runNightwatch(r, { env: { FAKE_NW_SCRIPT: script } });
+
+  assert.match(out.journal, /01-a: check script changed on this branch; review it in the PR/);
+  assert.match(out.journal, /01-a: launcher check: exit=1/);
+  assert.equal(out.landed, "");
+});
+
+test("a rewritten repo-owned check still lands when the base's copy passes, and the morning says so", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  const script = [`printf '#!/usr/bin/env bash\\necho CHECK OK\\n' > scripts/check`, PASS_UNIT].join("\n");
+
+  const out = runNightwatch(r, { env: { FAKE_NW_SCRIPT: script } });
+
+  assert.match(out.landed, /^01-a\t/m);
+  assert.match(out.journal, /01-a: check script changed on this branch; review it in the PR/);
+  // The base copy is discriminating: it prints CHECK OK only from the clone root.
+  const log = readFileSync(join(out.state, "outcomes", "01-a", "u1-logs", "launcher-check.log"), "utf8");
+  assert.equal(log, "CHECK OK\nexit=0\n");
+  assert.equal(existsSync(join(r.clone, "scripts", ".nw-base-check")), false, "the base copy is removed after the run");
+
+  const report = execFileSync(process.execPath, [MORNING, out.state], { encoding: "utf8" });
+  assert.match(report, /check script changed on this branch; review it in the PR/);
+});
+
+test("a check path with a space survives the config, the args JSON and the engine's wrapper", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  const check = genCheck(join(r.root, "a b"), "check", "echo CHECK OK");
+  writeConfig(r.home, "r", { CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: check.path });
+
+  const { args } = printSettings(r, "r");
+  assert.equal(args.check, `"${check.path}"`);
+
+  // The engine runs every command as `bash -c '<command>'`; double quotes are
+  // the only wrapping that survives that, which is why check_cmd uses them.
+  const res = spawnSync("bash", ["-c", `bash -c '${args.check}'`], { encoding: "utf8" });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /^CHECK OK$/m);
+});
+
+// ---- the guards the launcher ships, run directly ---------------------------
+
+test("the hook files --print-settings names deny a force push and a test deletion", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  writeConfig(r.home, "r", { CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: "/x/check" });
+  const { settings } = printSettings(r, "r");
+  const [route, tests] = settings.hooks.PreToolUse[0].hooks.map((h) => h.command.match(/^node '(.*)'$/)[1]);
+
+  const bare = join(r.root, "bare");
+  mkdirSync(bare, { recursive: true });
+  const fire = (hook, payload, cwd) =>
+    spawnSync(process.execPath, [hook], { input: JSON.stringify(payload), encoding: "utf8", cwd });
+
+  const denied = fire(route, { tool_name: "Bash", tool_input: { command: "git push --force origin main" }, cwd: bare }, bare);
+  assert.match(JSON.parse(denied.stdout).hookSpecificOutput.permissionDecision, /^deny$/);
+
+  const hookRepo = join(r.root, "hookrepo");
+  mkdirSync(join(hookRepo, "tests"), { recursive: true });
+  const git = (...a) => execFileSync("git", a, { cwd: hookRepo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@example.com");
+  git("config", "user.name", "t");
+  git("config", "commit.gpgsign", "false");
+  writeFileSync(join(hookRepo, "tests", "a.test.mjs"), 'test("keeps", () => {});\n');
+  writeFileSync(join(hookRepo, "src.mjs"), "export const a = 1;\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "init");
+
+  git("rm", "-q", join("tests", "a.test.mjs"));
+  const del = fire(tests, { tool_name: "Bash", tool_input: { command: "git commit -m x" }, cwd: hookRepo }, hookRepo);
+  assert.match(JSON.parse(del.stdout).hookSpecificOutput.permissionDecisionReason, /deletes test file\(s\): tests\/a\.test\.mjs/);
+
+  git("reset", "-q", "--hard", "HEAD");
+  writeFileSync(join(hookRepo, "src.mjs"), "export const a = 2;\n");
+  git("add", "src.mjs");
+  const ok = fire(tests, { tool_name: "Bash", tool_input: { command: "git commit -m x" }, cwd: hookRepo }, hookRepo);
+  assert.equal(ok.stdout, "", "a commit that touches no test must pass");
 });

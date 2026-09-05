@@ -14,6 +14,7 @@
 //   unit            1-based unit index within this outcome
 //   maxUnits        launcher's cap, so Plan can size the remaining work
 //   runDir          scratch directory outside the repo (active-unit.md lives here)
+//   check           the repo's check command, rendered for `bash -c` (default scripts/check)
 //   checkVerified   true when the previous unit's Verify ran the full check and passed
 //   dryRun          stop after Reconcile
 export const meta = {
@@ -36,6 +37,9 @@ for (const k of ['repo', 'spec', 'branch', 'landingBranch', 'unit', 'runDir']) {
 const unit = Number(a.unit)
 const maxUnits = Number(a.maxUnits || 8)
 const activeUnit = `${a.runDir}/active-unit.md`
+// The check command comes from the repo's Nightwatch config, so a repo without
+// a `scripts/check` still has one command every phase names.
+const CHECK = a.check || 'scripts/check'
 // Every acceptance and check command is run through a log file the launcher owns,
 // so the morning reads the command's real output, not the agent's summary of it.
 const logDir = `${a.runDir}/u${unit}-logs`
@@ -92,7 +96,7 @@ const VERIFY = {
   properties: {
     results: { type: 'array', items: CMD },
     allPass: { type: 'boolean' },
-    checkOk: { type: 'boolean', description: 'scripts/check (or the repo equivalent) printed its success line' },
+    checkOk: { type: 'boolean', description: `${CHECK} printed its success line` },
     clean: { type: 'boolean', description: 'no uncommitted changes after the run' },
   },
   required: ['allPass', 'checkOk', 'clean'],
@@ -126,7 +130,7 @@ const finish = async (state, extra) => {
 // ---------- Reconcile ----------
 phase('Reconcile')
 const needCheck = unit === 1 || !a.checkVerified
-const recon0 = await agent(`${RULES}Reconcile the state of the outcome branch. Run: \`git status --porcelain\` (an untracked file that an acceptance command itself writes, such as a screenshot, is not dirt: delete it after the command and do not report it), \`git rev-parse --short HEAD\`, \`git log ${a.landingBranch}..HEAD --oneline --reverse\`. Read ${activeUnit} if it exists. Then run every command under the spec's Acceptance heading. ${RUNCMD('reconcile')}${needCheck ? 'Include the repo check command (scripts/check or whatever the spec names) in that run.' : 'Skip the repo check command (scripts/check) this time; the previous unit verified it. Run the outcome-specific commands only.'} allPass is true only when every acceptance command exited 0 AND printed what the spec says it should. Do not fix anything. Do not commit.`,
+const recon0 = await agent(`${RULES}Reconcile the state of the outcome branch. Run: \`git status --porcelain\` (an untracked file that an acceptance command itself writes, such as a screenshot, is not dirt: delete it after the command and do not report it), \`git rev-parse --short HEAD\`, \`git log ${a.landingBranch}..HEAD --oneline --reverse\`. Read ${activeUnit} if it exists. Then run every command under the spec's Acceptance heading. ${RUNCMD('reconcile')}${needCheck ? `Include the repo check command (\`${CHECK}\`) in that run.` : `Skip the repo check command (\`${CHECK}\`) this time; the previous unit verified it. Run the outcome-specific commands only.`} allPass is true only when every acceptance command exited 0 AND printed what the spec says it should. Do not fix anything. Do not commit.`,
   { label: `reconcile:u${unit}`, phase: 'Reconcile', schema: RECONCILE, model: 'sonnet', effort: 'low' })
 const recon = recon0 && { branchLog: [], activeUnit: '', checkRan: false, notes: '', ...recon0 }
 if (!recon) return await finish('FAILED', { summary: 'Reconcile agent returned nothing' })
@@ -163,7 +167,7 @@ const implPrompt = (extra) => `${RULES}Implement this unit on the current branch
 UNIT BRIEF:
 ${plan.brief}
 ${extra}
-Run the repo check (scripts/check, or what the spec names) before committing; commit only when it passes. Commit with \`git add <specific paths>\` then \`git commit -m "<what and why>"\`, never \`git commit -a\`. Several commits are fine. If you cannot finish, leave the tree clean (commit what is verified, or \`git stash\` nothing: revert unverified edits with \`git checkout -- <paths>\`) and report blocked with the reason. Return the commits you made.`
+Run the repo check (\`${CHECK}\`) before committing; commit only when it passes. Commit with \`git add <specific paths>\` then \`git commit -m "<what and why>"\`, never \`git commit -a\`. Several commits are fine. If you cannot finish, leave the tree clean (commit what is verified, or \`git stash\` nothing: revert unverified edits with \`git checkout -- <paths>\`) and report blocked with the reason. Return the commits you made.`
 let impl = await agent(implPrompt(''), { label: `implement:u${unit}`, phase: 'Implement', schema: IMPL, agentType: 'worker', effort: 'medium' })
 if (impl) impl = { blockedReason: '', ...impl, commits: impl.commits || [] }
 if (!impl) return await finish('FAILED', { unitTitle: plan.unitTitle, summary: 'Implement agent returned nothing' })
@@ -171,7 +175,7 @@ log(`Implement u${unit}: ${impl.status}, ${impl.commits.length} commit(s)`)
 if (impl.status === 'blocked') return await finish('BLOCKED', { unitTitle: plan.unitTitle, blockedReason: impl.blockedReason, summary: impl.summary, commits: impl.commits })
 
 // ---------- Verify (with one repair round) ----------
-const verifyPrompt = `${RULES}Verify the current state of the branch. Run \`git status --porcelain\` (clean means empty; an untracked file that an acceptance command itself writes, such as a screenshot, is not dirt: delete it after the command). Run the repo check command and then every command under the spec's Acceptance heading. ${RUNCMD('verify')}Report what happened; change nothing; commit nothing. allPass is true only when every command did what the spec says it should: exited 0 and printed the named output, or, for a command the spec says must fail, exited non-zero with the named message (that is a pass, report it as one with its real exit code). It is fine and expected for outcome-specific acceptance commands to still fail after an early unit; report it exactly.`
+const verifyPrompt = `${RULES}Verify the current state of the branch. Run \`git status --porcelain\` (clean means empty; an untracked file that an acceptance command itself writes, such as a screenshot, is not dirt: delete it after the command). Run the repo check command (\`${CHECK}\`) and then every command under the spec's Acceptance heading. ${RUNCMD('verify')}Report what happened; change nothing; commit nothing. allPass is true only when every command did what the spec says it should: exited 0 and printed the named output, or, for a command the spec says must fail, exited non-zero with the named message (that is a pass, report it as one with its real exit code). It is fine and expected for outcome-specific acceptance commands to still fail after an early unit; report it exactly.`
 phase('Verify')
 let verify = await agent(verifyPrompt, { label: `verify:u${unit}`, phase: 'Verify', schema: VERIFY, model: 'sonnet', effort: 'low' })
 if (!verify) return await finish('FAILED', { unitTitle: plan.unitTitle, summary: 'Verify agent returned nothing', commits: impl.commits })
