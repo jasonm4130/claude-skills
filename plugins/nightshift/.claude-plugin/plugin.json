@@ -1,7 +1,7 @@
 {
   "name": "nightshift",
   "description": "Plan by day, land by night, triage in the morning. `plan` turns an idea into a plan the loop can land unattended (self-contained `# Task N` sections, empty Open Questions, one Codex pass, opened as a PR). `init` scaffolds the overnight landing loop into the current repo — loop/land.sh, a quiet verifier, two PreToolUse guards the generator cannot loosen, a merge script that waits for CI and re-reads the kill switch — and proves it with a preflight and a dry run. `morning` reads the journal and the land:blocked PRs and says what needs a human. The loop itself is committed in your repo, not in this plugin: it runs `claude -p --setting-sources project`, where installed plugins never load. Nightwatch is the newer, spec-driven alternative: `nightwatch-init` sets a repo up end to end (clone, trust, check command, kill switch, a proving dry run), `nightwatch:spec` writes and lints one outcome's spec, `run.sh` walks it as headless units in a clone that never pushes, `nightwatch:watch` launches and steers the run, and `morning.mjs` reports the night and writes the PR body.",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "author": {
     "name": "Jason Matthew",
     "email": "jasonm4130@gmail.com"

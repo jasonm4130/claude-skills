@@ -131,7 +131,7 @@ const finish = async (state, extra) => {
 phase('Reconcile')
 const needCheck = unit === 1 || !a.checkVerified
 const recon0 = await agent(`${RULES}Reconcile the state of the outcome branch. Run: \`git status --porcelain\` (an untracked file that an acceptance command itself writes, such as a screenshot, is not dirt: delete it after the command and do not report it), \`git rev-parse --short HEAD\`, \`git log ${a.landingBranch}..HEAD --oneline --reverse\`. Read ${activeUnit} if it exists. Then run every command under the spec's Acceptance heading. ${RUNCMD('reconcile')}${needCheck ? `Include the repo check command (\`${CHECK}\`) in that run.` : `Skip the repo check command (\`${CHECK}\`) this time; the previous unit verified it. Run the outcome-specific commands only.`} allPass is true only when every acceptance command exited 0 AND printed what the spec says it should. Do not fix anything. Do not commit.`,
-  { label: `reconcile:u${unit}`, phase: 'Reconcile', schema: RECONCILE, model: 'sonnet', effort: 'low' })
+  { label: `reconcile:u${unit}`, phase: 'Reconcile', schema: RECONCILE, agentType: 'verifier', effort: 'low' })
 const recon = recon0 && { branchLog: [], activeUnit: '', checkRan: false, notes: '', ...recon0 }
 if (!recon) return await finish('FAILED', { summary: 'Reconcile agent returned nothing' })
 log(`Reconcile u${unit}: head ${recon.head}, ${recon.branchLog.length} commits on branch, acceptance ${recon.acceptance.filter(x => x.exit === 0).length}/${recon.acceptance.length} exit 0, allPass=${recon.allPass}`)
@@ -177,7 +177,7 @@ if (impl.status === 'blocked') return await finish('BLOCKED', { unitTitle: plan.
 // ---------- Verify (with one repair round) ----------
 const verifyPrompt = `${RULES}Verify the current state of the branch. Run \`git status --porcelain\` (clean means empty; an untracked file that an acceptance command itself writes, such as a screenshot, is not dirt: delete it after the command). Run the repo check command (\`${CHECK}\`) and then every command under the spec's Acceptance heading. ${RUNCMD('verify')}Report what happened; change nothing; commit nothing. allPass is true only when every command did what the spec says it should: exited 0 and printed the named output, or, for a command the spec says must fail, exited non-zero with the named message (that is a pass, report it as one with its real exit code). It is fine and expected for outcome-specific acceptance commands to still fail after an early unit; report it exactly.`
 phase('Verify')
-let verify = await agent(verifyPrompt, { label: `verify:u${unit}`, phase: 'Verify', schema: VERIFY, model: 'sonnet', effort: 'low' })
+let verify = await agent(verifyPrompt, { label: `verify:u${unit}`, phase: 'Verify', schema: VERIFY, agentType: 'verifier', effort: 'low' })
 if (!verify) return await finish('FAILED', { unitTitle: plan.unitTitle, summary: 'Verify agent returned nothing', commits: impl.commits })
 log(`Verify u${unit}: check ${verify.checkOk ? 'ok' : 'FAILED'}, clean=${verify.clean}, acceptance ${(verify.results || []).filter(x => x.exit === 0).length}/${verify.results.length} exit 0`)
 
@@ -189,7 +189,7 @@ if (!verify.checkOk || !verify.clean) {
   const repair = repair0 && { blockedReason: '', ...repair0, commits: repair0.commits || [] }
   if (repair) { impl = { ...repair, commits: [...impl.commits, ...repair.commits] } }
   phase('Verify')
-  verify = await agent(verifyPrompt, { label: `verify:u${unit}:after-repair`, phase: 'Verify', schema: VERIFY, model: 'sonnet', effort: 'low' })
+  verify = await agent(verifyPrompt, { label: `verify:u${unit}:after-repair`, phase: 'Verify', schema: VERIFY, agentType: 'verifier', effort: 'low' })
   if (!verify) return await finish('FAILED', { unitTitle: plan.unitTitle, summary: 'Verify agent returned nothing after repair', commits: impl.commits })
   log(`Verify u${unit} after repair: check ${verify.checkOk ? 'ok' : 'FAILED'}, clean=${verify.clean}`)
   if (!verify.checkOk || !verify.clean) {
@@ -221,7 +221,7 @@ if (evalResult.concerns.some(c => c.severity === 'high')) {
   if (repair && repair.status === 'done') {
     impl = { ...repair, commits: [...impl.commits, ...repair.commits], summary: `${impl.summary} Eval repair: ${repair.summary}` }
     phase('Verify')
-    const v2 = await agent(verifyPrompt, { label: `verify:u${unit}:after-eval-repair`, phase: 'Verify', schema: VERIFY, model: 'sonnet', effort: 'low' })
+    const v2 = await agent(verifyPrompt, { label: `verify:u${unit}:after-eval-repair`, phase: 'Verify', schema: VERIFY, agentType: 'verifier', effort: 'low' })
     if (v2) verify = v2
     phase('Eval')
     evalResult2 = await agent(`${RULES}You are re-evaluating one unit after a repair commit. These concerns were raised and a repair was attempted (commits: ${repair.commits.join('; ')}):\n${high}\n\nRead the repair diff and say, per concern, whether it is resolved. Report only concerns that remain, with severity high if a human must still look. Do not raise new style points.\n\nVERIFY RESULT:\n${JSON.stringify(verify)}`,

@@ -50,7 +50,11 @@ re-check before it lands anything — ends its output with `CHECK OK` as its
 last line; that's the one contract every consumer reads for. The two
 PreToolUse guards reach the headless child through `--settings` JSON built
 fresh by `run.sh`, not through the repo's `.claude/`, so a Nightwatch clone
-needs no scaffolding of its own the way the old loop does.
+needs no scaffolding of its own the way the old loop does. The two agents the
+engine dispatches, `worker` (Sonnet, medium effort, Implement and repair) and
+`verifier` (Sonnet, low effort, Reconcile and Verify, with Write and Edit
+disabled by the runtime), ship in this plugin's `agents/` and reach the child
+through `--agents` the same way, so a night resolves them on any machine.
 
 ```
 spec (Outcome/Acceptance/Non-goals/Context) → clone → units (Reconcile →
