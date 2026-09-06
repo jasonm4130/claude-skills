@@ -447,6 +447,10 @@ test("the hook files --print-settings names deny a force push and a test deletio
 
 // ---- Codex diff review round 1: four holes around the launcher's own check ----
 
+// The bound needs coreutils `timeout` (init's preflight requires it on a real machine); a bare macOS
+// runner has none, and the launcher then runs the check unbounded, as documented.
+const HAS_TIMEOUT = spawnSync("bash", ["-c", "command -v timeout"]).status === 0;
+
 test("a unit that rewrites the config's CHECK for the next run is FAILED, the config is restored, and the night ends", () => {
   const r = nightwatchRepo({ specs: { "01-a.md": spec("A"), "02-b.md": spec("B") } });
   const check = genCheck(join(r.root, "gen"), "check", "echo CHECK OK");
@@ -468,7 +472,7 @@ test("a unit that rewrites the config's CHECK for the next run is FAILED, the co
   assert.equal(readFileSync(join(stateDir, "config"), "utf8"), before);
 });
 
-test("the launcher's own check runs under UNIT_TIMEOUT, so a hanging check cannot hold the night", () => {
+test("the launcher's own check runs under UNIT_TIMEOUT, so a hanging check cannot hold the night", { skip: !HAS_TIMEOUT && "no coreutils timeout on PATH" }, () => {
   const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
   const check = genCheck(join(r.root, "gen"), "check", "sleep 30; echo CHECK OK");
   writeConfig(r.home, "r", { CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: check.path, CHECK_SHA: check.sha });
@@ -522,7 +526,7 @@ test("a background process the unit leaves behind dies with the unit, so it cann
   assert.equal(readFileSync(join(stateDir, "config"), "utf8"), before, "the orphan never got to write");
 });
 
-test("the launcher's own check is also bounded by the deadline, not only by UNIT_TIMEOUT", () => {
+test("the launcher's own check is also bounded by the deadline, not only by UNIT_TIMEOUT", { skip: !HAS_TIMEOUT && "no coreutils timeout on PATH" }, () => {
   const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
   const check = genCheck(join(r.root, "gen"), "check", "sleep 30; echo CHECK OK");
   writeConfig(r.home, "r", { CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: check.path, CHECK_SHA: check.sha });
