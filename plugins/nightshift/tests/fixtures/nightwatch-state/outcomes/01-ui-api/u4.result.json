@@ -1,0 +1,36 @@
+{
+  "state": "BLOCKED",
+  "unit": 4,
+  "unitTitle": "Unit 4 — delete a session, never a live one; writers take the lock",
+  "summary": "Stopped before the delete arm; the branch does not build green on CI.",
+  "blockedReason": "CI will fail on this branch: crate-ci/typos errors on `unparseable` at src/session.rs:1338. scripts/check deliberately does not run typos, so the local CHECK OK misses it.",
+  "commits": [],
+  "verify": {
+    "allPass": false,
+    "checkOk": true,
+    "clean": true,
+    "results": [
+      {
+        "command": "git status --porcelain",
+        "exit": 0,
+        "tail": "(empty output — clean)",
+        "log": "outcomes/01-ui-api/u4-logs/verify-1.log"
+      }
+    ]
+  },
+  "eval": {
+    "verdict": "concerns",
+    "concerns": [
+      {
+        "what": "CI will fail on this branch: crate-ci/typos errors on `unparseable` at src/session.rs:1338. Fix is a one-word doc-comment edit.",
+        "where": "src/session.rs:1338 (introduced in e8003cd); gate at .github/workflows/ci.yml:67",
+        "severity": "high"
+      },
+      {
+        "what": "CLI `delete` arm claims the transcription lock before checking the path is a session directory, so the error message is wrong. Message quality only.",
+        "where": "src/main.rs:183",
+        "severity": "low"
+      }
+    ]
+  }
+}

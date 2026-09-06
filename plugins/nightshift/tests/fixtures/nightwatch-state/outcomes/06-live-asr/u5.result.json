@@ -1,0 +1,38 @@
+{
+  "state": "PASS",
+  "unit": 5,
+  "unitTitle": "Unit 5 (final): follow-up facts, the two-tracks pointer, and scripts/check",
+  "summary": "Ran scripts/check first: last line CHECK OK.",
+  "blockedReason": "",
+  "commits": ["4597105 measurements: what a live pass must respect; two-tracks points at the verdict"],
+  "verify": {
+    "allPass": true,
+    "checkOk": true,
+    "clean": true,
+    "results": [
+      {
+        "command": "scripts/check",
+        "exit": 0,
+        "tail": "✓ cargo test --all-targets\nCHECK OK\nexit=0",
+        "log": "outcomes/06-live-asr/u5-logs/verify-1.log"
+      },
+      {
+        "command": "cargo test bench::",
+        "exit": 0,
+        "tail": "test result: ok. 8 passed; 0 failed\nexit=0",
+        "log": "outcomes/06-live-asr/u5-logs/verify-2.log"
+      },
+      {
+        "command": "cargo run --release --bin asrbench",
+        "exit": 0,
+        "tail": "blocks=11 audio_s=302.11 rtf=0.023\nexit=0",
+        "log": "outcomes/06-live-asr/u5-logs/verify-3.log"
+      }
+    ]
+  },
+  "eval": {
+    "verdict": "ok",
+    "concerns": []
+  },
+  "evalAfterRepair": null
+}

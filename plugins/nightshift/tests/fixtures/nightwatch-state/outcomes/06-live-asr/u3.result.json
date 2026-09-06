@@ -1,0 +1,24 @@
+{
+  "state": "CONTINUE",
+  "unit": 3,
+  "unitTitle": "drainbench waits for the decoder and counts its passes",
+  "summary": "Replaced the fixed 3 s sleep with an mpsc readiness channel.",
+  "blockedReason": "",
+  "commits": ["b1c2d3e drainbench: wait for the decoder rather than sleeping"],
+  "verify": {
+    "allPass": true,
+    "checkOk": true,
+    "clean": true,
+    "results": []
+  },
+  "eval": {
+    "verdict": "concerns",
+    "concerns": [
+      {
+        "what": "The readiness channel drops its sender on an early return, so a load failure surfaces as a closed channel rather than the error text.",
+        "where": "src/bin/drainbench.rs:61",
+        "severity": "low"
+      }
+    ]
+  }
+}

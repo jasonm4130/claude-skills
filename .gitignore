@@ -5,6 +5,9 @@ __pycache__/
 .env.*
 !.env.op
 *.log
+# ...except the Nightwatch morning's fixture: the logs ARE the test data (the
+# pull request body is built from the log files, not from any summary of them).
+!plugins/nightshift/tests/fixtures/**/*.log
 .DS_Store
 tmp/
 .worktrees/

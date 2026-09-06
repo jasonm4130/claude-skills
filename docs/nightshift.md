@@ -13,6 +13,22 @@ here and the repository's plan has no branch protection to lean on. In the
 morning you read a journal and a few merged pull requests, or one draft PR that
 says where it stopped.
 
+## Nightwatch, the newer spec-driven run
+
+A second, newer way to run the plugin: one outcome, one spec (Outcome /
+Acceptance / Non-goals / Context), no plan file. `nightwatch/run.sh` walks a
+queue of specs as headless `claude -p` units in a clone that never pushes,
+landing each pass onto one integration branch for a single morning PR;
+`nightwatch/lint-spec.mjs` catches a spec defect before it costs a night, and
+`nightwatch/morning.mjs` reads the result. Say "initialize nightwatch" to set
+a repo up end to end (clone, trust, check command, kill switch, a proving dry
+run) via the `nightwatch-init` skill. The full spec format, the launcher's
+env knobs, the control file, and the three skills (`nightwatch-init`,
+`nightwatch:spec`, `nightwatch:watch`) are in the plugin's own
+[README](https://github.com/jasonm4130/claude-skills/blob/main/plugins/nightshift/README.md#nightwatch).
+It will replace the task-per-PR loop documented below once this repo's
+existing loop worktrees are drained.
+
 ## What a night looks like
 
 1. `loop/land.sh` reads `loop/config` for the plan, checks the kill switch
