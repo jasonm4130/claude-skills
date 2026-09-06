@@ -13,7 +13,7 @@
 # SPECS, BASE, STATE_VAR, CHECK (the repo's check command, `scripts/check` or
 # an absolute path), CHECK_SHA (sha256 of a generated check; absent for a
 # repo-owned one). Precedence is env > argument > config. `--print-settings`
-# prints the two JSON documents the child gets — the `--settings` object on the
+# prints the three JSON documents the child gets — the `--settings` object on the
 # first line, the workflow `args` object (per-unit fields empty) on the second
 # — and exits without touching the clone or the lock.
 #
@@ -159,6 +159,12 @@ SETTINGS=$(jq -nc --arg base "$BASE" \
   '{env: {CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "0", BASE: $base},
     hooks: {PreToolUse: [{matcher: "Bash", hooks: [{type: "command", command: $g1}, {type: "command", command: $g2}]}]}}')
 
+# The plugin's agents (worker, verifier) reach the child through --agents, under their
+# bare names, so `agentType: 'worker'` in the engine resolves on any machine and the
+# verifier's Write/Edit refusal is enforced by the runtime rather than by a hook.
+agents_dir=$(cd "$here/../agents" && pwd -P) || { echo "STOP: cannot resolve $here/../agents" >&2; exit 1; }
+AGENTS=$(node "$here/agents-json.mjs" "$agents_dir") || { echo "STOP: agents-json.mjs failed on $agents_dir" >&2; exit 1; }
+
 args_json() { # args_json <spec> <branch> <slug> <unit> <max-units> <check-verified 0|1>
   jq -nc --arg repo "$CLONE" --arg spec "$1" --arg branch "$2" --arg landing "$LANDING" \
     --argjson unit "$4" --argjson max "$5" --arg runDir "$STATE/outcomes/$3" --arg check "$CHECK_CMD" \
@@ -169,6 +175,7 @@ args_json() { # args_json <spec> <branch> <slug> <unit> <max-units> <check-verif
 if [ "$print_settings" = 1 ]; then
   printf '%s\n' "$SETTINGS"
   args_json "" "" "" 0 "$MAX_UNITS" 0
+  printf '%s\n' "$AGENTS"
   exit 0
 fi
 
@@ -394,7 +401,7 @@ unit_run() { # unit_run <spec-path> <unit-index> <check-verified 0|1> → writes
   (env "${scrub[@]}" "${unsigned[@]}" "${noscrub[@]}" claude -p "$prompt" \
       --permission-mode auto --permission-prompts none --add-dir "$STATE" --add-dir "$SPECS" --add-dir "$here" \
       --allowedTools "Workflow,Agent,Read,Write,Edit,Bash,Glob,Grep,ToolSearch,Skill,WebFetch,WebSearch,StructuredOutput,advisor" \
-      --setting-sources "$SETTING_SOURCES" --settings "$SETTINGS" --no-session-persistence \
+      --setting-sources "$SETTING_SOURCES" --settings "$SETTINGS" --agents "$AGENTS" --no-session-persistence \
       --max-budget-usd "$UNIT_BUDGET" --model "$MAIN_MODEL" --output-format json --json-schema "$UNIT_SCHEMA" \
       </dev/null) >"$out" 2>"$RUN/$slug-u$n.stderr" &
   local pid=$! t0 ticks=0 killed=""

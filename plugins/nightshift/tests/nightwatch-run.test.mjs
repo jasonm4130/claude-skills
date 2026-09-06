@@ -44,8 +44,8 @@ function genCheck(dir, name, body) {
 function printSettings(r, name, { runSh = RUN_SH } = {}) {
   const out = runNightwatch(r, { positional: [name], args: ["--print-settings"], runSh, stateName: name });
   assert.equal(out.code, 0, out.stderr);
-  const [settingsLine, argsLine] = out.stdout.trim().split("\n");
-  return { settings: JSON.parse(settingsLine), args: JSON.parse(argsLine), out };
+  const [settingsLine, argsLine, agentsLine] = out.stdout.trim().split("\n");
+  return { settings: JSON.parse(settingsLine), args: JSON.parse(argsLine), agents: JSON.parse(agentsLine), out };
 }
 
 test("an unmet Depends waits: no branch, no unit, the queue moves on", () => {
@@ -568,4 +568,35 @@ test("a kept branch whose rebase conflicts is BLOCKED before any unit runs, and 
   assert.doesNotMatch(out.journal, /01-a u1:/);
   assert.ok(branches(r).includes(`nw/${date}/01-a`));
   assert.equal(r.git("rev-parse", "--abbrev-ref", "HEAD"), `nightwatch/${date}`);
+});
+
+// ---- the plugin's agents travel with the launcher --------------------------
+
+test("--print-settings ships worker and verifier through --agents, and the verifier cannot write", () => {
+  const r = nightwatchRepo({ specs: { "01-a.md": spec("A") } });
+  writeConfig(r.home, "r", { CLONE: r.clone, SPECS: r.specsDir, BASE: "main", CHECK: "/x/check" });
+
+  const { agents } = printSettings(r, "r");
+
+  assert.deepEqual(Object.keys(agents).sort(), ["verifier", "worker"]);
+  assert.equal(agents.worker.model, "sonnet");
+  assert.equal(agents.worker.effort, "medium");
+  assert.match(agents.worker.prompt, /STOP and report the conflict/);
+  assert.equal(agents.verifier.effort, "low");
+  assert.deepEqual(agents.verifier.disallowedTools, ["Write", "Edit", "NotebookEdit"]);
+  assert.doesNotMatch(agents.verifier.prompt, /<!--/, "HTML comments are stripped from the prompt");
+});
+
+test("the plugin's worker is the same text as the user-level worker, when one exists", { skip: !existsSync(join(process.env.HOME || "", ".claude", "agents", "worker.md")) && "no ~/.claude/agents/worker.md here" }, () => {
+  const strip = (t) => t.replace(/<!--[\s\S]*?-->/g, "").trim();
+  const plugin = strip(readFileSync(join(PLUGIN, "agents", "worker.md"), "utf8"));
+  const user = strip(readFileSync(join(process.env.HOME, ".claude", "agents", "worker.md"), "utf8"));
+  assert.equal(plugin, user);
+});
+
+test("the engine's Reconcile and Verify phases dispatch the verifier, and Implement the worker", () => {
+  const engine = readFileSync(join(PLUGIN, "nightwatch", "nightwatch.mjs"), "utf8");
+  assert.equal((engine.match(/agentType: 'verifier'/g) || []).length, 4);
+  assert.equal((engine.match(/agentType: 'worker'/g) || []).length, 3);
+  assert.doesNotMatch(engine, /schema: (VERIFY|RECONCILE), model:/);
 });
