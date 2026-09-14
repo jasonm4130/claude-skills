@@ -27,12 +27,10 @@ references one machine's paths, prose calibration, or state, it belongs in dotfi
 
 | Plugin | Description | Requirements | Install command |
 |---|---|---|---|
-| `adr` | Intent → grounded, cited, build-ready ADR, handed to Nightshift's landing step | – | `/plugin install adr@jasonm4130-claude-skills` |
 | `codex-review` | Cross-provider plan/design review via OpenAI Codex (Terra) | Node 18+ · [Codex CLI](https://github.com/openai/codex) | `/plugin install codex-review@jasonm4130-claude-skills` |
 | `domain-modeling` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms; offers one once per repo that lacks it | Node 18+ | `/plugin install domain-modeling@jasonm4130-claude-skills` |
-| `gates` | Four PreToolUse gates — docs-drift commit gate, scaffold-before-design gate, Workflow and Agent model tiering — plus a non-blocking docs-consolidation nudge | Node 18+ | `/plugin install gates@jasonm4130-claude-skills` |
+| `gates` | Four PreToolUse gates — docs-drift commit gate, LSP-first search gate, Workflow and Agent model tiering — a PostToolUse JSON-config guard, and a non-blocking docs-consolidation nudge. Any of them can be switched off with `GATES_DISABLE` | Node 18+ | `/plugin install gates@jasonm4130-claude-skills` |
 | `handoff` | On-demand `/handoff` resume doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
-| `nightshift` | Plan by day, land by night, triage in the morning — scaffolds the overnight landing loop (one task per CI-gated PR, guards the generator cannot loosen, kill switch) into a repo | `gh` · Node 18+ · `timeout` · macOS for launchd | `/plugin install nightshift@jasonm4130-claude-skills` |
 | `session-retro` | Session retrospectives that capture learnings to memory | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
 | `writing-artifacts` | Positive writing system for durable artifacts (READMEs, ADRs, docs, runbooks) | – | `/plugin install writing-artifacts@jasonm4130-claude-skills` |
@@ -60,6 +58,6 @@ MIT — see `LICENSE`.
 
 ## Acknowledgements
 
-The retired `codebase-design` plugin (removed 2026-08-26, see the table above) was adapted from Matt Pocock's [`skills`](https://github.com/mattpocock/skills) (MIT).
+The retired `codebase-design` plugin (removed 2026-08-26, see [Renamed and removed plugins](docs/migrations.md)) was adapted from Matt Pocock's [`skills`](https://github.com/mattpocock/skills) (MIT).
 
 The retired `adversarial-agents` plugin (removed 2026-08-03 after zero invocations in ten weeks — `codex-review` occupies the same niche cross-family) was prompted by Matt Pocock's [`grill-me`](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me), and drew its panel-of-personas + severity-promotion pattern from Alireza Rezvani's [adversarial-reviewer](https://github.com/alirezarezvani/claude-skills) and zscole's [adversarial-spec](https://github.com/zscole/adversarial-spec).

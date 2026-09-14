@@ -1,6 +1,6 @@
 ---
 name: domain-modeling
-description: Use when pinning down domain terminology, building a ubiquitous language or project glossary, disambiguating overloaded or vague terms, or maintaining a CONTEXT.md — or when another skill needs to sharpen the domain model. Do NOT use for recording architectural decisions (use adr) or for writing implementation specs.
+description: Use when pinning down domain terminology, building a ubiquitous language or project glossary, disambiguating overloaded or vague terms, or maintaining a CONTEXT.md — or when another skill needs to sharpen the domain model. Do NOT use for recording architectural decisions or for writing implementation specs.
 ---
 
 # Domain Modeling
@@ -9,7 +9,7 @@ Actively build and sharpen the project's domain model as you design — the *act
 
 **Why it pays off:** an opinionated `CONTEXT.md` is a persistent, shared language. Once the domain has canonical names, variables/functions/files get named consistently, the codebase is easier for an agent to navigate, and the agent spends fewer tokens on thinking because it has a more concise language. The cost is one glossary entry; the payoff compounds every session.
 
-*Adapted from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT) — the `domain-modeling` skill, with ADR-recording delegated to this repo's `adr` skill.*
+*Adapted from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT) — the `domain-modeling` skill, with its ADR format left out.*
 
 ## File structure
 
@@ -27,7 +27,7 @@ Create files **lazily** — only when you have something to write. If no `CONTEX
 
 **Wire it in for future sessions.** The payoff — consistent naming and fewer tokens *every* session — only lands if `CONTEXT.md` is loaded when future sessions start, not just when this skill fires. When you create `CONTEXT.md` (or update one and notice it is unreferenced), check the repo's `CLAUDE.md`: if it does not reference `CONTEXT.md`, **ask the user once** whether to wire it in — `@CONTEXT.md` for a small glossary, or a "consult `CONTEXT.md` for domain terms" line for a larger one — and add it on yes (don't re-ask on no). If there is no `CLAUDE.md` at all, mention the option rather than creating one uninvited.
 
-**Decisions are not vocabulary.** When a hard-to-reverse, non-obvious trade-off surfaces (not a term), record it as an ADR — use this repo's `adr` skill, which owns the ADR format (`docs/adr/YYYY-MM-DD-<slug>.md`). Do not invent a second ADR convention here.
+**Decisions are not vocabulary.** When a hard-to-reverse, non-obvious trade-off surfaces (not a term), record it as an ADR under `docs/adr/YYYY-MM-DD-<slug>.md`. Do not invent a second convention here.
 
 ## During the session
 
@@ -59,6 +59,6 @@ When a term is resolved, update `CONTEXT.md` right there — don't batch these u
 
 ## Relationship to other skills
 
-- **Decisions, not terms → `adr`.** A load-bearing, hard-to-reverse trade-off is an ADR, not a glossary entry.
+- **Decisions, not terms.** A load-bearing, hard-to-reverse trade-off is an ADR, not a glossary entry.
 - **Exploring intent → `brainstorming`.** A grilling/brainstorming session is where terms surface; this skill is what captures them.
 - **Not architecture vocabulary.** Module, interface, and seam are architecture language; `CONTEXT.md` is domain language. Keep them distinct.

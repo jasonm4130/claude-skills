@@ -68,6 +68,34 @@ export function emitPermissionDecision(decision, reason) {
   process.stdout.write(JSON.stringify(payload) + "\n");
 }
 
+/**
+ * Is this guard named in GATES_DISABLE?
+ *
+ *   "env": { "GATES_DISABLE": "lsp-first,docs-sync" }
+ *
+ * A Claude Code settings.json `env` block reaches hook subprocesses, so one
+ * variable turns a guard off for a single project or for every session, with no
+ * config file to find, parse or fail on. Same shape as
+ * resolveConsolidateThreshold below, and `go/config.go` reads the same variable
+ * the same way.
+ *
+ * Both sides are load-bearing. The binary exits 0 when a guard is disabled, so
+ * `|| node` never fires on a machine that runs it — and fires on every machine
+ * that does not. docs-sync and docs-consolidate have no binary path at all.
+ *
+ * Matching is exact. An unrecognised name disables nothing and says nothing,
+ * which is the same fail-open posture the guards themselves hold.
+ *
+ * @param {string} name
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {boolean}
+ */
+export function isGuardDisabled(name, env = process.env) {
+  const raw = env.GATES_DISABLE;
+  if (typeof raw !== "string") return false;
+  return raw.split(",").some((field) => field.trim() === name);
+}
+
 // ---------------------------------------------------------------------------
 // Consolidation trigger (v0.3.0) — the non-blocking half of this plugin.
 //
@@ -81,6 +109,39 @@ export function emitPermissionDecision(decision, reason) {
 // what removes shallow-clone special-casing entirely: both shallow variants land on
 // the missing-object / not-an-ancestor paths, which are already silent.
 // ---------------------------------------------------------------------------
+
+/**
+ * The preamble both consolidation hooks share: drain stdin, honour GATES_DISABLE,
+ * refuse a payload that cannot name its own repo, and resolve the repo root.
+ *
+ * Returns null on every one of those, and the caller exits 0. Anomalies are silent
+ * here by design — see the consolidation-trigger banner below.
+ *
+ * A payload that does not parse is "cannot tell". Falling through to process.cwd()
+ * made a malformed call speak for whatever repo the hook happened to be spawned in,
+ * under session id "unknown" — invisible until that repo crossed the drift
+ * threshold, at which point the pair of hooks armed and then consumed a flag
+ * nobody's session owned. An array passes safeJsonParse (it is an object), so the
+ * shape is checked, not just null: stdin of `[]` would otherwise take the same
+ * ambient path.
+ *
+ * GATES_DISABLE is checked after the drain, not before, so a disabled hook still
+ * empties the pipe. `go/main.go` orders it the same way for the same reason.
+ *
+ * @param {string} guardName
+ * @returns {Promise<{ payload: Record<string, any>, repoRoot: string } | null>}
+ */
+export async function readRepoScopedPayload(guardName) {
+  const raw = await readStdin();
+  if (isGuardDisabled(guardName)) return null;
+  const payload = safeJsonParse(raw);
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const cwd =
+    typeof payload.cwd === "string" && payload.cwd.length > 0 ? payload.cwd : process.cwd();
+  const repoRoot = gitRepoRoot(cwd);
+  if (repoRoot === null) return null;
+  return { payload, repoRoot };
+}
 
 /** Repo-relative path of the consolidation record. */
 export const RECORD_REL = ".docs-sync";

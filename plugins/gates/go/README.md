@@ -1,15 +1,14 @@
 # ccguard — compiled hook guards
 
-One Go binary implementing five of this repo's hook guards, committed into the
-plugins that consume them.
+One Go binary implementing four of the `gates` plugin's hook guards, committed
+into the plugin.
 
 ```
 ccguard <subcommand> [fallback.mjs]
 
-ccguard design-gate        # gates — PreToolUse, matcher Bash
 ccguard agent-model        # gates — PreToolUse, matcher Agent
 ccguard workflow-model     # gates — PreToolUse, matcher Workflow
-ccguard lsp-first          # gates — PreToolUse, matcher Bash|Grep
+ccguard lsp-first          # gates — PreToolUse, matcher Bash
 ccguard json-config-guard  # gates — PostToolUse, matcher Edit|Write|MultiEdit|Bash
 ```
 
@@ -19,8 +18,8 @@ binary cannot decide it itself — see [Equivalence](#equivalence-with-the-mjs-g
 ## Why compile these
 
 A hook is spawned per matching tool call, so what costs is process start, not the
-work. Measured on an M-series Mac, median of 20 runs, real payloads: `design-gate`
-36.1 ms under node against 2.9 ms compiled; `agent-model` 35.7 ms against 3.1 ms. A
+work. Measured on an M-series Mac, median of 20 runs, real payloads: `agent-model`
+35.7 ms under node against 3.1 ms compiled. A
 bare `node -e ""` cold start alone is 24.9 ms, so ~78% of what the JS guards cost
 was paying for the interpreter rather than doing the work.
 
@@ -110,30 +109,14 @@ line, not a licensed divergence.
 
 `scripts/ccguard-differential.test.mjs` runs both implementations over the same
 inputs and compares stdout byte-for-byte plus exit status — every case the JS
-suites assert on, every malformed-payload shape, and 400 seeded-fuzz shell commands.
-That matters because three things had to be rewritten rather than transcribed:
-
-- **No lookaround.** RE2 has none, same constraint as `regex-lite`.
-  `^npm\s+init\s+(?!-)[@\w]` → `^npm\s+init\s+[@\w]` (redundant; `[@\w]` cannot
-  match `-`). `^dotnet\s+new\s+(?!-)` → `^dotnet\s+new\s+[^-]` (load-bearing — it
-  separates `dotnet new console` from `dotnet new --list`); the rewrite consumes
-  the character the lookahead only peeked at, so the two differ solely on a head
-  ending in whitespace, which cannot occur since heads are built by joining tokens
-  with single spaces.
+suites assert on and every malformed-payload shape. That matters because of one
+thing that had to be rewritten rather than transcribed:
 
 - **`\s` is ASCII-only in Go, exactly as in `regex-lite`.** Go's `\s` is the Perl
   class `[\t\n\f\r ]`; JS `\s` also matches U+00A0, U+FEFF and the Unicode space
   separators. The hand-spelled JS whitespace set (`jsregex.go`) is therefore still
   required — this is the bug that once let fan-out scripts through when `agent (`
   carried a U+00A0, and moving to Go does **not** fix it.
-
-- **`(?i)` folds over Unicode in Go, and this is a hazard Rust did not have.**
-  `regex-lite`'s case-insensitivity is ASCII-only; Go's is not, so `(?i)k` matches
-  U+212A KELVIN SIGN and `(?i)s` matches U+017F LATIN SMALL LETTER LONG S — neither
-  of which a JS regex without the `u` flag matches. Left alone, `Kargo new x` would
-  gate in Go and not in node. `(?i)` is replaced throughout by a per-letter `[aA]`
-  expansion (`asciiFold` in `jsregex.go`), pinned by
-  `TestASCIIFoldDoesNotMatchUnicodeCaseEquivalents`.
 
 `\w` and `\b` are left as-is: ASCII in both engines, matching JS.
 

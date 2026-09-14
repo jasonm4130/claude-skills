@@ -115,7 +115,7 @@ for (const file of skillFiles()) {
 
 test("the scan finds the known cached-path resolvers", () => {
   const files = filesWithRefs.map((f) => f.file);
-  // No shipped skill resolves a cached path today; nightshift's skills use ${CLAUDE_PLUGIN_ROOT}. Add entries here when one does.
+  // No shipped skill resolves a cached path today — every one of them uses ${CLAUDE_PLUGIN_ROOT}. Add entries here when one does.
   for (const expected of []) {
     assert.ok(
       files.includes(expected),

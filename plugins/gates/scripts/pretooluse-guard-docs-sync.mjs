@@ -32,7 +32,7 @@ import process from "node:process";
 import path from "node:path";
 import { realpathSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { readStdin, safeJsonParse, emitPermissionDecision } from "./lib.mjs";
+import { readStdin, safeJsonParse, emitPermissionDecision, isGuardDisabled } from "./lib.mjs";
 
 /**
  * @typedef {object} PreToolUseInput
@@ -256,6 +256,7 @@ function pathsFromGitAdd(command) {
 }
 
 const raw = await readStdin();
+if (isGuardDisabled("docs-sync")) process.exit(0);
 const payload = /** @type {PreToolUseInput | null} */ (safeJsonParse(raw));
 
 if (!payload || payload.tool_name !== "Bash") process.exit(0);
