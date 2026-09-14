@@ -37,10 +37,6 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
  * @type {Record<string, [string, string]>}
  */
 const IMPLS = {
-  "design-gate": [
-    join(root, "plugins/gates/bin/ccguard"),
-    join(root, "plugins/gates/scripts/pretooluse-guard-design-gate.mjs"),
-  ],
   "agent-model": [
     join(root, "plugins/gates/bin/ccguard"),
     join(root, "plugins/gates/scripts/pretooluse-guard-agent-model.mjs"),
@@ -69,8 +65,13 @@ function runnable(bin) {
  * @param {string} stdin
  * @param {NodeJS.ProcessEnv} [env]
  */
+const BASE_ENV = (() => {
+  const { GATES_DISABLE, ...rest } = process.env;
+  return rest;
+})();
+
 function run(cmd, args, stdin, env) {
-  const res = spawnSync(cmd, args, { input: stdin, encoding: "utf8", ...(env ? { env } : {}) });
+  const res = spawnSync(cmd, args, { input: stdin, encoding: "utf8", env: env ?? BASE_ENV });
   return { status: res.status, stdout: res.stdout ?? "" };
 }
 
@@ -120,94 +121,6 @@ const bash = (command) => JSON.stringify({ tool_name: "Bash", tool_input: { comm
 // Corpus 1 — transcribed from the existing JS test suites.
 // ---------------------------------------------------------------------------
 
-const SCAFFOLDS = [
-  "npm create vite@latest my-app",
-  "npm create vite",
-  "npm create svelte@latest",
-  "pnpm create vite",
-  "yarn create next-app",
-  "bun create next my-app",
-  "npx create-next-app@latest .",
-  "npx create-react-app my-app",
-  "npx create-vite my-app",
-  "pnpm dlx create-next-app",
-  "bunx create-astro",
-  "npx @scope/create-thing my-app",
-  "create-react-app my-app",
-  "npm init vite@latest",
-  "npm init @scope/create-thing",
-  "cargo new my_crate",
-  "cargo init",
-  "cargo init --lib",
-  "django-admin startproject mysite",
-  "django-admin startapp blog",
-  "rails new blog",
-  "ng new my-app",
-  "nest new project",
-  "vue create hello-world",
-  "expo init MyApp",
-  "flutter create myapp",
-  "dotnet new webapi -o Api",
-  "dotnet new console",
-  "mix new my_app",
-  "mix phx.new my_app",
-  "laravel new blog",
-  "composer create-project laravel/laravel blog",
-  "gatsby new my-site",
-  "hugo new site quickstart",
-  "jekyll new my-blog",
-  "FOO=bar npm create vite@latest app",
-  "sudo NODE_ENV=production npm create vite app",
-  "mkdir app && cd app && npm create vite@latest .",
-  "npx --yes create-vite@latest app",
-  "npx -y create-next-app my-app",
-  "pnpm dlx --package=x create-astro",
-  'FOO="not # a shell comment" npm create vite@latest app',
-  'echo "path\\\\"; npm create vite',
-  "cat <<EOF\nhello world\nEOF\nnpm create vite@latest app",
-];
-
-const BENIGN = [
-  "npm install",
-  "npm i react",
-  "npm ci",
-  "npm run dev",
-  "npm run build",
-  "npm test",
-  "npm init -y",
-  "npm init",
-  "npx vitest run",
-  "npx tsc --noEmit",
-  "npx prettier --write .",
-  "cargo build",
-  "cargo test",
-  "cargo run",
-  "git init",
-  "git status",
-  "docker create nginx",
-  "createdb mydb",
-  "createuser bob",
-  "dotnet new --list",
-  "dotnet build",
-  "node --test",
-  "mkdir new-project && cd new-project",
-  "cd frontend && npm run dev",
-  "ls -la",
-  'git commit -m "add create-react-app onboarding docs"',
-  'echo "run npm create vite to start"',
-  'printf "First run: npm create vite@latest\\n" >> README.md',
-  'printf "%s\\n" "npm install && npm create vite" >> README.md',
-  'echo "step 1 && npm create vite@latest ." >> NOTES.md',
-  'echo "quoted \\"; npm create vite"',
-  "cat <<'EOF'\nnpm create vite\nEOF\n",
-  "cat <<EOF > README.md\nRun: npm create vite@latest .\nEOF",
-  "cat <<-EOF\n\tnpm create vite\n\tEOF",
-  "npm create vite@latest my-app # design-gate:ack",
-  "cd app && npm create vite  # design-gate:ack",
-  "",
-];
-
-/** Malformed / edge payloads that must degrade identically. */
 const RAW_PAYLOADS = [
   "not json at all",
   "",
@@ -223,84 +136,9 @@ const RAW_PAYLOADS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Corpus 2 — seeded fuzz.
-// ---------------------------------------------------------------------------
-
-/**
- * Deterministic PRNG (mulberry32) so a failure is reproducible from the seed
- * printed in the assertion message. `Math.random` would make a divergence
- * un-rerunnable, which is the one thing a fuzz corpus must not be.
- * @param {number} seed
- */
-function rng(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const FRAGMENTS = [
-  "npm create vite",
-  "cargo new x",
-  "create-next-app",
-  "dotnet new console",
-  "ls",
-  "echo hi",
-  "git commit",
-  "sudo",
-  "FOO=bar",
-  "BAZ=",
-  "#",
-  "# comment",
-  '"',
-  "'",
-  "\\",
-  '\\"',
-  "&&",
-  "||",
-  ";",
-  "|",
-  "\n",
-  "\t",
-  "  ",
-  "<<EOF",
-  "<<-EOF",
-  "<<'EOF'",
-  'EOF',
-  ">> file.md",
-  "$((1<<2))",
-  "…",
-  "😀",
-  "café",
-  "-y",
-  "--package=x",
-  "@scope/create-thing",
-  "phx.new",
-];
-
-/**
- * Build a random command by concatenating fragments with random spacing.
- * @param {() => number} rand
- */
-function fuzzCommand(rand) {
-  const n = 1 + Math.floor(rand() * 8);
-  let out = "";
-  for (let i = 0; i < n; i++) {
-    out += FRAGMENTS[Math.floor(rand() * FRAGMENTS.length)];
-    out += rand() < 0.7 ? " " : "";
-  }
-  return out;
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-const haveDesignGate = runnable(IMPLS["design-gate"][0]);
 const haveWorkflow = runnable(IMPLS["agent-model"][0]);
 
 const skipMsg =
@@ -374,7 +212,7 @@ test(
 
 test(
   "the committed binary covers both macOS architectures",
-  { skip: haveDesignGate ? false : skipMsg },
+  { skip: haveWorkflow ? false : skipMsg },
   () => {
     // Shipping arm64 only means every Intel-Mac installer silently falls through to
     // the `|| node` fallback in hooks.json and pays ~21ms of interpreter start per
@@ -389,26 +227,6 @@ test(
     }
   },
 );
-
-test("design-gate: agrees on every scaffold the JS suite asserts", { skip: haveDesignGate ? false : skipMsg }, () => {
-  for (const cmd of SCAFFOLDS) assertAgrees("design-gate", bash(cmd), cmd);
-});
-
-test("design-gate: agrees on every benign command the JS suite asserts", { skip: haveDesignGate ? false : skipMsg }, () => {
-  for (const cmd of BENIGN) assertAgrees("design-gate", bash(cmd), cmd);
-});
-
-test("design-gate: agrees on malformed and edge payloads", { skip: haveDesignGate ? false : skipMsg }, () => {
-  for (const raw of RAW_PAYLOADS) assertAgrees("design-gate", raw, raw.slice(0, 60));
-});
-
-test("design-gate: agrees across 400 fuzzed commands", { skip: haveDesignGate ? false : skipMsg }, () => {
-  const rand = rng(0xc0ffee);
-  for (let i = 0; i < 400; i++) {
-    const cmd = fuzzCommand(rand);
-    assertAgrees("design-gate", bash(cmd), `fuzz#${i} seed=0xc0ffee`);
-  }
-});
 
 test("agent-model: agrees on dispatch shapes", { skip: haveWorkflow ? false : skipMsg }, () => {
   const cases = [
@@ -496,27 +314,30 @@ test("workflow-model: agrees on script shapes", { skip: haveWorkflow ? false : s
  */
 const LONE_SURROGATE = "\ud800";
 
-test("lone surrogates in the payload do not silently bypass any guard", { skip: haveDesignGate && haveWorkflow ? false : skipMsg }, () => {
+test("lone surrogates in the payload do not silently bypass any guard", { skip: haveWorkflow ? false : skipMsg }, () => {
   // The bug: `serde_json` rejects a lone surrogate, the binary treated that as
   // "malformed, nothing to do" and exited 0, and because the hook is
   // `ccguard || node` a zero exit means node never ran. A single unpaired
-  // surrogate anywhere in the command switched the design gate off.
+  // surrogate anywhere in the command switched the guard off. The gate it was
+  // found on was design-gate, now retired; the property is not specific to it.
   const scaffold = `npm create vite ${LONE_SURROGATE}`;
-  assertAgrees("design-gate", bash(scaffold), "scaffold + lone surrogate");
 
-  // Same payload shape against the other two subcommands: node ignores a Bash
-  // payload, so the binary must either ignore it too or decline — never invent a
-  // decision.
+  // node ignores a Bash payload, so the binary must either ignore it too or
+  // decline — never invent a decision.
   assertAgrees("agent-model", bash(scaffold), "scaffold + lone surrogate");
   assertAgrees("workflow-model", bash(scaffold), "scaffold + lone surrogate");
 
-  // The sharp end, asserted directly: node gates this scaffold, so anything that
-  // leaves stdout empty is a silent bypass of the design gate.
-  const [bin, mjs] = IMPLS["design-gate"];
-  const js = run("node", [mjs], bash(scaffold));
-  assert.notEqual(js.stdout, "", "precondition: node must gate this scaffold");
+  // The sharp end, asserted directly: node denies this fan-out, so anything that
+  // leaves stdout empty is a silent bypass of the guard.
+  const fanOut = JSON.stringify({
+    tool_name: "Workflow",
+    tool_input: { script: `phase("${LONE_SURROGATE}"); await parallel(items.map(i => () => agent("do " + i)))` },
+  });
+  const [bin, mjs] = IMPLS["workflow-model"];
+  const js = run("node", [mjs], fanOut);
+  assert.notEqual(js.stdout, "", "precondition: node must deny this fan-out");
   assert.equal(
-    run(bin, ["design-gate", mjs], bash(scaffold)).stdout,
+    run(bin, ["workflow-model", mjs], fanOut).stdout,
     js.stdout,
     "the production-wired binary must reproduce node's decision on a payload it cannot parse itself",
   );
@@ -524,11 +345,11 @@ test("lone surrogates in the payload do not silently bypass any guard", { skip: 
   // And the trap that shaped the fix, pinned so nobody "simplifies" the argv
   // away: with only the `||` in hooks.json to fall back on, the binary has
   // already drained stdin by the time it declines, the shell cannot rewind a
-  // pipe, and node reads zero bytes. The gate goes quiet.
+  // pipe, and node reads zero bytes. The guard goes quiet.
   const viaShellOnly = spawnSync(
     "sh",
-    ["-c", `${JSON.stringify(bin)} design-gate || node ${JSON.stringify(mjs)}`],
-    { input: bash(scaffold), encoding: "utf8" },
+    ["-c", `${JSON.stringify(bin)} workflow-model || node ${JSON.stringify(mjs)}`],
+    { input: fanOut, encoding: "utf8" },
   );
   assert.equal(
     viaShellOnly.stdout,
@@ -539,7 +360,7 @@ test("lone surrogates in the payload do not silently bypass any guard", { skip: 
 
   // Surrogates in fields the guards read but do not gate on, to check the
   // decline path is not swallowing decidable payloads wholesale.
-  assertAgrees("design-gate", bash(`ls ${LONE_SURROGATE}`), "benign + lone surrogate");
+  assertAgrees("workflow-model", bash(`ls ${LONE_SURROGATE}`), "benign + lone surrogate");
   assertAgrees(
     "agent-model",
     JSON.stringify({ tool_name: "Agent", tool_input: { prompt: LONE_SURROGATE, model: "sonnet" } }),
@@ -592,7 +413,7 @@ test("agent-model resolves user agent definitions with HOME unset", { skip: have
   // gave up, so it never saw `~/.claude/agents/*.md` and denied dispatches that
   // node allows on the strength of a pinned frontmatter model. Fails closed, so
   // it is friction rather than a hole — but it is still a divergence.
-  const noHome = { ...process.env };
+  const noHome = { ...BASE_ENV };
   delete noHome.HOME;
 
   const cases = [
@@ -611,7 +432,6 @@ test("GATES_DISABLE: both implementations go silent on the same guard", { skip: 
   // binary and the .mjs reference each answer on different machines. Two copies
   // of a parser is exactly the shape this corpus exists to police.
   const PAYLOADS = {
-    "design-gate": bash("npm create vite@latest my-app"),
     "agent-model": JSON.stringify({ tool_name: "Agent", tool_input: { prompt: "x" } }),
     "workflow-model": JSON.stringify({
       tool_name: "Workflow",
@@ -623,19 +443,19 @@ test("GATES_DISABLE: both implementations go silent on the same guard", { skip: 
     // Baseline: with nothing disabled this payload must actually trigger,
     // otherwise every assertion below holds for the wrong reason.
     const [bin, mjs] = IMPLS[sub];
-    const live = run(bin, [sub, mjs], payload, process.env);
+    const live = run(bin, [sub, mjs], payload, BASE_ENV);
     assert.notEqual(live.stdout.trim(), "", `${sub}: baseline payload no longer triggers`);
 
     for (const raw of [sub, `${sub},docs-sync`, ` ${sub} `, `docs-sync,${sub}`]) {
       assertAgrees(sub, payload, `disabled via ${JSON.stringify(raw)}`, {
-        env: { ...process.env, GATES_DISABLE: raw },
+        env: { ...BASE_ENV, GATES_DISABLE: raw },
       });
     }
 
     // Names that must NOT match: near-misses, wrong case, another guard.
     for (const raw of ["", "docs-sync", `${sub}-extra`, sub.toUpperCase(), sub.replace(/-/g, "_")]) {
       assertAgrees(sub, payload, `still live under ${JSON.stringify(raw)}`, {
-        env: { ...process.env, GATES_DISABLE: raw },
+        env: { ...BASE_ENV, GATES_DISABLE: raw },
       });
     }
   }

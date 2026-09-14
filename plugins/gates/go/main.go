@@ -8,7 +8,6 @@
 //
 // Dispatch is by argv[1] so a single binary replaces several hooks:
 //
-//	ccguard design-gate       PreToolUse   Bash
 //	ccguard agent-model       PreToolUse   Agent
 //	ccguard workflow-model    PreToolUse   Workflow
 //	ccguard lsp-first         PreToolUse   Grep
@@ -41,7 +40,7 @@ import (
 	"os"
 )
 
-const usage = "usage: ccguard <design-gate|agent-model|workflow-model|lsp-first|json-config-guard> [fallback.mjs]"
+const usage = "usage: ccguard <agent-model|workflow-model|lsp-first|json-config-guard> [fallback.mjs]"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -81,7 +80,7 @@ func main() {
 		lspFirst(raw)
 	case "json-config-guard":
 		jsonConfigGuard(raw)
-	case "design-gate", "agent-model", "workflow-model":
+	case "agent-model", "workflow-model":
 		p, why := parsePayload(raw)
 		if why == readUnparseable {
 			// Nothing has been written yet, so handing this over is safe.
@@ -89,8 +88,6 @@ func main() {
 		}
 		var out outcome
 		switch sub {
-		case "design-gate":
-			out = designGate(p, why)
 		case "agent-model":
 			out = agentModel(p, why)
 		case "workflow-model":

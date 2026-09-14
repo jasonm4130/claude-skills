@@ -27,12 +27,20 @@ const script = (name) => fileURLToPath(new URL(`../scripts/${name}`, import.meta
  * @param {object | string} input
  * @param {Record<string, string>} [extraEnv]
  */
+// The suite must not inherit GATES_DISABLE. A developer who has turned a guard off
+// in their own settings.json would otherwise watch that guard's tests pass because
+// it never ran, which is the one failure this whole feature can cause.
+const BASE_ENV = (() => {
+  const { GATES_DISABLE, ...rest } = process.env;
+  return rest;
+})();
+
 function run(name, input, extraEnv = {}) {
   const stdin = typeof input === "string" ? input : JSON.stringify(input);
   const res = spawnSync("node", [script(name)], {
     input: stdin,
     encoding: "utf8",
-    env: { ...process.env, ...extraEnv },
+    env: { ...BASE_ENV, ...extraEnv },
   });
   return { status: res.status, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
 }
@@ -49,9 +57,9 @@ test("isGuardDisabled parses the list the same way the binary does", () => {
   assert.equal(isGuardDisabled("lsp-first", {}), false);
   assert.equal(on(""), false);
   assert.equal(on("lsp-first"), true);
-  assert.equal(on("design-gate,lsp-first"), true);
-  assert.equal(on(" design-gate , lsp-first "), true);
-  assert.equal(on("design-gate,agent-model"), false);
+  assert.equal(on("agent-model,lsp-first"), true);
+  assert.equal(on(" agent-model , lsp-first "), true);
+  assert.equal(on("agent-model,workflow-model"), false);
   assert.equal(on("LSP-FIRST"), false);
   assert.equal(on("lsp_first"), false);
   assert.equal(on("lsp-first-extra"), false);
@@ -62,11 +70,6 @@ test("isGuardDisabled parses the list the same way the binary does", () => {
 // ---- guards that write a decision to stdout ----
 
 const STDOUT_GUARDS = [
-  {
-    guard: "design-gate",
-    file: "pretooluse-guard-design-gate.mjs",
-    payload: { tool_name: "Bash", tool_input: { command: "npm create vite@latest my-app" } },
-  },
   {
     guard: "agent-model",
     file: "pretooluse-guard-agent-model.mjs",

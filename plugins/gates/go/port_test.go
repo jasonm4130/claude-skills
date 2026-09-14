@@ -5,63 +5,6 @@ import (
 	"testing"
 )
 
-func TestPatternsAllCompile(t *testing.T) {
-	if got, want := len(compilePatterns()), len(scaffoldPatternSources); got != want {
-		t.Fatalf("compiled %d of %d scaffold patterns", got, want)
-	}
-}
-
-// The `(?!-)` → `[^-]` rewrite is equivalence-preserving only because a head can
-// never end in whitespace. Heads come from joining tokens with single spaces,
-// and the tokenizer never emits a trailing empty token.
-func TestDotnetTrailingWhitespaceIsUnreachable(t *testing.T) {
-	for _, cmd := range []string{"dotnet new ", "dotnet new\t", "dotnet new  \n"} {
-		for _, tokens := range parseSegments(cmd) {
-			head := strings.Join(tokens, " ")
-			if head != strings.TrimRight(head, " \t\r\n") {
-				t.Fatalf("head ended in whitespace: %q", head)
-			}
-		}
-	}
-}
-
-func TestIsScaffold(t *testing.T) {
-	pats := compilePatterns()
-	yes := []string{
-		"npm create vite", "cargo new myproj", "create-next-app my-app",
-		"npx --yes create-vite", "dotnet new console", "hugo new site blog",
-		"NPM CREATE VITE", "FOO=bar sudo npm create vite",
-		"mkdir app && cd app && npm create vite",
-	}
-	for _, c := range yes {
-		if !isScaffold(c, pats) {
-			t.Errorf("expected scaffold: %q", c)
-		}
-	}
-	no := []string{
-		"ls -la", "npm install", "npm init -y", "dotnet new --list",
-		"docker create foo", "createdb mydb", "FOO=bar sudo ls",
-		`git commit -m "npm create vite"`, "echo 'cargo new x'",
-		"cat <<EOF\nnpm create vite\nEOF",
-	}
-	for _, c := range no {
-		if isScaffold(c, pats) {
-			t.Errorf("unexpected scaffold: %q", c)
-		}
-	}
-}
-
-// Go's (?i) folds over Unicode; a JS regex without the `u` flag does not. The
-// KELVIN SIGN and LATIN SMALL LETTER LONG S are the reachable cases.
-func TestASCIIFoldDoesNotMatchUnicodeCaseEquivalents(t *testing.T) {
-	pats := compilePatterns()
-	for _, c := range []string{"cargo neſ x", "Kargo new x"} {
-		if isScaffold(c, pats) {
-			t.Errorf("Unicode case folding leaked: %q", c)
-		}
-	}
-}
-
 func TestSignals(t *testing.T) {
 	if got := signals("agent('a'); agent ('b')").agentCount; got != 2 {
 		t.Errorf("agentCount = %d, want 2", got)

@@ -15,7 +15,20 @@ import (
 // reason.
 func runEnv(t *testing.T, sub, payload string, extra ...string) result {
 	t.Helper()
-	return run(t, sub, payload, append(os.Environ(), extra...)...)
+	return run(t, sub, payload, append(envWithoutDisable(), extra...)...)
+}
+
+// The suite must not inherit GATES_DISABLE. A developer who has turned a guard
+// off in their own settings.json would otherwise watch that guard's tests pass
+// because it never ran, which is the one failure this whole feature can cause.
+func envWithoutDisable() []string {
+	out := []string{}
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, disableEnv+"=") {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 func TestGuardDisabledIn(t *testing.T) {
@@ -25,10 +38,10 @@ func TestGuardDisabledIn(t *testing.T) {
 	}{
 		{"", "lsp-first", false},
 		{"lsp-first", "lsp-first", true},
-		{"design-gate,lsp-first", "lsp-first", true},
-		{" design-gate , lsp-first ", "lsp-first", true},
-		{"design-gate,agent-model", "lsp-first", false},
-		{"lsp-first", "design-gate", false},
+		{"agent-model,lsp-first", "lsp-first", true},
+		{" agent-model , lsp-first ", "lsp-first", true},
+		{"agent-model,workflow-model", "lsp-first", false},
+		{"lsp-first", "agent-model", false},
 		{"LSP-FIRST", "lsp-first", false},
 		{"lsp_first", "lsp-first", false},
 		{"lsp-first-extra", "lsp-first", false},
@@ -54,7 +67,6 @@ func TestDisableSilencesEachGuard(t *testing.T) {
 		// writing a decision to stdout.
 		signalsOnStderr bool
 	}{
-		{sub: "design-gate", payload: bashPayload("npm create vite@latest my-app")},
 		{sub: "agent-model", payload: `{"tool_name":"Agent","tool_input":{"prompt":"x"}}`},
 		{sub: "workflow-model", payload: `{"tool_name":"Workflow","tool_input":{"script":"phase(\"x\"); await parallel(items.map(i => () => agent(\"do \" + i)))"}}`},
 		{sub: "lsp-first", payload: grep("handleSubmit")},
@@ -87,12 +99,8 @@ func TestDisableSilencesEachGuard(t *testing.T) {
 func TestDisableIsPerGuard(t *testing.T) {
 	// Disabling one guard must not silence its neighbours.
 	payload := grep("handleSubmit")
-	r := runEnv(t, "lsp-first", payload, "GATES_DISABLE=design-gate,agent-model")
+	r := runEnv(t, "lsp-first", payload, "GATES_DISABLE=agent-model,workflow-model")
 	if strings.TrimSpace(r.stdout) == "" {
-		t.Errorf("lsp-first went silent while only design-gate and agent-model were disabled")
+		t.Errorf("lsp-first went silent while only agent-model and workflow-model were disabled")
 	}
-}
-
-func bashPayload(command string) string {
-	return `{"tool_name":"Bash","tool_input":{"command":` + mustJSON(command) + `}}`
 }

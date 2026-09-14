@@ -1,6 +1,7 @@
 # gates
 
-Five stateless `PreToolUse` gates and one never-blocking nudge, in one plugin.
+Four stateless `PreToolUse` gates, a `PostToolUse` config guard and one
+never-blocking nudge, in one plugin.
 Each intercepts a *specific, high-signal action* at the moment it is about to
 happen, and each carries an ack marker so a deliberate override costs one token in
 history rather than a disabled hook.
@@ -8,7 +9,6 @@ history rather than a disabled hook.
 | Gate | Fires on | Decision | Ack marker |
 |---|---|---|---|
 | **docs-sync** | `git commit` that changes code without staging its covering docs | deny | `docs-sync:ack` |
-| **design-gate** | a new-project scaffold command (`npm create vite`, `cargo new`, `rails new`, …) | ask | `design-gate:ack` |
 | **workflow-model** | a `Workflow` script that fans out with no per-agent `model:` | deny | `model-guard:ack` |
 | **agent-model** | an `Agent` dispatch that omits `model` | deny | set `model` |
 | **lsp-first** | a shell or `Grep` search for a code symbol, when its language server resolves | deny | append `(?:)` to the pattern |
@@ -45,7 +45,6 @@ and hook subprocesses inherit it.
 | Name | Turns off |
 |---|---|
 | `docs-sync` | the docs-sync gate |
-| `design-gate` | the design gate |
 | `workflow-model` | the `Workflow` model gate |
 | `agent-model` | the `Agent` model gate |
 | `lsp-first` | the LSP-first search gate |
@@ -141,66 +140,6 @@ failure this carve-out exists to prevent.
 The marker lands in the commit message, so the "no doc impact" judgment stays
 auditable in history. Any git error, non-repo cwd, or unparseable payload fails open —
 the guard never blocks a commit by accident.
-
----
-
-## The design gate
-
-The `nightshift:plan` skill says, in prose:
-
-> Do NOT ... write any code, scaffold any project, or take any implementation
-> action until you have presented a design and the user has approved it.
-
-Prose doesn't intercept anything. The classic failure is the model, on autopilot,
-running `npm create vite` (or `create-next-app`, `rails new`, …) the moment a project
-is mentioned — skipping the design entirely. This gate catches exactly that action and
-turns it into a checkpoint: any command *segment* starting with a new-project
-scaffolder emits an **`ask`**, and the user confirms whether a design was approved. It
-never denies and never edits anything; a scaffold you meant to run is one keystroke
-away.
-
-### Commands it asks about
-
-| Ecosystem | Examples |
-|---|---|
-| JS/TS package managers | `npm create vite`, `pnpm create`, `yarn create next-app`, `bun create`, `npm init vite` |
-| `create-*` CLIs | `npx create-next-app`, `npx create-react-app`, `pnpm dlx create-astro`, `create-react-app my-app` |
-| Rust | `cargo new`, `cargo init` |
-| Python | `django-admin startproject`, `django-admin startapp` |
-| Ruby | `rails new` |
-| Angular / NestJS / Vue | `ng new`, `nest new`, `vue create` |
-| Mobile | `expo init`, `flutter create` |
-| .NET | `dotnet new <template>` |
-| Elixir/Phoenix | `mix new`, `mix phx.new` |
-| PHP | `laravel new`, `composer create-project` |
-| Static site | `gatsby new`, `hugo new site`, `jekyll new` |
-
-The match is anchored to the **start of each command segment**, so it fires on
-`mkdir app && cd app && npm create vite` (later segment) and on
-`FOO=bar sudo npm create vite` (env / `sudo` prefix), but **not** on a scaffold name
-that only appears inside a commit message (`git commit -m "add create-react-app
-docs"`), an `echo`/`printf` string, or a `dotnet new --list`.
-
-### Why `ask`, and why only scaffolds
-
-A PreToolUse hook can't see the conversation, so it **cannot know** whether a design
-was approved — the session model and any "approval" are not in the hook's stdin or
-environment. A hard `deny` would therefore dead-end a *legitimate* post-approval
-scaffold with no way for the model to resolve it. `ask` routes the decision to the
-human, who *can* see whether the design happened.
-
-Gating arbitrary `Write`/`Edit` on hidden "is a design approved?" state would need a
-stateful flag whose worst failure — a flag that never clears — silently blocks *all*
-future editing. Every gate here is stateless for that reason. Scaffold commands are
-the **high-signal, low-frequency** slice: distinctive, rare (you scaffold a project
-once), and the exact documented incident. An occasional confirmation on a command you
-run once per project is a cheap price; a guard that blocks your live editing is not.
-
-Bypass with `design-gate:ack` anywhere in the command:
-
-```bash
-npm create vite@latest my-app   # design-gate:ack
-```
 
 ---
 
@@ -373,15 +312,13 @@ the right place to stop.
 gates/
 ├── .claude-plugin/plugin.json
 ├── bin/ccguard                                 — committed Go binary, universal
-│                                                 (design-gate, workflow-model,
-│                                                 agent-model, lsp-first,
-│                                                 json-config-guard)
+│                                                 (workflow-model, agent-model,
+│                                                 lsp-first, json-config-guard)
 ├── hooks/hooks.json                            — PreToolUse (Bash, Workflow, Agent),
 │                                                 Stop, UserPromptSubmit
 ├── scripts/
 │   ├── lib.mjs                                 — hook I/O + the drift engine
 │   ├── pretooluse-guard-docs-sync.mjs          — the commit gate
-│   ├── pretooluse-guard-design-gate.mjs        — the scaffold gate
 │   ├── pretooluse-guard-workflow-model.mjs     — the Workflow gate
 │   ├── pretooluse-guard-agent-model.mjs        — the Agent gate
 │   ├── stop-check-consolidation-drift.mjs      — measures drift, arms the flag
@@ -402,14 +339,14 @@ runs there, and a path derived from that variable would be written where the hoo
 looks. `.git/` is per-clone, which is exactly the scope of "not now", and is never
 committed.
 
-Each gate names itself in its decision reason (`docs-sync-guard:`, `design-gate-guard:`,
+Each gate names itself in its decision reason (`docs-sync-guard:`,
 `workflow-model-guard:`, `agent-model-guard:`), so a denial says which gate spoke.
 
 ## Dependencies
 
-- **The design-gate, workflow-model and agent-model gates on arm64 macOS: nothing.**
-  They run `bin/ccguard`, a committed static binary with no runtime dependency at all
-  (36.1ms → 2.9ms; see `go/README.md` in the repo).
+- **The workflow-model, agent-model, lsp-first and json-config gates on arm64 macOS:
+  nothing.** They run `bin/ccguard`, a committed static binary with no runtime
+  dependency at all (35.7ms → 3.1ms on the Agent gate; see `go/README.md` in the repo).
 - **Everywhere else, and the docs-sync gate and consolidation trigger everywhere:
   Node.js 18+ on PATH**, plus git for the docs-sync gate and the trigger. The compiled
   hook commands are `bin/ccguard <sub> "…/scripts/….mjs" || node "…/scripts/….mjs"`, so
@@ -431,10 +368,6 @@ node --test scripts/ccguard-differential.test.mjs   # binary vs .mjs equivalence
 # Manual smoke test — code staged, docs not → deny envelope on stdout
 echo '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"cwd":"<repo-with-staged-plugin-code>"}' \
   | node plugins/gates/scripts/pretooluse-guard-docs-sync.mjs
-
-# Manual smoke test — scaffold → ask envelope
-echo '{"tool_name":"Bash","tool_input":{"command":"npm create vite@latest app"}}' \
-  | node plugins/gates/scripts/pretooluse-guard-design-gate.mjs
 
 # Manual smoke test — expensive workflow, no model → deny envelope
 echo '{"tool_name":"Workflow","tool_input":{"script":"await parallel(items.map(i => () => agent(\"do\")))"}}' \

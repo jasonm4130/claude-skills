@@ -11,10 +11,11 @@ they are one design:
   nearest-covering-doc — any other code file whose nearest ancestor
   README.md/CLAUDE.md/AGENTS.md exists but isn't staged → **deny**. `docs-sync:ack`
   in the commit command bypasses (and self-documents in history).
-- **design-gate** (matcher `Bash`) — any command segment that **starts** with a
-  scaffolder (`npm create`, `create-next-app`, `cargo new`, `rails new`,
-  `django-admin startproject`, …) → **`ask`**. Everything else → allow.
-  `design-gate:ack` bypasses.
+- **lsp-first** (matcher `Bash`) — a shell search (`rg`, `grep`) whose pattern looks
+  like a code symbol → **deny**, pointing at the LSP tool instead. Appending `(?:)` to
+  the pattern bypasses: a zero-width match changes nothing about what is searched.
+  Written in Go directly, so it has no `.mjs` counterpart and nothing for `||` to fall
+  back to — acceptable only because it is advisory and fails open.
 - **workflow-model** (matcher `Workflow`) — for a script it can read (inline `script`
   or one read from `scriptPath`), **denies** an expensive fan-out with no per-agent
   `model:` override; the reason is fed back to Claude, which tiers the workers and
@@ -40,10 +41,10 @@ they are one design:
   `gates:docs-consolidate`. Never blocks. See README.md for the user-facing contract.
 
 Each gate names itself in its decision reason (`docs-sync-guard:`,
-`design-gate-guard:`, `workflow-model-guard:`, `agent-model-guard:`). Those are guard
-identifiers, not plugin names — three of the four are byte-locked to the committed
-`bin/ccguard`, and the differential test fails on any drift between the two
-implementations' output.
+`workflow-model-guard:`, `agent-model-guard:`, `LSP-FIRST:`). Those are guard
+identifiers, not plugin names — `workflow-model` and `agent-model` are byte-locked to
+the committed `bin/ccguard`, and the differential test fails on any drift between the
+two implementations' output.
 
 ## The shared design
 
@@ -53,10 +54,9 @@ implementations' output.
   work on a live session. The cost is that design-before-*editing* and
   docs-before-*any-change* are not enforced — only at their one hard boundary.
 - **`deny` when Claude can fix it, `ask` when only the human can.** A `deny` is meant
-  to make Claude *rewrite* the offending thing. A scaffold whose design was already
-  approved, and a built-in `name:` workflow that isn't editable from the session, are
-  both unresolvable from inside the model's turn — so they get `ask`, which routes to
-  someone who can see the state the hook cannot.
+  to make Claude *rewrite* the offending thing. A built-in `name:` workflow that is
+  not editable from the session is unresolvable from inside the model's turn — so it
+  gets `ask`, which routes to someone who can see the state the hook cannot.
 - **The session model is not available to a PreToolUse hook** (not in stdin, not in
   env; feature request closed not-planned, anthropics/claude-code#37817). Every
   "couldn't the hook just check X?" question about session state bottoms out here.
@@ -149,36 +149,6 @@ Codex-reviewed: 3 rounds + audit, chain `881f87716802`, 14 unique findings.
   into the doc, which silences future passes by giving them the reason to read. A
   suppression list that grows is how a not-useful rate climbs invisibly.
 
-## Design decisions — design-gate (2026-07-17)
-
-- **Gate the action, not hidden state.** The hook can't know whether a design was
-  approved, so it gates the one high-signal, low-frequency action — a scaffold command
-  — that strongly implies implementation-before-design.
-- **Anchor to command position.** Match `^` against each cleaned shell *segment*
-  (split on `&&`, `||`, `;`, `|`, newlines) — so `create-react-app` inside a commit
-  message or echo string does not fire (that segment starts with `git`/`echo`), but
-  `mkdir app && cd app && npm create vite` does.
-- **Name the skill plugin-qualified** — the `ask` reason says
-  `nightshift:plan`, not "the plan skill".
-
-### design-gate gotchas
-
-- **Segment cleaning order:** strip trailing `# comment` first (so an appended
-  `# design-gate:ack` — and any trailing comment — doesn't pollute matching), then
-  strip leading env-assignments + `sudo` (so `FOO=bar sudo npm create …` still matches
-  at the head).
-- **`npm init` is split by intent:** `npm init <initializer>` (a template) fires; bare
-  `npm init` / `npm init -y` (package.json in an existing dir) does **not** — the
-  pattern requires a non-flag argument.
-- **`dotnet new` requires a template arg** (`dotnet new console`) — `dotnet new
-  --list` does not fire.
-- **`createdb` / `createuser` / `docker create`** do not fire: the `create-*` binary
-  pattern requires a hyphen (`create-foo`), and `docker create`'s segment starts with
-  `docker`, not `create-`.
-- **Not caught (accepted):** `bash -c "npm create vite"`, `sh -c "…"`, and other
-  scaffolds nested inside a `-c` string — the segment starts with `bash`/`sh`. Rare,
-  and over-firing is the worse failure for an `ask` gate, so we err quiet.
-
 ## Design decisions — the model gates
 
 **Why `ask` for `name:` but `deny` for scripts?** A `deny` is meant to make Claude
@@ -244,9 +214,9 @@ double-fires. Re-verify after major Claude Code upgrades and move the stamp forw
   `cat >> notes.md <<'EOF' … git add x && git commit … EOF` must not read as a commit.
   This bit twice for real while writing the quoting tests above — the fixture strings
   tripped the gate the tests exercise. Stripping happens first, so commit detection and
-  the `git add` union always see the stripped form. The design gate solves a harder
-  version of the same problem with a full tokenizer, because it needs segment *heads*;
-  here only the bodies must go.
+  the `git add` union always see the stripped form. Only the bodies must go here;
+  `bashsearch.go` solves a harder version of the same problem with a full tokenizer,
+  because it needs segment *heads*.
 
 - **One carve-out: the stdin-message form.** `splitHeredocs` returns the bodies
   alongside the stripped command, and the `docs-sync:ack` check also scans them when
@@ -295,17 +265,18 @@ double-fires. Re-verify after major Claude Code upgrades and move the stamp forw
 
 ## The compiled guards
 
-Three of the four gates run a committed Rust binary, with the `.mjs` as fallback:
+Four of the six guards run a committed **Go** binary. Two of them keep the `.mjs` as
+fallback and reference implementation:
 
 ```
-"${CLAUDE_PLUGIN_ROOT}/bin/ccguard" design-gate    "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-design-gate.mjs"    || node "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-design-gate.mjs"
 "${CLAUDE_PLUGIN_ROOT}/bin/ccguard" agent-model    "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs"    || node "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs"
 "${CLAUDE_PLUGIN_ROOT}/bin/ccguard" workflow-model "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs" || node "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs"
 ```
 
-36.1ms → 2.9ms on the design gate, 35.7ms → 3.1ms on the Agent gate, which fires on
-every dispatch. The docs-sync gate is **not** compiled: git subprocesses dominate its
-61ms, so compiling it would buy a third of what it buys here.
+`lsp-first` and `json-config-guard` are Go only and have no `||` clause, so on Linux
+they simply do not run. 35.7ms → 3.1ms on the Agent gate, which fires on every
+dispatch. The docs-sync gate is **not** compiled: git subprocesses dominate its 61ms,
+so compiling it would buy a third of what it buys here.
 
 Consolidating the three plugins into this one collapsed two byte-identical copies of
 `ccguard` into one — plugins cannot share files, so each consuming plugin used to
@@ -320,9 +291,9 @@ drained. `go/README.md` has the full argument.
 fallback and the reference implementation that `scripts/ccguard-differential.test.mjs`
 checks the binary against. **Any behaviour change must land in BOTH**, or that test
 fails — including the decision-reason strings, which is why those still say
-`design-gate-guard:` / `workflow-model-guard:` / `agent-model-guard:`. Note the Agent
-guard reads `~/.claude/agents/*.md` and the project's `.claude/agents/*.md`: the Rust
-port sorts directory entries where `readdirSync` does not, which only becomes visible
+`workflow-model-guard:` / `agent-model-guard:`. Note the Agent guard reads
+`~/.claude/agents/*.md` and the project's `.claude/agents/*.md`: the Go port sorts
+directory entries where `readdirSync` does not, which only becomes visible
 if two definitions declare the same frontmatter `name` — sorted at least makes the
 winner reproducible.
 

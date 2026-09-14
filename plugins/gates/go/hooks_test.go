@@ -45,6 +45,8 @@ func run(t *testing.T, sub, payload string, env ...string) result {
 	cmd.Stdin = strings.NewReader(payload)
 	if len(env) > 0 {
 		cmd.Env = env
+	} else {
+		cmd.Env = envWithoutDisable()
 	}
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
