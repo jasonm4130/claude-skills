@@ -11,11 +11,6 @@ trigger, in one plugin because they are one design:
   nearest-covering-doc — any other code file whose nearest ancestor
   README.md/CLAUDE.md/AGENTS.md exists but isn't staged → **deny**. `docs-sync:ack`
   in the commit command bypasses (and self-documents in history).
-- **lsp-first** (matcher `Bash`) — a shell search (`rg`, `grep`) whose pattern looks
-  like a code symbol → **deny**, pointing at the LSP tool instead. Appending `(?:)` to
-  the pattern bypasses: a zero-width match changes nothing about what is searched.
-  Written in Go directly, so it has no `.mjs` counterpart and nothing for `||` to fall
-  back to — acceptable only because it is advisory and fails open.
 - **workflow-model** (matcher `Workflow`) — for a script it can read (inline `script`
   or one read from `scriptPath`), **denies** an expensive fan-out with no per-agent
   `model:` override; the reason is fed back to Claude, which tiers the workers and
@@ -41,7 +36,7 @@ trigger, in one plugin because they are one design:
   `gates:docs-consolidate`. Never blocks. See README.md for the user-facing contract.
 
 Each gate names itself in its decision reason (`docs-sync-guard:`,
-`workflow-model-guard:`, `agent-model-guard:`, `LSP-FIRST:`). Those are guard
+`workflow-model-guard:`, `agent-model-guard:`). Those are guard
 identifiers, not plugin names — `workflow-model` and `agent-model` are byte-locked to
 the committed `bin/ccguard`, and the differential test fails on any drift between the
 two implementations' output.
@@ -214,9 +209,7 @@ double-fires. Re-verify after major Claude Code upgrades and move the stamp forw
   `cat >> notes.md <<'EOF' … git add x && git commit … EOF` must not read as a commit.
   This bit twice for real while writing the quoting tests above — the fixture strings
   tripped the gate the tests exercise. Stripping happens first, so commit detection and
-  the `git add` union always see the stripped form. Only the bodies must go here;
-  `bashsearch.go` solves a harder version of the same problem with a full tokenizer,
-  because it needs segment *heads*.
+  the `git add` union always see the stripped form. Only the bodies must go here.
 
 - **One carve-out: the stdin-message form.** `splitHeredocs` returns the bodies
   alongside the stripped command, and the `docs-sync:ack` check also scans them when
@@ -273,8 +266,8 @@ fallback and reference implementation:
 "${CLAUDE_PLUGIN_ROOT}/bin/ccguard" workflow-model "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs" || node "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs"
 ```
 
-`lsp-first` and `json-config-guard` are Go only and have no `||` clause, so on Linux
-they simply do not run. 35.7ms → 3.1ms on the Agent gate, which fires on every
+`json-config-guard` is Go only and has no `||` clause, so on Linux it simply does
+not run. 35.7ms → 3.1ms on the Agent gate, which fires on every
 dispatch. The docs-sync gate is **not** compiled: git subprocesses dominate its 61ms,
 so compiling it would buy a third of what it buys here.
 

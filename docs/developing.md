@@ -14,9 +14,9 @@ plugins/<name>/
   bin/ccguard                     # committed Go guard binary, macOS universal
                                   #   (plugins/gates only). agent-model and
                                   #   workflow-model keep their .mjs as both
-                                  #   fallback and reference impl; lsp-first and
-                                  #   json-config-guard are Go only and simply do
-                                  #   not run where the binary cannot
+                                  #   fallback and reference impl; json-config-guard
+                                  #   is Go only and simply does not run where the
+                                  #   binary cannot
   go/                             # source for bin/ccguard, and build.sh, the one
                                   #   definition of the build (plugins/gates only)
 docs/superpowers/{specs,plans}/   # design specs and implementation plans

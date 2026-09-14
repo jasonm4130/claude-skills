@@ -8,7 +8,6 @@ ccguard <subcommand> [fallback.mjs]
 
 ccguard agent-model        # gates — PreToolUse, matcher Agent
 ccguard workflow-model     # gates — PreToolUse, matcher Workflow
-ccguard lsp-first          # gates — PreToolUse, matcher Bash
 ccguard json-config-guard  # gates — PostToolUse, matcher Edit|Write|MultiEdit|Bash
 ```
 
@@ -94,12 +93,6 @@ rather than relied on to error. `serde_json` *rejects* a lone-surrogate escape;
 Go's `encoding/json` silently substitutes U+FFFD, which would make the binary
 answer a different question than node on the same bytes without failing.
 `hasLoneSurrogateEscape` (`hook.go`) spots it before decoding and declines to node.
-
-**`lsp-first` is the exception: it has no `.mjs` counterpart at all.** It was written
-in Go directly rather than ported, so there is nothing to be differential against and
-nothing for `||` to fall back to — on Linux the hook simply exits non-zero and the tool
-call proceeds. That is acceptable only because it is advisory and fails open by design;
-a fail-closed guard could not be shipped this way.
 
 The net contract: **there is no payload on which the guard is allowed to differ
 from the `.mjs` reference.** Delegation is an implementation detail of holding that
