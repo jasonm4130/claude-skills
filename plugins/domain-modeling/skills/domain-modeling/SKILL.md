@@ -60,5 +60,5 @@ When a term is resolved, update `CONTEXT.md` right there — don't batch these u
 ## Relationship to other skills
 
 - **Decisions, not terms.** A load-bearing, hard-to-reverse trade-off is an ADR, not a glossary entry.
-- **Exploring intent → `brainstorming`.** A grilling/brainstorming session is where terms surface; this skill is what captures them.
+- **Exploring intent.** Terms surface while working out what to build; this skill is what captures them.
 - **Not architecture vocabulary.** Module, interface, and seam are architecture language; `CONTEXT.md` is domain language. Keep them distinct.

@@ -2,8 +2,8 @@
 
 ## What this is
 
-Four `PreToolUse` gates plus a two-hook consolidation trigger, in one plugin because
-they are one design:
+Four `PreToolUse` gates, a `PostToolUse` config guard and a two-hook consolidation
+trigger, in one plugin because they are one design:
 
 - **docs-sync** (matcher `Bash`) — gates `git commit` with two rules: (1)
   plugins-monorepo pairs — executable plugin code staged without that plugin's
