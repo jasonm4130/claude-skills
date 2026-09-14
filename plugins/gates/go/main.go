@@ -10,11 +10,10 @@
 //
 //	ccguard agent-model       PreToolUse   Agent
 //	ccguard workflow-model    PreToolUse   Workflow
-//	ccguard lsp-first         PreToolUse   Grep
 //	ccguard json-config-guard PostToolUse  Edit|Write|MultiEdit|Bash
 //
 // Failure philosophy: every one of these guards fails OPEN. A missing field, an
-// unreadable file, or an unavailable language server exits 0 with no output,
+// unreadable file, or a missing tool input exits 0 with no output,
 // exactly as the JS originals do. A guard that crashes the session is worse than
 // a guard that misses. `json-config-guard` is the one that signals by exiting 2
 // with stderr rather than by denying, because PostToolUse runs after the write
@@ -40,7 +39,7 @@ import (
 	"os"
 )
 
-const usage = "usage: ccguard <agent-model|workflow-model|lsp-first|json-config-guard> [fallback.mjs]"
+const usage = "usage: ccguard <agent-model|workflow-model|json-config-guard> [fallback.mjs]"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -76,8 +75,6 @@ func main() {
 	}
 
 	switch sub {
-	case "lsp-first":
-		lspFirst(raw)
 	case "json-config-guard":
 		jsonConfigGuard(raw)
 	case "agent-model", "workflow-model":

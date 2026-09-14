@@ -71,7 +71,7 @@ export function emitPermissionDecision(decision, reason) {
 /**
  * Is this guard named in GATES_DISABLE?
  *
- *   "env": { "GATES_DISABLE": "lsp-first,docs-sync" }
+ *   "env": { "GATES_DISABLE": "docs-sync,agent-model" }
  *
  * A Claude Code settings.json `env` block reaches hook subprocesses, so one
  * variable turns a guard off for a single project or for every session, with no

@@ -53,18 +53,18 @@ function tmpRepo() {
 }
 
 test("isGuardDisabled parses the list the same way the binary does", () => {
-  const on = (raw) => isGuardDisabled("lsp-first", { GATES_DISABLE: raw });
-  assert.equal(isGuardDisabled("lsp-first", {}), false);
+  const on = (raw) => isGuardDisabled("agent-model", { GATES_DISABLE: raw });
+  assert.equal(isGuardDisabled("agent-model", {}), false);
   assert.equal(on(""), false);
-  assert.equal(on("lsp-first"), true);
-  assert.equal(on("agent-model,lsp-first"), true);
-  assert.equal(on(" agent-model , lsp-first "), true);
-  assert.equal(on("agent-model,workflow-model"), false);
-  assert.equal(on("LSP-FIRST"), false);
-  assert.equal(on("lsp_first"), false);
-  assert.equal(on("lsp-first-extra"), false);
+  assert.equal(on("agent-model"), true);
+  assert.equal(on("workflow-model,agent-model"), true);
+  assert.equal(on(" workflow-model , agent-model "), true);
+  assert.equal(on("workflow-model,docs-sync"), false);
+  assert.equal(on("AGENT-MODEL"), false);
+  assert.equal(on("agent_model"), false);
+  assert.equal(on("agent-model-extra"), false);
   assert.equal(on(",,"), false);
-  assert.equal(on("lsp-first,"), true);
+  assert.equal(on("agent-model,"), true);
 });
 
 // ---- guards that write a decision to stdout ----
