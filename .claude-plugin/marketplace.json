@@ -9,23 +9,6 @@
   },
   "plugins": [
     {
-      "name": "adr",
-      "source": "./plugins/adr",
-      "description": "Turns an intent into a grounded, cited, build-ready ADR with load-bearing decisions surfaced to the human, then hands it to nightshift:plan's landing step. Front-end for adr → nightshift.",
-      "version": "0.6.0",
-      "author": {
-        "name": "Jason Matthew"
-      },
-      "license": "MIT",
-      "keywords": [
-        "adr",
-        "architecture-decision-record",
-        "grounding",
-        "nightshift"
-      ],
-      "category": "productivity"
-    },
-    {
       "name": "codex-review",
       "source": "./plugins/codex-review",
       "description": "Cross-provider adversarial plan/design-doc review via OpenAI Codex (GPT-5.6 Terra): verdict-loop protocol, atomic chain guard, cross-repo decision-gate log.",
@@ -47,7 +30,7 @@
     {
       "name": "domain-modeling",
       "source": "./plugins/domain-modeling",
-      "description": "Actively build and sharpen a project's ubiquitous language — an opinionated CONTEXT.md glossary — by challenging terms, disambiguating overloaded words, and stress-testing domain relationships. Cross-references adr for decision records. Adapted from mattpocock/skills (MIT).",
+      "description": "Actively build and sharpen a project's ubiquitous language \u2014 an opinionated CONTEXT.md glossary \u2014 by challenging terms, disambiguating overloaded words, and stress-testing domain relationships. Adapted from mattpocock/skills (MIT).",
       "version": "0.5.0",
       "author": {
         "name": "Jason Matthew"
@@ -85,7 +68,7 @@
     {
       "name": "handoff",
       "source": "./plugins/handoff",
-      "description": "Manual /handoff skill — writes a structured resume doc on demand, auto-loads it on next session.",
+      "description": "Manual /handoff skill \u2014 writes a structured resume doc on demand, auto-loads it on next session.",
       "version": "0.11.1",
       "author": {
         "name": "Jason Matthew"
@@ -100,28 +83,9 @@
       "category": "productivity"
     },
     {
-      "name": "nightshift",
-      "source": "./plugins/nightshift",
-      "description": "Plan by day, land by night, triage in the morning: scaffolds an overnight landing loop (one task per CI-gated PR, generator + verifier + skeptic, PreToolUse guards, kill switch) into a repo, plus the plan and morning skills around it.",
-      "version": "0.1.9",
-      "author": {
-        "name": "Jason Matthew"
-      },
-      "license": "MIT",
-      "keywords": [
-        "landing-loop",
-        "unattended",
-        "overnight",
-        "sdlc",
-        "planning",
-        "claude-code"
-      ],
-      "category": "productivity"
-    },
-    {
       "name": "session-retro",
       "source": "./plugins/session-retro",
-      "description": "Interactive session retrospectives — deterministic activity triggers, one end-of-day offer, batch-scoped diff- and event-log-driven interview, native memory entries. No external services.",
+      "description": "Interactive session retrospectives \u2014 deterministic activity triggers, one end-of-day offer, batch-scoped diff- and event-log-driven interview, native memory entries. No external services.",
       "version": "0.9.1",
       "author": {
         "name": "Jason Matthew"
@@ -155,7 +119,7 @@
     {
       "name": "writing-artifacts",
       "source": "./plugins/writing-artifacts",
-      "description": "Positive writing system for durable written artifacts (READMEs, ADRs, PR descriptions, docs, runbooks): reader-expectation prose, Diátaxis document jobs, plain-language structure. Complements reply-style rules in global CLAUDE.md.",
+      "description": "Positive writing system for durable written artifacts (READMEs, ADRs, PR descriptions, docs, runbooks): reader-expectation prose, Di\u00e1taxis document jobs, plain-language structure. Complements reply-style rules in global CLAUDE.md.",
       "version": "0.1.1",
       "author": {
         "name": "Jason Matthew"
