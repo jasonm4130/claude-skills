@@ -331,6 +331,46 @@ path is `git clone` + copy with no build step anywhere, so a compiled hook has t
 pre-built. Source lives in `go/`; see `go/README.md` for the rebuild command and
 the staleness fingerprint.
 
+## Design decisions — per-gate disable (2026-09-14)
+
+`GATES_DISABLE` is a comma-separated list of gate names, read from the environment.
+The 2026-09-04 guards packaging verdict deferred this as amendment 4, "until someone
+asks for it". Someone asked. The verdict lives in the repo under `docs/research/`:
+https://github.com/jasonm4130/claude-skills
+
+**Why an environment variable and not a config file.** A Claude Code `settings.json`
+`env` block reaches hook subprocesses, verified by running a hook that echoed the
+variable back. That gives per-project and per-user scope for free, from machinery
+that already exists. A config file would need a path convention, a parser, a
+precedence chain and a fail-open posture for malformed input, and would buy nothing
+the `env` block does not already give. `resolveConsolidateThreshold` set the
+precedent here in 2026-07-25.
+
+**Why the list and not one variable per gate.** Seven booleans is seven names to
+remember and seven to keep documented. One list adds a gate by adding a row to the
+README table.
+
+**Why both implementations carry the parser.** `go/config.go` and `lib.mjs` read the
+same variable the same way, and that duplication is deliberate. The binary exits 0
+when a gate is disabled, so `|| node` never fires on a machine that runs the binary.
+It fires on every machine that does not — Linux, Intel Mac, a stripped install — and
+`docs-sync` and `docs-consolidate` have no binary path at all. Disable in Go alone
+and the gate comes back wherever the fallback runs.
+
+That duplication is the reason the disabled cases live in
+`scripts/ccguard-differential.test.mjs` rather than only in the per-side suites. A
+Mac is arm64, the binary always wins locally, and a Go-only test passes while the
+node path stays live. The corpus runs both.
+
+**Why the check sits after the stdin drain, not before it.** `go/main.go` already
+drains stdin before dispatch so an unknown subcommand cannot hand the writer an
+EPIPE. A disabled gate has the same obligation, so the node guards match that
+ordering rather than exiting first.
+
+**Why an unrecognised name is silent.** Same fail-open posture as the guards. These
+hooks run on every matching tool call, so a warning about a typo would be a warning
+on every call. The README table is the reference.
+
 ## Conventions
 
 - **ESM only.** Every script is `.mjs`. No CommonJS, no `package.json`, no `require`.

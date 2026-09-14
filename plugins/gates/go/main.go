@@ -69,6 +69,13 @@ func main() {
 		raw = nil
 	}
 
+	// After the drain, before the dispatch: a disabled guard still empties the
+	// pipe, and exits 0 so the `|| node` fallback in hooks.json does not then run
+	// the very guard that was just turned off.
+	if guardDisabled(sub) {
+		os.Exit(0)
+	}
+
 	switch sub {
 	case "lsp-first":
 		lspFirst(raw)

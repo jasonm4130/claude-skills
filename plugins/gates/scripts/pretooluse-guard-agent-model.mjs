@@ -25,7 +25,7 @@ import process from "node:process";
 import os from "node:os";
 import path from "node:path";
 import { readdirSync, readFileSync } from "node:fs";
-import { readStdin, safeJsonParse, emitPermissionDecision } from "./lib.mjs";
+import { readStdin, safeJsonParse, emitPermissionDecision, isGuardDisabled } from "./lib.mjs";
 
 /**
  * @typedef {object} PreToolUseInput
@@ -81,6 +81,7 @@ function findDefinition(dir, type) {
 }
 
 const raw = await readStdin();
+if (isGuardDisabled("agent-model")) process.exit(0);
 const payload = /** @type {PreToolUseInput | null} */ (safeJsonParse(raw));
 
 // Only guard the Agent tool. (The legacy "Task" matcher also fires for Agent calls,

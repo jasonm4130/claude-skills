@@ -28,6 +28,40 @@ the human can see what the hook cannot.
 
 ---
 
+## Turning a gate off
+
+`GATES_DISABLE` names the gates that must not run, comma separated. Put it in the
+`env` block of a `settings.json`. Claude Code applies that block to the session,
+and hook subprocesses inherit it.
+
+```jsonc
+// ~/.claude/settings.json — every session
+// <repo>/.claude/settings.json — this project only
+{
+  "env": { "GATES_DISABLE": "lsp-first,docs-sync" }
+}
+```
+
+| Name | Turns off |
+|---|---|
+| `docs-sync` | the docs-sync gate |
+| `design-gate` | the design gate |
+| `workflow-model` | the `Workflow` model gate |
+| `agent-model` | the `Agent` model gate |
+| `lsp-first` | the LSP-first search gate |
+| `json-config-guard` | the JSON config guard |
+| `docs-consolidate` | the consolidation trigger, both of its hooks |
+
+Matching is exact, so `LSP-FIRST` and `lsp_first` disable nothing. An
+unrecognised name is ignored in silence, because a guard that shouts about its own
+configuration is worse than one that misses. If a gate still fires, check the
+spelling against this table first.
+
+There is no per-gate file to edit and no restart. A disabled gate exits 0 before it
+reads anything, so it costs one process start and nothing else.
+
+---
+
 ## The docs-sync gate
 
 A `git commit` that changes code without touching its covering docs is **denied with

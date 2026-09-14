@@ -605,3 +605,38 @@ test("agent-model resolves user agent definitions with HOME unset", { skip: have
     assertAgrees("agent-model", JSON.stringify(c), `HOME unset — ${JSON.stringify(c.tool_input)}`, { env: noHome });
   }
 });
+
+test("GATES_DISABLE: both implementations go silent on the same guard", { skip: haveWorkflow ? false : skipMsg }, () => {
+  // The toggle lives in two places (go/config.go, scripts/lib.mjs) because the
+  // binary and the .mjs reference each answer on different machines. Two copies
+  // of a parser is exactly the shape this corpus exists to police.
+  const PAYLOADS = {
+    "design-gate": bash("npm create vite@latest my-app"),
+    "agent-model": JSON.stringify({ tool_name: "Agent", tool_input: { prompt: "x" } }),
+    "workflow-model": JSON.stringify({
+      tool_name: "Workflow",
+      tool_input: { script: 'phase("x"); await parallel(items.map(i => () => agent("do " + i)))' },
+    }),
+  };
+
+  for (const [sub, payload] of Object.entries(PAYLOADS)) {
+    // Baseline: with nothing disabled this payload must actually trigger,
+    // otherwise every assertion below holds for the wrong reason.
+    const [bin, mjs] = IMPLS[sub];
+    const live = run(bin, [sub, mjs], payload, process.env);
+    assert.notEqual(live.stdout.trim(), "", `${sub}: baseline payload no longer triggers`);
+
+    for (const raw of [sub, `${sub},docs-sync`, ` ${sub} `, `docs-sync,${sub}`]) {
+      assertAgrees(sub, payload, `disabled via ${JSON.stringify(raw)}`, {
+        env: { ...process.env, GATES_DISABLE: raw },
+      });
+    }
+
+    // Names that must NOT match: near-misses, wrong case, another guard.
+    for (const raw of ["", "docs-sync", `${sub}-extra`, sub.toUpperCase(), sub.replace(/-/g, "_")]) {
+      assertAgrees(sub, payload, `still live under ${JSON.stringify(raw)}`, {
+        env: { ...process.env, GATES_DISABLE: raw },
+      });
+    }
+  }
+});

@@ -30,6 +30,7 @@
 import { readFileSync } from 'node:fs';
 import { basename, isAbsolute, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { isGuardDisabled } from './lib.mjs';
 
 /** Config files whose corruption fails silently in the harness. */
 const GUARDED = new Set(['settings.json', 'settings.local.json', '.mcp.json']);
@@ -81,6 +82,7 @@ function readStdin() {
 
 async function main() {
   const raw = await readStdin();
+  if (isGuardDisabled('json-config-guard')) process.exit(0);
   if (!raw.trim()) process.exit(0);
 
   let payload;

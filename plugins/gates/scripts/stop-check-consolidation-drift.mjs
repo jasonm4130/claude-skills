@@ -15,40 +15,22 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import {
-  readStdin,
-  safeJsonParse,
-  resolveSessionId,
-  resolveDataDir,
-  repoHash,
-  gitRepoRoot,
-  git,
+  computeConsolidationDrift,
   deferMarkerPath,
+  git,
   isAncestor,
   readConsolidationStamp,
+  readRepoScopedPayload,
+  repoHash,
   resolveConsolidateThreshold,
-  computeConsolidationDrift,
+  resolveDataDir,
+  resolveSessionId,
 } from "./lib.mjs";
 
-/**
- * @typedef {object} StopInput
- * @property {string} [session_id]
- * @property {string} [cwd]
- */
 
-const raw = await readStdin();
-const payload = /** @type {StopInput | null} */ (safeJsonParse(raw));
-// A payload that does not parse is "cannot tell", and every anomaly here is silent.
-// Arming a flag from process.cwd() under session id "unknown" is a nudge attributed to
-// a session that never ran — see the matching guard in check-consolidation-flag.mjs. An array
-// passes `safeJsonParse` (it is an object), so check the shape, not just null.
-if (payload === null || typeof payload !== "object" || Array.isArray(payload)) process.exit(0);
-const cwd =
-  payload && typeof payload.cwd === "string" && payload.cwd.length > 0
-    ? payload.cwd
-    : process.cwd();
-
-const repoRoot = gitRepoRoot(cwd);
-if (repoRoot === null) process.exit(0);
+const ctx = await readRepoScopedPayload("docs-consolidate");
+if (ctx === null) process.exit(0);
+const { payload, repoRoot } = ctx;
 
 // No record, or the record was deleted as an opt-out → this repo has not adopted
 // the trigger. Silent, always.

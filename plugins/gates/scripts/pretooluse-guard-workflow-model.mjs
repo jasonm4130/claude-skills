@@ -17,7 +17,7 @@
 
 import process from "node:process";
 import { readFileSync } from "node:fs";
-import { readStdin, safeJsonParse, emitPermissionDecision } from "./lib.mjs";
+import { readStdin, safeJsonParse, emitPermissionDecision, isGuardDisabled } from "./lib.mjs";
 
 // Named workflows that fan out widely, inherit the session model for every spawned
 // agent (no per-agent model: override), and that Claude cannot edit — e.g. the built-in
@@ -33,6 +33,7 @@ const NAME_DENYLIST = ["deep-research"];
  */
 
 const raw = await readStdin();
+if (isGuardDisabled("workflow-model")) process.exit(0);
 const payload = /** @type {PreToolUseInput | null} */ (safeJsonParse(raw));
 
 // Only guard the Workflow tool. Anything else → proceed normally.

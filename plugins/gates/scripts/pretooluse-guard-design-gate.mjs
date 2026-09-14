@@ -22,7 +22,7 @@
 // in shell history) — for a scaffold run legitimately after design approval.
 
 import process from "node:process";
-import { readStdin, safeJsonParse, emitPermissionDecision } from "./lib.mjs";
+import { readStdin, safeJsonParse, emitPermissionDecision, isGuardDisabled } from "./lib.mjs";
 
 /**
  * @typedef {object} PreToolUseInput
@@ -248,6 +248,7 @@ function isScaffold(command) {
 }
 
 const raw = await readStdin();
+if (isGuardDisabled("design-gate")) process.exit(0);
 const payload = /** @type {PreToolUseInput | null} */ (safeJsonParse(raw));
 
 // Only guard the Bash tool. Anything else → proceed normally.
