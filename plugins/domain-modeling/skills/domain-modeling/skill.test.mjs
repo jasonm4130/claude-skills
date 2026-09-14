@@ -14,16 +14,16 @@ test("frontmatter names the skill with a trigger-rich, when-to-use description",
   assert.match(s, /ubiquitous language|glossary/i);
 });
 
-test("description carries a negative scope and routes decisions to adr", () => {
+test("description carries a negative scope", () => {
   assert.match(s, /Do NOT use for/i);
-  assert.match(s, /adr/);
+  assert.match(s, /architectural decisions/i);
 });
 
 test("keeps CONTEXT.md a glossary only — no implementation details or ADR format", () => {
   assert.match(s, /CONTEXT\.md/);
   assert.match(s, /glossary and nothing else|devoid of implementation/i);
-  // ADR recording is delegated, not re-defined here.
-  assert.match(s, /adr` skill|adr skill/i);
+  // Decisions are pointed at docs/adr/, and this skill defines no ADR format of its own.
+  assert.match(s, /docs\/adr\//);
   assert.doesNotMatch(s, /0001-.*\.md/); // no numbered-ADR convention copied from upstream
 });
 

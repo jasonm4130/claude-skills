@@ -13,8 +13,8 @@ reading `CONTEXT.md` for vocabulary is a one-line habit any skill can do, not th
 skill.
 
 *Adapted from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). The
-upstream skill also owned an ADR format; here decision-recording is delegated to
-this repo's `adr` skill so there's a single ADR convention.*
+upstream skill also owned an ADR format, which is left out here: an ADR is a
+document under `docs/adr/`, not something this skill defines.*
 
 ## What it does
 
@@ -22,8 +22,7 @@ this repo's `adr` skill so there's a single ADR convention.*
   per-context `CONTEXT.md` set (multi-context). Files are created lazily.
 - Keeps `CONTEXT.md` a **glossary and nothing else** — no implementation details,
   no specs, no decision logs.
-- Routes hard-to-reverse, non-obvious trade-offs to the `adr` skill, not the
-  glossary.
+- Routes hard-to-reverse, non-obvious trade-offs to an ADR, not the glossary.
 - Offers the glossary **once per repo** via hooks, so a repo that would benefit
   from one doesn't go unnoticed (see below).
 
@@ -58,7 +57,7 @@ data directory (each claim names its repo in the file body, so
 
 ## Boundaries
 
-- **Not `adr`** — decisions and trade-offs are ADRs, not glossary terms.
+- **Not a decision record** — trade-offs are ADRs, not glossary terms.
 - **Not architecture** — module, interface, and seam are *architecture* language;
   `CONTEXT.md` is *domain* language.
 - **Not a spec** — no implementation details in `CONTEXT.md`.
