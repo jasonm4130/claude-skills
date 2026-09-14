@@ -74,17 +74,19 @@ node plugins/codex-review/skills/codex-plan-review/scripts/codex-review.mjs stat
 
 ## Escalation paths (documented, not built — still ungated)
 
-1. **SDD integration** — add Codex as a **whole-branch** reviewer *after* an SDD run completes (the
-   `diff main...HEAD` gate), **not** a per-task reviewer inside the loop. Evidence favours whole-branch:
-   an SDD run whose 8 tasks each passed their own per-task gate still had 6 whole-branch blockers (2
-   data-destroying) that per-task review structurally cannot see; and a per-task external reviewer pays
-   N× the paid-call cost and N× the reviewer's over-rejection surface to catch strictly less. See the
-   [calibration research](https://github.com/jasonm4130/claude-skills/blob/main/docs/research/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md).
+Nothing is queued. The one candidate was adding Codex as a whole-branch reviewer after an automated
+implementation loop finished. That loop was retired on 2026-09-14, so there is no hot path left to put a
+paid external call on.
 
-Diff mode has now earned its keep (above), which was the precondition. This is not built yet: it puts a
-**paid external call on a hot path** (every SDD run), so it needs its own trial before it goes in — the
-same discipline that made diff mode worth keeping. Do not wire it into an automated gate on the strength
-of diff mode's numbers alone.
+The evidence behind it outlives the loop, and is the reason to review a whole branch rather than each
+task inside one: a run whose 8 tasks each passed their own per-task gate still had 6 whole-branch
+blockers, 2 of them data-destroying, that per-task review structurally cannot see. A per-task external
+reviewer also pays N× the paid-call cost and N× the reviewer's over-rejection surface to catch strictly
+less. See the
+[calibration research](https://github.com/jasonm4130/claude-skills/blob/main/docs/research/2026-07-15-ai-reviewer-calibration-and-clean-pass-research.md).
+
+If an automated gate is ever proposed again, it needs its own trial first — the same discipline that made
+diff mode worth keeping. Do not wire one in on the strength of diff mode's numbers alone.
 
 (A second candidate, an `adversarial-agents` codex persona, is moot — that plugin was retired
 2026-08-03 after zero invocations in ten weeks.)

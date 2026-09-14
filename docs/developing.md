@@ -12,9 +12,13 @@ plugins/<name>/
   hooks/hooks.json                # hook registrations (where applicable)
   scripts/ tests/                 # stdlib-only .mjs + node:test suites
   bin/ccguard                     # committed Go guard binary, macOS universal
-                                  #   (plugins/gates only; the .mjs stays as
-                                  #   fallback AND reference impl)
-  go/                             # source for bin/ccguard (plugins/gates only)
+                                  #   (plugins/gates only). agent-model and
+                                  #   workflow-model keep their .mjs as both
+                                  #   fallback and reference impl; lsp-first and
+                                  #   json-config-guard are Go only and simply do
+                                  #   not run where the binary cannot
+  go/                             # source for bin/ccguard, and build.sh, the one
+                                  #   definition of the build (plugins/gates only)
 docs/superpowers/{specs,plans}/   # design specs and implementation plans
 docs/research/                    # dated research + triage records
 RESEARCH_*.md                     # standalone research write-ups
@@ -53,6 +57,11 @@ frontmatter that the JSON check above doesn't reach), runs the node test suite
 on ubuntu+macos (Node 24), runs `go-guards`
 (the `plugins/gates/go/` unit tests, a rebuild-and-compare against the committed
 binary, plus the differential test), and runs `version-bump-check` (see Releasing).
+
+The rebuild calls `plugins/gates/go/build.sh`, which is the only place the build
+flags are written down. The staleness test calls it too. Rebuild the binary with
+that script rather than retyping the flags, or the comparison fails and reports a
+stale binary when the real fault is a flag mismatch.
 
 ## Updating an installed plugin
 

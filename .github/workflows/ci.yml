@@ -104,11 +104,7 @@ jobs:
             echo "::error::binary stamped $got, go.mod toolchain is $want"
             exit 1
           fi
-          cd plugins/gates/go
-          GOOS=darwin GOARCH=arm64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/fresh-arm64 .
-          GOOS=darwin GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/fresh-amd64 .
-          lipo -create -output /tmp/fresh-universal /tmp/fresh-arm64 /tmp/fresh-amd64
-          cd ../../..
+          plugins/gates/go/build.sh /tmp/fresh-universal
           if ! cmp -s /tmp/fresh-universal plugins/gates/bin/ccguard; then
             echo "::error::plugins/gates/bin/ccguard does not match a fresh build of plugins/gates/go/ — rebuild and re-copy (see plugins/gates/go/README.md)"
             exit 1

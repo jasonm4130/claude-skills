@@ -180,12 +180,11 @@ test(
     // arch before comparing against a native `go build`.
     const goDir = join(root, "plugins", "gates", "go");
     const fresh = join(tmpdir(), `ccguard-fresh-${process.pid}`);
-    const built = spawnSync(
-      "go",
-      ["build", "-buildvcs=false", "-ldflags=-s -w", "-trimpath", "-o", fresh, "."],
-      { cwd: goDir, encoding: "utf8" },
-    );
-    assert.equal(built.status, 0, `go build failed:\n${built.stderr}`);
+    const built = spawnSync(join(goDir, "build.sh"), [fresh, "native"], {
+      cwd: goDir,
+      encoding: "utf8",
+    });
+    assert.equal(built.status, 0, `build.sh failed:\n${built.stderr}`);
 
     for (const bin of new Set(Object.values(IMPLS).map(([b]) => b))) {
       const thin = join(tmpdir(), `ccguard-thin-${process.pid}`);
@@ -200,11 +199,8 @@ test(
         readFileSync(candidate),
         readFileSync(fresh),
         `${bin} is stale or was built from different source.\n` +
-          `Rebuild and re-copy:\n` +
-          `    cd plugins/gates/go\n` +
-          `    GOOS=darwin GOARCH=arm64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/cc-arm64 .\n` +
-          `    GOOS=darwin GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -trimpath -o /tmp/cc-amd64 .\n` +
-          `    lipo -create -output ../${bin.replace(`${root}/plugins/gates/`, "")} /tmp/cc-arm64 /tmp/cc-amd64`,
+          `Rebuild it with the one definition of the build:\n` +
+          `    plugins/gates/go/build.sh`,
       );
     }
   },
