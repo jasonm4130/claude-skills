@@ -7,7 +7,7 @@ import (
 
 // GATES_DISABLE names the guards that must not run, comma separated:
 //
-//	"env": { "GATES_DISABLE": "lsp-first,docs-sync" }
+//	"env": { "GATES_DISABLE": "docs-sync,agent-model" }
 //
 // A Claude Code settings.json `env` block reaches hook subprocesses, so the same
 // mechanism turns a guard off for one project or for every session, with no file

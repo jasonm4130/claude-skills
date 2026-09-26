@@ -9,10 +9,9 @@ import (
 
 // Every case pairs a disabled run with a control run on the same payload and the
 // same environment, differing only in GATES_DISABLE. Without the control a
-// disabled case passes vacuously the moment the payload stops triggering — and
-// lsp-first makes that concrete, because it fails open when no language server
-// is on PATH, so a run with a stripped environment is silent for the wrong
-// reason.
+// disabled case passes vacuously the moment the payload stops triggering. Every
+// guard here fails open, so a run whose environment no longer triggers it is
+// silent for the wrong reason and the disabled assertion proves nothing.
 func runEnv(t *testing.T, sub, payload string, extra ...string) result {
 	t.Helper()
 	return run(t, sub, payload, append(envWithoutDisable(), extra...)...)
@@ -36,17 +35,17 @@ func TestGuardDisabledIn(t *testing.T) {
 		raw, name string
 		want      bool
 	}{
-		{"", "lsp-first", false},
-		{"lsp-first", "lsp-first", true},
-		{"agent-model,lsp-first", "lsp-first", true},
-		{" agent-model , lsp-first ", "lsp-first", true},
-		{"agent-model,workflow-model", "lsp-first", false},
-		{"lsp-first", "agent-model", false},
-		{"LSP-FIRST", "lsp-first", false},
-		{"lsp_first", "lsp-first", false},
-		{"lsp-first-extra", "lsp-first", false},
-		{",,", "lsp-first", false},
-		{"lsp-first,", "lsp-first", true},
+		{"", "agent-model", false},
+		{"agent-model", "agent-model", true},
+		{"workflow-model,agent-model", "agent-model", true},
+		{" workflow-model , agent-model ", "agent-model", true},
+		{"workflow-model,docs-sync", "agent-model", false},
+		{"agent-model", "workflow-model", false},
+		{"AGENT-MODEL", "agent-model", false},
+		{"agent_model", "agent-model", false},
+		{"agent-model-extra", "agent-model", false},
+		{",,", "agent-model", false},
+		{"agent-model,", "agent-model", true},
 	}
 	for _, c := range cases {
 		if got := guardDisabledIn(c.raw, c.name); got != c.want {
@@ -69,7 +68,6 @@ func TestDisableSilencesEachGuard(t *testing.T) {
 	}{
 		{sub: "agent-model", payload: `{"tool_name":"Agent","tool_input":{"prompt":"x"}}`},
 		{sub: "workflow-model", payload: `{"tool_name":"Workflow","tool_input":{"script":"phase(\"x\"); await parallel(items.map(i => () => agent(\"do \" + i)))"}}`},
-		{sub: "lsp-first", payload: grep("handleSubmit")},
 		{sub: "json-config-guard", payload: `{"tool_name":"Edit","tool_input":{"file_path":` + mustJSON(badJSON) + `}}`, signalsOnStderr: true},
 	}
 
@@ -98,9 +96,9 @@ func TestDisableSilencesEachGuard(t *testing.T) {
 
 func TestDisableIsPerGuard(t *testing.T) {
 	// Disabling one guard must not silence its neighbours.
-	payload := grep("handleSubmit")
-	r := runEnv(t, "lsp-first", payload, "GATES_DISABLE=agent-model,workflow-model")
+	payload := `{"tool_name":"Agent","tool_input":{"prompt":"x"}}`
+	r := runEnv(t, "agent-model", payload, "GATES_DISABLE=workflow-model,docs-sync")
 	if strings.TrimSpace(r.stdout) == "" {
-		t.Errorf("lsp-first went silent while only agent-model and workflow-model were disabled")
+		t.Errorf("agent-model went silent while only workflow-model and docs-sync were disabled")
 	}
 }

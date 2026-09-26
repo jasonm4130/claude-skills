@@ -6,9 +6,8 @@ import (
 	"os"
 )
 
-// The tool-call payload shape used by the two guards that were already Go
-// (`lsp-first`, `json-config-guard`). Fields absent from a given tool's input
-// simply stay zero.
+// The tool-call payload shape used by `json-config-guard`. Fields absent from a
+// given tool's input simply stay zero.
 //
 // The three ported guards read their fields off a generic map instead (see
 // nestedStr/topStr), because they must reproduce JS's `typeof x === "string"`

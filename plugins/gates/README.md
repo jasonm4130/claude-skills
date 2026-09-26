@@ -11,7 +11,6 @@ history rather than a disabled hook.
 | **docs-sync** | `git commit` that changes code without staging its covering docs | deny | `docs-sync:ack` |
 | **workflow-model** | a `Workflow` script that fans out with no per-agent `model:` | deny | `model-guard:ack` |
 | **agent-model** | an `Agent` dispatch that omits `model` | deny | set `model` |
-| **lsp-first** | a shell or `Grep` search for a code symbol, when its language server resolves | deny | append `(?:)` to the pattern |
 | **json-config-guard** | a write that leaves `settings.json` / `.mcp.json` unparseable | reports after the fact (exit 2) | fix the syntax |
 | **consolidation trigger** | a repo that has moved far since its docs were last checked *against each other* | in-session nudge, never blocks | `/docs-consolidate --defer` |
 
@@ -38,7 +37,7 @@ and hook subprocesses inherit it.
 // ~/.claude/settings.json — every session
 // <repo>/.claude/settings.json — this project only
 {
-  "env": { "GATES_DISABLE": "lsp-first,docs-sync" }
+  "env": { "GATES_DISABLE": "docs-sync,agent-model" }
 }
 ```
 
@@ -47,11 +46,10 @@ and hook subprocesses inherit it.
 | `docs-sync` | the docs-sync gate |
 | `workflow-model` | the `Workflow` model gate |
 | `agent-model` | the `Agent` model gate |
-| `lsp-first` | the LSP-first search gate |
 | `json-config-guard` | the JSON config guard |
 | `docs-consolidate` | the consolidation trigger, both of its hooks |
 
-Matching is exact, so `LSP-FIRST` and `lsp_first` disable nothing. An
+Matching is exact, so `DOCS-SYNC` and `docs_sync` disable nothing. An
 unrecognised name is ignored in silence, because a guard that shouts about its own
 configuration is worse than one that misses. If a gate still fires, check the
 spelling against this table first.
@@ -313,7 +311,7 @@ gates/
 ├── .claude-plugin/plugin.json
 ├── bin/ccguard                                 — committed Go binary, universal
 │                                                 (workflow-model, agent-model,
-│                                                 lsp-first, json-config-guard)
+│                                                 json-config-guard)
 ├── hooks/hooks.json                            — PreToolUse (Bash, Workflow, Agent),
 │                                                 Stop, UserPromptSubmit
 ├── scripts/
@@ -344,7 +342,7 @@ Each gate names itself in its decision reason (`docs-sync-guard:`,
 
 ## Dependencies
 
-- **The workflow-model, agent-model, lsp-first and json-config gates on arm64 macOS:
+- **The workflow-model, agent-model and json-config gates on arm64 macOS:
   nothing.** They run `bin/ccguard`, a committed static binary with no runtime
   dependency at all (35.7ms → 3.1ms on the Agent gate; see `go/README.md` in the repo).
 - **Everywhere else, and the docs-sync gate and consolidation trigger everywhere:
