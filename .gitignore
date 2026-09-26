@@ -16,6 +16,9 @@ tmp/
 # one thing that must NEVER be ignored is plugins/*/bin/ccguard, which is a build
 # artifact that is deliberately committed (see rust/README.md).
 rust/target/
+# A bare `go build` inside plugins/*/go/ writes ./ccguard next to the source; only
+# bin/ccguard (built by build.sh) is committed.
+plugins/*/go/ccguard
 /.claude/handoffs/
 # claude plugin eval output; the cases are committed, the runs are not.
 plugins/*/evals/results/
