@@ -12,6 +12,7 @@ const MAX_LINE = 4095; // PIPE_BUF - 1: one O_APPEND write stays atomic
 const SUBCMD = new Set("git gh pnpm uv npm cargo docker kubectl brew chezmoi op wrangler codex claude modal".split(" "));
 const FILE_TOOLS = new Set(["Read", "Edit", "Write", "NotebookEdit", "MultiEdit"]);
 const R = "[REDACTED]";
+const EVENTS = new Set(["SessionStart", "PostToolUse", "PostToolUseFailure", "PostToolBatch", "PermissionDenied", "StopFailure"]);
 const SECRETS = [
   /sk-[A-Za-z0-9_-]{16,}/g,
   /gh[pousr]_\w{20,}/g,
@@ -21,7 +22,10 @@ const SECRETS = [
   /AIza[\w-]{30,}/g,
   /Bearer\s+\S+/gi,
   /eyJ\w+\.\w+\.\S*/g,
+  /sk_(live|test)_\w+/g,
+  /(token|key|secret|passw(or)?d|pwd|auth\w*)\s*[=:]\s*(["'])[^"']*\3/gi,
   /(token|key|secret|passw(or)?d|pwd|auth\w*)\s*[=:]\s*\S+/gi,
+  /\w*(session|cookie)\w*\s*[=:]\s*\S+/gi,
   /op:\/\/\S+/g,
   /[0-9a-fA-F]{32,}/g,
   /[A-Za-z0-9+/=_-]{40,}/g,
@@ -30,6 +34,7 @@ const SECRETS = [
 /** Redact one line of text. A line containing a PEM header goes entirely. */
 function redact(s) {
   if (s.includes("-----BEGIN")) return R;
+  if (/\b(mysql|mariadb)/.test(s)) s = s.replace(/(\s-p)\S+/g, `$1${R}`);
   for (const re of SECRETS) s = s.replace(re, R);
   return s;
 }
@@ -56,9 +61,21 @@ const TOKEN = /^[A-Za-z0-9._-]{1,32}$/;
 /** Command head: at most two tokens, never arguments. */
 function verbOf(cmd) {
   if (typeof cmd !== "string") return null;
-  const toks = cmd.trim().split("\n", 1)[0].split(/\s+/);
+  const line = cmd.trim().split("\n", 1)[0].replace(/^cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*&&\s*/, "");
+  const toks = line.split(/\s+/);
   let i = 0;
-  while (i < toks.length && (/^[A-Za-z_]\w*=/.test(toks[i]) || toks[i] === "sudo" || toks[i] === "env" || (i > 0 && toks[i].startsWith("-")))) i++;
+  while (i < toks.length) {
+    const t = toks[i];
+    const q = /^[A-Za-z_]\w*=(["'])/.exec(t);
+    if (q) {
+      // A quoted assignment can span tokens; its words are never the verb.
+      let j = i;
+      if (t.length === q[0].length || !t.endsWith(q[1])) for (j++; j < toks.length && !toks[j].endsWith(q[1]); j++);
+      if (j >= toks.length) return "?";
+      i = j + 1;
+    } else if (/^[A-Za-z_]\w*=/.test(t) || t === "sudo" || t === "env" || (i > 0 && t.startsWith("-"))) i++;
+    else break;
+  }
   if (i >= toks.length || !toks[i]) return null;
   const head = toks[i].slice(toks[i].lastIndexOf("/") + 1);
   if (!TOKEN.test(head)) return "?";
@@ -66,6 +83,9 @@ function verbOf(cmd) {
   if (!SUBCMD.has(head) || !sub || sub.startsWith("-")) return redact(head);
   return redact(`${head} ${TOKEN.test(sub) ? sub : "?"}`);
 }
+
+/** Server segment of an mcp__<server>__<tool> name. */
+const mcpOf = (tool) => (tool ? pick(/^mcp__(.+?)__/.exec(tool)?.[1], NAME) : null);
 
 function extOf(p) {
   if (typeof p !== "string") return "none";
@@ -77,12 +97,17 @@ function extOf(p) {
 /** Classify a PostToolBatch tool_response for a call no per-tool hook saw. */
 function denial(resp, tool) {
   const t = text(resp);
-  if (/^PreToolUse:\S* hook|hook error|blocked by .*hook/i.test(t)) return ["hook_deny", firstLine(t)];
+  if (/^PreToolUse:\S* hook|hook error|blocked by .*hook/i.test(t)) {
+    // Keep only the hook's name: its free text echoes symbols from the command.
+    const m = /^\w+:\S*\s+hook error:\s*(?:\[[\w-]{1,40}\]|[\w-]{1,40}(?=:))/.exec(t.trim());
+    return ["hook_deny", m ? m[0] : "hook error"];
+  }
   const m = /Permission to use (\S+)/.exec(t);
   if (m && /denied/i.test(t)) return ["rule_deny", `Permission to use ${pick(m[1], NAME) || tool || "?"}`];
   if (/InputValidationError|tool_use_error/.test(t)) return ["input_invalid", firstLine(t.replace(/<\/?tool_use_error>/g, ""))];
-  if (/user (doesn't want|rejected|denied)|rejected by the user/i.test(t)) return ["user_reject", firstLine(t)];
-  return ["other", firstLine(t)];
+  // These two are tool output or user text, not an error message: never stored.
+  if (/user (doesn't want|rejected|denied)|rejected by the user/i.test(t)) return ["user_reject", null];
+  return ["other", null];
 }
 
 function readHead(git) {
@@ -162,7 +187,7 @@ async function main() {
   if (!p || typeof p !== "object" || Array.isArray(p)) return;
   const ev = p.hook_event_name;
   const sid = pick(p.session_id, /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/);
-  if (!sid || typeof ev !== "string") return;
+  if (!sid || !EVENTS.has(ev)) return;
 
   const now = Date.now();
   const day = new Date(now).toISOString().slice(0, 10);
@@ -208,7 +233,7 @@ async function main() {
     id: typeof p.tool_use_id === "string" ? p.tool_use_id.slice(0, 128) : null,
     verb: tool === "Bash" ? verbOf(inp.command) : null,
     target: tool && FILE_TOOLS.has(tool) ? extOf(inp.file_path ?? inp.notebook_path) : null,
-    mcp_server: pick(p.mcp_server, NAME),
+    mcp_server: pick(p.mcp_server, NAME) || mcpOf(tool),
     code: null,
     err: null,
     dur_ms: Number.isFinite(p.duration_ms) ? p.duration_ms : null,
@@ -218,7 +243,7 @@ async function main() {
     proj: pick(typeof p.cwd === "string" ? p.cwd.slice(p.cwd.lastIndexOf("/") + 1) : null, /^[A-Za-z0-9._-]{1,64}$/),
     src: null,
     harness: ctx.harness,
-    cc: pick((env.CLAUDE_CODE_EXECPATH || "").split("/").pop(), /^[A-Za-z0-9._-]{1,32}$/),
+    cc: pick((env.CLAUDE_CODE_EXECPATH || "").split("/").pop(), /^\d+\.\d+\.\d+[A-Za-z0-9.-]{0,20}$/),
     model: ctx.model,
     pstart: ctx.pstart,
     arm: pick(env.CLAUDE_HEAL_ARM, /^[A-Za-z0-9_-]{1,32}$/),
@@ -257,7 +282,7 @@ async function main() {
         ...base, outcome: "denied_or_invalid", tool: t, id: c.tool_use_id.slice(0, 128), code, err,
         verb: t === "Bash" ? verbOf(ci.command) : null,
         target: t && FILE_TOOLS.has(t) ? extOf(ci.file_path ?? ci.notebook_path) : null,
-        mcp_server: null, dur_ms: null, intr: null,
+        mcp_server: mcpOf(t), dur_ms: null, intr: null,
       });
     }
   } else return;

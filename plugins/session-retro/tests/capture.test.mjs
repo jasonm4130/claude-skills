@@ -93,8 +93,58 @@ test("PostToolBatch records only calls no per-tool hook saw, classified", () => 
   const r = recs().slice(1);
   assert.deepEqual(r.map((x) => [x.id, x.outcome, x.code, x.err]), [
     ["r", "denied_or_invalid", "rule_deny", "Permission to use Bash"],
-    ["u", "denied_or_invalid", "user_reject", "The user doesn't want to proceed with this tool use."],
+    ["u", "denied_or_invalid", "user_reject", undefined],
   ]);
+});
+
+test("batch rows never store tool output; hook denials keep only the hook name", () => {
+  const { run, recs } = setup();
+  run({ hook_event_name: "PostToolBatch", session_id: "s1", tool_calls: [
+    { tool_name: "Read", tool_use_id: "o", tool_response: "Customer: Jane Roe, jane@example.com, 0400 000 000" },
+    { tool_name: "Bash", tool_use_id: "h1", tool_response: "PreToolUse:Bash hook error: [lsp-first] use LSP for AcmeSecretThing" },
+    { tool_name: "Bash", tool_use_id: "h2", tool_response: "PreToolUse:Bash hook error: docs-sync-guard: AcmeSecretThing changed" },
+    { tool_name: "mcp__claude_ai_Gmail__get_thread", tool_use_id: "m", tool_response: "whatever" },
+  ] });
+  const r = recs();
+  assert.deepEqual(r.map((x) => [x.id, x.code, x.err]), [
+    ["o", "other", undefined],
+    ["h1", "hook_deny", "PreToolUse:Bash hook error: [lsp-first]"],
+    ["h2", "hook_deny", "PreToolUse:Bash hook error: docs-sync-guard"],
+    ["m", "other", undefined],
+  ]);
+  assert.equal(r[3].mcp_server, "claude_ai_Gmail");
+  const all = JSON.stringify(r);
+  for (const leak of ["Jane", "example.com", "AcmeSecretThing"]) assert.ok(!all.includes(leak), leak);
+});
+
+test("verb skips cd prefixes and quoted assignments; cc only when version-shaped", () => {
+  const { env, run, recs } = setup();
+  const cmds = {
+    q: 'MSG="deploy the secretproject now" git commit -m x',
+    s: "K='a b' pnpm test",
+    c: 'cd "/Users/me/secret dir" && cargo build',
+    u: 'X="never closed git push',
+  };
+  env.CLAUDE_CODE_EXECPATH = "/opt/homebrew/bin/node";
+  for (const [id, command] of Object.entries(cmds))
+    run({ hook_event_name: "PostToolUse", session_id: "s1", tool_name: "Bash", tool_use_id: id, tool_input: { command } });
+  const r = recs();
+  assert.deepEqual(r.map((x) => x.verb), ["git commit", "pnpm test", "cargo build", "?"]);
+  assert.equal(r[0].cc, undefined);
+  assert.ok(!JSON.stringify(r).includes("secret"));
+});
+
+test("redaction covers quoted passwords, mysql -p, stripe keys and session cookies", () => {
+  const { run, recs } = setup();
+  const errs = [
+    'password="hunter two" rejected',
+    "mysql -u root -phunter2 failed",
+    "bad key sk_" + "live_" + "abc123def456",
+    "Cookie rejected: sessionid=abcdef123",
+  ];
+  errs.forEach((error, i) => run({ hook_event_name: "PostToolUseFailure", session_id: "s1", tool_name: "Bash", tool_use_id: `r${i}`, error }));
+  const all = JSON.stringify(recs());
+  for (const leak of ["hunter", "abc123def456", "abcdef123"]) assert.ok(!all.includes(leak), leak);
 });
 
 test("canary heartbeat writes a record but no ctx file; bad input writes nothing", () => {
