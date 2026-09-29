@@ -394,7 +394,7 @@ test("e2e: fresh auto review — verdict, findings, log lines, exact codex args"
   const argv = shim.argv();
   assert.deepEqual(argv.slice(0, 3), ["exec", "--json", "--sandbox"]);
   assert.ok(argv.includes("read-only") && argv.includes("-m") && argv.includes("gpt-6-sol"));
-  assert.ok(argv.includes("model_reasoning_effort=high") && argv.includes("--skip-git-repo-check"));
+  assert.ok(argv.includes("model_reasoning_effort=medium") && argv.includes("--skip-git-repo-check"));
   const lines = readLogLines(logPath);
   assert.equal(lines[0].mode, "open");
   assert.equal(lines[1].mode, "review");
