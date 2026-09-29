@@ -848,7 +848,7 @@ export async function main(argv) {
         resume: { type: "string" }, chain: { type: "string" },
         "retry-verdict": { type: "boolean" },
         model: { type: "string", default: "gpt-6-sol" },
-        effort: { type: "string", default: "high" },
+        effort: { type: "string", default: "medium" },
         timeout: { type: "string", default: "300" },
         "max-lines": { type: "string", default: "4000" },
         unique: { type: "string" }, outcome: { type: "string" }, comment: { type: "string" },

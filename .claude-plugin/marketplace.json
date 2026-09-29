@@ -12,7 +12,7 @@
       "name": "codex-review",
       "source": "./plugins/codex-review",
       "description": "Cross-provider adversarial plan/design-doc review via OpenAI Codex (GPT-6 Sol) plus a blind Opus reviewer: verdict-loop protocol, atomic chain guard, cross-repo decision-gate log.",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "author": {
         "name": "Jason Matthew"
       },
