@@ -9,7 +9,9 @@ trigger, in one plugin because they are one design:
   plugins-monorepo pairs — executable plugin code staged without that plugin's
   README.md/CLAUDE.md → **deny** with the offending plugin names; (2) generic
   nearest-covering-doc — any other code file whose nearest ancestor
-  README.md/CLAUDE.md/AGENTS.md exists but isn't staged → **deny**. `docs-sync:ack`
+  README.md/CLAUDE.md/AGENTS.md exists but isn't staged → **deny**; a root-level doc
+  counts only when it mentions the file (basename, stem, top-level dir, chezmoi
+  target name). `docs-sync:ack`
   in the commit command bypasses (and self-documents in history).
 - **workflow-model** (matcher `Workflow`) — for a script it can read (inline `script`
   or one read from `scriptPath`), **denies** an expensive fan-out with no per-agent
@@ -31,6 +33,9 @@ trigger, in one plugin because they are one design:
   `sed -i`, heredoc redirect or `tee` rewrites a config without the write tools ever
   being involved. Adopted from jasonm4130/dotfiles, where it was machine-level; it guards
   by basename rather than by absolute path, which is what makes it distributable.
+- **signing-nudge** (`PostToolUseFailure`, matcher `Bash`) — when the error text is a
+  locked or unreachable 1Password SSH agent, adds `additionalContext` telling Claude to
+  ask Jason to unlock rather than retry or touch git/SSH config. Never blocks.
 - **consolidation trigger** — `Stop` measures commits since the `.docs-sync` record's
   `audited=` SHA and arms a flag; `UserPromptSubmit` consumes it fire-once and suggests
   `gates:docs-consolidate`. Never blocks. See README.md for the user-facing contract.

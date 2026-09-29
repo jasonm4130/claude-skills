@@ -30,7 +30,7 @@
 
 import process from "node:process";
 import path from "node:path";
-import { realpathSync, existsSync } from "node:fs";
+import { realpathSync, existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { readStdin, safeJsonParse, emitPermissionDecision, isGuardDisabled } from "./lib.mjs";
 
@@ -333,6 +333,8 @@ const violatingPlugins = [...codePlugins].filter((p) => !docPlugins.has(p)).sort
 // For each changed non-plugins code file, walk up from its directory to the repo
 // root; the nearest level holding a README.md/CLAUDE.md/AGENTS.md is the covering
 // doc set. A repo with no such docs anywhere above the file has nothing to drift.
+// Root-level docs are the exception: they cover a file only when they mention it
+// (basename, stem, top-level dir, or chezmoi target name).
 const DOC_BASENAMES = ["README.md", "CLAUDE.md", "AGENTS.md"];
 // `.docs-sync` is this plugin's own consolidation record. It is not Markdown, so
 // without this entry rule 2 would treat it as code, walk up for its covering doc,
@@ -342,6 +344,37 @@ const DOC_BASENAMES = ["README.md", "CLAUDE.md", "AGENTS.md"];
 // still caught, because each path is classified independently.
 const SKIP_RE =
   /\.(md|markdown)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|Cargo\.lock|uv\.lock|poetry\.lock|LICENSE[^/]*|\.gitignore|\.gitattributes|\.editorconfig|\.docs-sync)$|\.lock$|(^|\/)\.claude-plugin\//;
+
+/**
+ * Names a doc would use for this file: basename, stem, top-level directory, and
+ * the chezmoi target name (`dot_zshenv` -> `.zshenv`, `executable_x` -> `x`).
+ * @param {string} f
+ * @returns {string[]}
+ */
+function mentionNames(f) {
+  const base = path.posix.basename(f);
+  const target = base
+    .replace(/\.tmpl$/, "")
+    .replace(/^(run_(once_|onchange_)?(before_|after_)?|executable_|private_|readonly_|empty_)+/, "")
+    .replace(/^dot_/, ".");
+  const names = [base, base.replace(/\.[^.]+$/, ""), target, target.replace(/^\./, "")];
+  if (f.includes("/")) names.push(`${f.split("/")[0]}/`);
+  return [...new Set(names)].filter((n) => n.replace(/[./]/g, "").length >= 3);
+}
+
+/** @type {Map<string, string>} */
+const docText = new Map();
+/** @param {string} d */
+function readDoc(d) {
+  if (!docText.has(d)) {
+    try {
+      docText.set(d, readFileSync(path.join(root, d), "utf8"));
+    } catch {
+      docText.set(d, "");
+    }
+  }
+  return /** @type {string} */ (docText.get(d));
+}
 
 /** @type {Map<string, { docs: string[], files: string[] }>} */
 const genericViolations = new Map();
@@ -356,6 +389,15 @@ for (const f of staged) {
     const docs = DOC_BASENAMES.map((b) => prefix + b).filter((d) =>
       existsSync(path.join(root, d)),
     );
+    // A root-level doc covers only the files it talks about. A root README is
+    // everywhere's nearest doc, so without this every commit in a repo with one
+    // needed an ack: 256 denials in 33 sessions, most acked reflexively.
+    if (docs.length && dir === ".") {
+      const names = mentionNames(f);
+      const mentioning = docs.filter((d) => names.some((n) => readDoc(d).includes(n)));
+      if (mentioning.length) covering = { docs: mentioning };
+      break;
+    }
     if (docs.length) {
       covering = { docs };
       break;

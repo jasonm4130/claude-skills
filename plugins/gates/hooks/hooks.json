@@ -65,6 +65,18 @@
           }
         ]
       }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/posttoolusefailure-signing-nudge.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

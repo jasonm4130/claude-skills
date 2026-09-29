@@ -1,7 +1,7 @@
 # gates
 
-Four stateless `PreToolUse` gates, a `PostToolUse` config guard and one
-never-blocking nudge, in one plugin.
+Four stateless `PreToolUse` gates, a `PostToolUse` config guard and two
+never-blocking nudges, in one plugin.
 Each intercepts a *specific, high-signal action* at the moment it is about to
 happen, and each carries an ack marker so a deliberate override costs one token in
 history rather than a disabled hook.
@@ -12,6 +12,7 @@ history rather than a disabled hook.
 | **workflow-model** | a `Workflow` script that fans out with no per-agent `model:` | deny | `model-guard:ack` |
 | **agent-model** | an `Agent` dispatch that omits `model` | deny | set `model` |
 | **json-config-guard** | a write that leaves `settings.json` / `.mcp.json` unparseable | reports after the fact (exit 2) | fix the syntax |
+| **signing-nudge** | a Bash failure caused by a locked 1Password SSH agent (git signing, SSH push) | adds context telling Claude to ask you to unlock instead of retrying | none needed |
 | **consolidation trigger** | a repo that has moved far since its docs were last checked *against each other* | in-session nudge, never blocks | `/docs-consolidate --defer` |
 
 They share a plugin because they share a design: no flag files, no session state,
@@ -48,6 +49,7 @@ and hook subprocesses inherit it.
 | `agent-model` | the `Agent` model gate |
 | `json-config-guard` | the JSON config guard |
 | `docs-consolidate` | the consolidation trigger, both of its hooks |
+| `signing-nudge` | the 1Password signing nudge |
 
 Matching is exact, so `DOCS-SYNC` and `docs_sync` disable nothing. An
 unrecognised name is ignored in silence, because a guard that shouts about its own
@@ -83,8 +85,12 @@ Two rules, checked on every `git commit` in any repo:
 
 **Generic nearest-covering-doc rule** — for any other changed code file, walk up from
 its directory to the repo root; the nearest level holding a `README.md`, `CLAUDE.md`,
-or `AGENTS.md` is that file's covering doc set. If none of the covering docs are in
-the commit, the commit is denied — this is the general failure path where the system
+or `AGENTS.md` is that file's covering doc set. A doc at the **repo root** covers a
+file only when it mentions it — by basename, stem, top-level directory, or chezmoi
+target name (`dot_zshenv` → `.zshenv`) — because the root README is every file's
+nearest doc and otherwise gated every commit (256 denials in 33 sessions, mostly
+acked reflexively). Nested docs cover their whole subtree as before. If none of the
+covering docs are in the commit, the commit is denied — this is the general failure path where the system
 changes, the docs don't, and a future agent session reads the stale docs as the source
 of truth. A repo with no such docs anywhere above the changed file has nothing to
 drift and stays silent.
@@ -313,12 +319,14 @@ gates/
 │                                                 (workflow-model, agent-model,
 │                                                 json-config-guard)
 ├── hooks/hooks.json                            — PreToolUse (Bash, Workflow, Agent),
-│                                                 Stop, UserPromptSubmit
+│                                                 PostToolUseFailure (Bash), Stop,
+│                                                 UserPromptSubmit
 ├── scripts/
 │   ├── lib.mjs                                 — hook I/O + the drift engine
 │   ├── pretooluse-guard-docs-sync.mjs          — the commit gate
 │   ├── pretooluse-guard-workflow-model.mjs     — the Workflow gate
 │   ├── pretooluse-guard-agent-model.mjs        — the Agent gate
+│   ├── posttoolusefailure-signing-nudge.mjs    — the 1Password unlock nudge
 │   ├── stop-check-consolidation-drift.mjs      — measures drift, arms the flag
 │   ├── check-consolidation-flag.mjs            — consumes the flag, injects the nudge
 │   └── defer-consolidation.mjs                 — /docs-consolidate --defer
