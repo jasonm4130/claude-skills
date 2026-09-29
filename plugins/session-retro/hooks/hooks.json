@@ -5,65 +5,63 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/mark-session-start.mjs\"",
-            "timeout": 5
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/capture.mjs\"",
+            "timeout": 2
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write|Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/posttooluse-append-event.mjs\"",
-            "timeout": 5
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/capture.mjs\"",
+            "timeout": 2
           }
         ]
       }
     ],
     "PostToolUseFailure": [
       {
-        "matcher": "Edit|Write|Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/posttooluse-append-event.mjs\"",
-            "timeout": 5
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/capture.mjs\"",
+            "timeout": 2
           }
         ]
       }
     ],
-    "Stop": [
+    "PostToolBatch": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/stop-write-retro-flag.mjs\"",
-            "timeout": 5
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/capture.mjs\"",
+            "timeout": 2
           }
         ]
       }
     ],
-    "PreCompact": [
+    "PermissionDenied": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/precompact-write-retro-flag.mjs\"",
-            "timeout": 5
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/capture.mjs\"",
+            "timeout": 2
           }
         ]
       }
     ],
-    "UserPromptSubmit": [
+    "StopFailure": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/check-retro-flag.mjs\"",
-            "timeout": 5
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/capture.mjs\"",
+            "timeout": 2
           }
         ]
       }

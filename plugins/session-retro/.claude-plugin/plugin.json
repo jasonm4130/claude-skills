@@ -1,7 +1,7 @@
 {
   "name": "session-retro",
-  "description": "Interactive session retrospectives — deterministic activity triggers, one end-of-day offer, batch-scoped diff- and event-log-driven interview, native memory entries. No external services.",
-  "version": "0.9.1",
+  "description": "Capture layer for a weekly self-healing review: one input-free, redacted JSON line per tool outcome, denial and session start, tagged with harness version. No stdout, no network.",
+  "version": "1.0.0",
   "author": {
     "name": "Jason Matthew"
   },
@@ -9,9 +9,8 @@
   "repository": "https://github.com/jasonm4130/claude-skills",
   "license": "MIT",
   "keywords": [
-    "session",
-    "retrospective",
-    "memory",
+    "telemetry",
+    "failures",
     "hooks",
     "claude-code"
   ],

@@ -2,11 +2,11 @@
 // Repo invariant: the shared primitives duplicated across every plugin's
 // `scripts/lib.mjs` must stay byte-identical.
 //
-// Claude Code plugins cannot share files across plugin boundaries, so five plugins
-// (gates, domain-modeling, handoff, session-retro, ship-gate) each carry their own
+// Claude Code plugins cannot share files across plugin boundaries, so four plugins
+// (gates, domain-modeling, handoff, ship-gate) each carry their own
 // `lib.mjs` copy of the same handful of helpers. That duplication is deliberate and
 // unavoidable — but it has a failure mode that is silent and expensive: a bug gets
-// fixed in one copy and left in the other four. That is not hypothetical.
+// fixed in one copy and left in the others. That is not hypothetical.
 // `handoff`'s statusLine↔hook data-dir split (0.10.0) was a bug in exactly this
 // shape, and the docs-sync gate had independently hit the same class and solved it
 // a different way.

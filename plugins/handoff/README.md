@@ -102,11 +102,6 @@ and guessing wrong in that direction is the whole vulnerability.
   deleted as stale. The handoff file itself still exists — `cat` it manually.
 - If the handoff or the `.pending` marker is committed to git, the loader refuses it by
   design — see above.
-- The new session's events log starts empty. `/retro` will quick-skip (correct behavior).
-
-**Note:** After a resumed session, the `session-retro` plugin's `/retro` quick-skip
-gate will fire (no edits in the new session yet). This is expected — the handoff
-gives you context, but the retro waits until you've actually done work in the new session.
 
 ## State files
 
