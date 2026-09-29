@@ -261,7 +261,7 @@ test("fails open when cwd is not a git repo", () => {
 
 test("generic: denies code change when covering root README+CLAUDE.md untouched", () => {
   const r = repo(
-    { "src/main.js": "x", "README.md": "d", "CLAUDE.md": "d" },
+    { "src/main.js": "x", "README.md": "see src/ for the entry point", "CLAUDE.md": "main.js boots it" },
     ["src/main.js"],
   );
   try {
@@ -376,7 +376,7 @@ test("docs-sync: the record alongside markdown edits is allowed", () => {
 
 test("docs-sync: the exemption is not a bypass — real code in the same commit still denies", () => {
   const r = repo(
-    { ".docs-sync": "docs-sync: audited=abc123", "src/main.js": "x", "README.md": "d" },
+    { ".docs-sync": "docs-sync: audited=abc123", "src/main.js": "x", "README.md": "src/ holds the app" },
     [".docs-sync", "src/main.js"],
   );
   try {
@@ -425,7 +425,7 @@ test("docs-sync: single-quoted and backslash-escaped spaces are handled too", ()
 test("docs-sync: a commit mentioned inside a heredoc body is not a commit", () => {
   // Text being written to a file is not a command. Without stripping, writing a
   // README that documents `git add x && git commit` denies the write itself.
-  const r = repo({ "src/main.js": "x", "README.md": "d" }, ["src/main.js"]);
+  const r = repo({ "src/main.js": "x", "README.md": "src/ holds the app" }, ["src/main.js"]);
   try {
     const cmd = "cat >> notes.md <<'EOF'\ngit add src/main.js && git commit -m x\nEOF";
     assert.equal(run(bash(cmd, r.root)).stdout.trim(), "", "heredoc body must not trigger the gate");
@@ -630,7 +630,7 @@ test("docs-sync: the deny reason says where the marker must go", () => {
 test("docs-sync: a real commit AFTER a heredoc terminator still denies", () => {
   // Guard against over-correction: stripping the body must not swallow the
   // commands that follow it.
-  const r = repo({ "src/main.js": "x", "README.md": "d" }, ["src/main.js"]);
+  const r = repo({ "src/main.js": "x", "README.md": "src/ holds the app" }, ["src/main.js"]);
   try {
     const cmd = "cat <<EOF\nhello\nEOF\ngit commit -m x";
     const d = parseDecision(run(bash(cmd, r.root)).stdout);
@@ -644,12 +644,53 @@ test("docs-sync: a real commit AFTER a heredoc terminator still denies", () => {
 test("docs-sync: a quoted CODE path with spaces is still caught", () => {
   // Guard against over-correction: fixing the split must not make the gate blind
   // to real code whose path happens to contain a space.
-  const r = repo({ "My Code/app.js": "x", "README.md": "d" }, []);
+  const r = repo({ "My Code/app.js": "x", "README.md": "app.js is the entry" }, []);
   try {
     const cmd = 'git add "My Code/app.js" && git commit -m "x"';
     const d = parseDecision(run(bash(cmd, r.root)).stdout);
     assert.equal(d.permissionDecision, "deny");
     assert.match(d.permissionDecisionReason, /My Code\/app\.js/);
+  } finally {
+    r.cleanup();
+  }
+});
+
+// ---- root docs cover only the files they mention ----
+
+test("generic: root README that never mentions the file does not gate it", () => {
+  const r = repo({ "dot_zshenv": "x", "README.md": "Dotfiles. Run bootstrap.sh." }, ["dot_zshenv"]);
+  try {
+    const { status, stdout } = run(bash('git commit -m "zsh tweak"', r.root));
+    assert.equal(status, 0);
+    assert.equal(stdout, "");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("generic: root README mentioning the chezmoi target name still gates", () => {
+  const r = repo(
+    { "dot_local/bin/executable_claude-canary": "x", "README.md": "Run `claude-canary` daily." },
+    ["dot_local/bin/executable_claude-canary"],
+  );
+  try {
+    const { stdout } = run(bash('git commit -m "canary"', r.root));
+    const d = parseDecision(stdout);
+    assert.equal(d.permissionDecision, "deny");
+    assert.match(d.permissionDecisionReason, /README\.md/);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("generic: nested docs still cover their whole subtree without a mention", () => {
+  const r = repo({ "svc/api/server.js": "x", "svc/README.md": "service docs", "README.md": "root" }, [
+    "svc/api/server.js",
+  ]);
+  try {
+    const d = parseDecision(run(bash('git commit -m "x"', r.root)).stdout);
+    assert.equal(d.permissionDecision, "deny");
+    assert.match(d.permissionDecisionReason, /svc\/README\.md/);
   } finally {
     r.cleanup();
   }
