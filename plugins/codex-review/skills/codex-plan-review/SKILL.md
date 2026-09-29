@@ -11,7 +11,7 @@ Send a finalized plan/spec/design/ADR to OpenAI Codex (`gpt-6-sol`, high effort,
 
 ## Flow
 
-1. **Announce:** "Running Codex plan review (Sol, high effort) plus a blind Opus reviewer — round 1." `gpt-6-sol` needs Codex CLI 0.158+ on a ChatGPT login (older clients do not list it); if a round returns `verdict:"error"` naming the model, rerun with `--model <available model>` and say which. If `codex` is missing or not logged in (`codex login status`), say so, skip, and continue without blocking the plan.
+1. **Announce:** "Running Codex plan review (Sol, high effort) plus a blind Opus reviewer — round 1." `gpt-6-sol` needs Codex CLI 0.158+ on a ChatGPT login (older clients do not list it); if a round returns `verdict:"error"` and its `errorDetail` says the model is unavailable, close that chain (`note --chain <id> --unique 0 --outcome aborted --comment "model unavailable"`; an aborted chain does not block a new one), then rerun with `--model <available model>` and say which. If `codex` is missing or not logged in (`codex login status`), say so, skip, and continue without blocking the plan.
 2. **Preflight:** the artifact must be a file. Write conversation-only plans to their canonical path first (`docs/superpowers/specs/…`, the repo's own plans directory, or scratchpad for throwaways).
 3. **Round 1:** `node <skill-dir>/scripts/codex-review.mjs review <file> --auto` (use `--force` only when the user explicitly asked for a re-run). If it refuses with "chain already exists", tell the user this artifact version was already reviewed and stop unless they ask to force.
    **In the same message, start the blind Claude reviewer** (see "Blind Claude reviewer" below). Launch the Codex call with `run_in_background` so both run at once.

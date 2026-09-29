@@ -14,7 +14,7 @@ import { join as joinPath } from "node:path";
 import { parseArgs } from "node:util";
 
 export function parseEventStream(stdoutText) {
-  let sessionId = null, finalMessage = null, terminal = "missing", usage = null;
+  let sessionId = null, finalMessage = null, terminal = "missing", usage = null, errorMessage = null;
   for (const line of stdoutText.split("\n")) {
     let ev;
     try { ev = JSON.parse(line); } catch { continue; }
@@ -22,9 +22,12 @@ export function parseEventStream(stdoutText) {
     if (ev.type === "thread.started" && ev.thread_id) sessionId = ev.thread_id;
     if (ev.type === "item.completed" && ev.item?.type === "agent_message") finalMessage = ev.item.text ?? finalMessage;
     if (ev.type === "turn.completed" && terminal !== "failed") { terminal = "completed"; usage = ev.usage ?? null; }
-    if (ev.type === "turn.failed" || ev.type === "error") terminal = "failed"; // sticky — a later turn.completed must not mask it
+    if (ev.type === "turn.failed" || ev.type === "error") {
+      terminal = "failed"; // sticky — a later turn.completed must not mask it
+      errorMessage ??= ev.error?.message ?? ev.message ?? null; // first failure is the cause, e.g. a rejected model
+    }
   }
-  return { sessionId, finalMessage, terminal, usage };
+  return { sessionId, finalMessage, terminal, usage, errorMessage };
 }
 
 export function parseVerdict(text, mode) {
@@ -820,6 +823,9 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
     finalMessage: stream.finalMessage, usage: stream.usage,
     durationMs: Date.now() - t0, pendingNoteChainId: chainId,
   };
+  // Surface why a round failed (e.g. the model is not available on this login), so the caller can
+  // close the chain and retry with --model rather than guess.
+  if (!result.ok) result.errorDetail = String(stream.errorMessage ?? stderr ?? "").slice(0, 500) || null;
   appendResult(logPath, {
     chainId, repo, artifact: relPath, contentHash: hash, mode, round, pinnedRange,
     verdict, findings, sessionId: stream.sessionId, model, effort,

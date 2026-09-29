@@ -36,6 +36,7 @@ test("parseEventStream: turn.failed and error events are terminal failures, and 
   for (const line of ['{"type":"turn.failed","error":{"message":"boom"}}', '{"type":"error","message":"boom"}']) {
     const r = parseEventStream(FIXTURE.replace(/^\{"type":"turn\.completed".*$/m, line));
     assert.equal(r.terminal, "failed");
+    assert.equal(r.errorMessage, "boom");
   }
   const sticky = FIXTURE.replace(/^\{"type":"turn\.completed".*$/m, '{"type":"turn.failed","error":{"message":"boom"}}')
     + '\n{"type":"turn.completed","usage":{}}';
@@ -1019,4 +1020,21 @@ test("diff --expect-pinned: a commit between `prompt diff` and `diff` is refused
   assert.match(moved.stderr, /not the expected/);
   assert.equal(shim.argv(), null, "codex must not be invoked");
   assert.equal(readLogLines(logPath).length, before, "no reservation");
+});
+
+test("failed round: errorDetail carries the cause, and abort-then-retry with --model opens a new chain", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const failShim = makeShim(dir, "fail");
+  const r = runCli(["review", artifact, "--auto"], failShim.env, logPath);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.verdict, "error");
+  assert.equal(out.errorDetail, "boom");
+  const n = runCli(["note", "--chain", out.chainId, "--unique", "0", "--outcome", "aborted", "--comment", "model unavailable"], failShim.env, logPath);
+  assert.equal(n.status, 0, n.stderr);
+  const okShim = makeShim(dir, "ok");
+  const retry = runCli(["review", artifact, "--auto", "--model", "gpt-5.6-terra"], okShim.env, logPath);
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.notEqual(JSON.parse(retry.stdout).chainId, out.chainId);
+  assert.ok(okShim.argv().includes("gpt-5.6-terra"));
 });
