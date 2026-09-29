@@ -22,3 +22,6 @@ plugins/*/go/ccguard
 /.claude/handoffs/
 # claude plugin eval output; the cases are committed, the runs are not.
 plugins/*/evals/results/
+
+# Machine-local Codex mirror of .claude/hooks (absolute paths in hooks.json)
+.codex/
