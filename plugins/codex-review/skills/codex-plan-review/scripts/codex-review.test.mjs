@@ -392,7 +392,7 @@ test("e2e: fresh auto review — verdict, findings, log lines, exact codex args"
   assert.equal(out.pendingNoteChainId, out.chainId);
   const argv = shim.argv();
   assert.deepEqual(argv.slice(0, 3), ["exec", "--json", "--sandbox"]);
-  assert.ok(argv.includes("read-only") && argv.includes("-m") && argv.includes("gpt-5.6-terra"));
+  assert.ok(argv.includes("read-only") && argv.includes("-m") && argv.includes("gpt-6-sol"));
   assert.ok(argv.includes("model_reasoning_effort=high") && argv.includes("--skip-git-repo-check"));
   const lines = readLogLines(logPath);
   assert.equal(lines[0].mode, "open");
@@ -954,4 +954,41 @@ test("resolveDiff: a diff of exactly maxLines is accepted, not off-by-one refuse
     /too large|narrow/i,
     "one line over the limit is still refused",
   );
+});
+
+test("prompt: prints the exact round-1 review prompt, spends nothing, writes no log", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "ok");
+  const r = runCli(["prompt", "review", artifact], shim.env, logPath);
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.mode, "prompt");
+  assert.equal(out.prompt, buildReviewPrompt(out.artifact));
+  assert.equal(shim.argv(), null, "codex must not be invoked");
+  assert.equal(existsSync(logPath), false, "no log line for a prompt");
+  // The later real review round still opens a fresh chain for the same artifact.
+  const rv = runCli(["review", artifact, "--auto"], shim.env, logPath);
+  assert.equal(rv.status, 0, rv.stderr);
+  assert.equal(shim.argv().at(-1), out.prompt, "Claude and Codex get the same prompt");
+});
+
+test("prompt: rejects a missing kind or target", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const r = runCli(["prompt", "audit", "x.md"], process.env, logPath);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /prompt requires <review\|diff>/);
+});
+
+test("note: --claude-unique is recorded when given and validated", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "ok");
+  const first = JSON.parse(runCli(["review", artifact, "--auto"], shim.env, logPath).stdout);
+  const bad = runCli(["note", "--chain", first.chainId, "--unique", "1", "--outcome", "aborted", "--claude-unique", "-2"], shim.env, logPath);
+  assert.notEqual(bad.status, 0);
+  const ok = runCli(["note", "--chain", first.chainId, "--unique", "1", "--outcome", "aborted", "--claude-unique", "3"], shim.env, logPath);
+  assert.equal(ok.status, 0, ok.stderr);
+  const note = readLogLines(logPath).find((l) => l.mode === "note");
+  assert.equal(note.claudeUnique, 3);
 });

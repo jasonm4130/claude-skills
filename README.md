@@ -27,7 +27,7 @@ references one machine's paths, prose calibration, or state, it belongs in dotfi
 
 | Plugin | Description | Requirements | Install command |
 |---|---|---|---|
-| `codex-review` | Cross-provider plan/design review via OpenAI Codex (Terra) | Node 18+ · [Codex CLI](https://github.com/openai/codex) | `/plugin install codex-review@jasonm4130-claude-skills` |
+| `codex-review` | Cross-provider plan/design review via OpenAI Codex (GPT-6 Sol) plus a blind Opus reviewer | Node 18+ · [Codex CLI](https://github.com/openai/codex) | `/plugin install codex-review@jasonm4130-claude-skills` |
 | `domain-modeling` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms; offers one once per repo that lacks it | Node 18+ | `/plugin install domain-modeling@jasonm4130-claude-skills` |
 | `gates` | Four PreToolUse gates — docs-drift commit gate, LSP-first search gate, Workflow and Agent model tiering — a PostToolUse JSON-config guard, and a non-blocking docs-consolidation nudge. Any of them can be switched off with `GATES_DISABLE` | Node 18+ | `/plugin install gates@jasonm4130-claude-skills` |
 | `handoff` | On-demand `/handoff` resume doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |

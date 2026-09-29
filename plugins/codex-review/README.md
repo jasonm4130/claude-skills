@@ -1,6 +1,6 @@
 # codex-review
 
-Cross-provider adversarial **plan/design-doc review** for Claude Code, using OpenAI Codex (GPT-5.6 Terra) as the reviewer. Fills the gap the official [`openai/codex-plugin-cc`](https://github.com/openai/codex-plugin-cc) plugin doesn't cover (its issue #4): reviewing plans and design docs, not just diffs. v0.2 added **diff mode** (see below), now proven on three dogfoods — still not a replacement for the official plugin's interactive `/codex:review`.
+Cross-provider adversarial **plan/design-doc review** for Claude Code, using OpenAI Codex (GPT-6 Sol) as the reviewer, paired in round 1 with a blind Opus reviewer running the same prompt. Fills the gap the official [`openai/codex-plugin-cc`](https://github.com/openai/codex-plugin-cc) plugin doesn't cover (its issue #4): reviewing plans and design docs, not just diffs. v0.2 added **diff mode** (see below), now proven on three dogfoods — still not a replacement for the official plugin's interactive `/codex:review`.
 
 Design: [`2026-07-14-codex-plan-review-design.md`](https://github.com/jasonm4130/claude-skills/blob/main/docs/superpowers/specs/2026-07-14-codex-plan-review-design.md). Research: [`2026-07-14-codex-adversarial-review-skill-research.md`](https://github.com/jasonm4130/claude-skills/blob/main/docs/research/2026-07-14-codex-adversarial-review-skill-research.md).
 
@@ -17,9 +17,9 @@ Requirements: **Node.js 18+** on `PATH` (runs `scripts/codex-review.mjs` directl
 
 ## What it does
 
-At plan gates (finalized spec/plan/ADR) — or on "codex review this plan" — Claude runs a bounded verdict loop: Terra reviews the artifact file in a read-only sandbox → `VERDICT: APPROVED|REVISE` → Claude amends and resumes (max 3 rounds) → one fresh-session holistic audit (`AUDIT: PASS|CONCERNS`). Every chain is logged to `~/.claude/codex-review-log.jsonl` with a uniqueness judgment for the decision gate.
+At plan gates (finalized spec/plan/ADR) — or on "codex review this plan" — Claude runs a bounded verdict loop: Sol (with a blind Opus reviewer in round 1) reviews the artifact file in a read-only sandbox → `VERDICT: APPROVED|REVISE` → Claude amends and resumes (max 3 rounds) → one fresh-session holistic audit (`AUDIT: PASS|CONCERNS`). Every chain is logged to `~/.claude/codex-review-log.jsonl` with a uniqueness judgment for the decision gate.
 
-Key protections (see spec for rationale): reviewer never sees Claude's self-assessment; content-hash guard prevents duplicate auto-reviews of the same artifact version (atomic, cross-session); codex exit codes are never trusted; `--output-schema` is never used; explicit `-m gpt-5.6-terra` on every call.
+Key protections (see spec for rationale): reviewer never sees Claude's self-assessment; content-hash guard prevents duplicate auto-reviews of the same artifact version (atomic, cross-session); codex exit codes are never trusted; `--output-schema` is never used; explicit `-m gpt-6-sol` on every call (needs Codex CLI 0.158+ on a ChatGPT login; older clients do not list it).
 
 ## Diff mode — ✅ PROVEN (2026-07-14)
 

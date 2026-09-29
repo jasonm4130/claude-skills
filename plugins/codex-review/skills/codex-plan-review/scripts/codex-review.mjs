@@ -544,9 +544,12 @@ export function appendResult(logPath, entry) {
   }
 }
 
-export function appendNote(logPath, { chainId, unique, outcome, comment }) {
+export function appendNote(logPath, { chainId, unique, outcome, comment, claudeUnique }) {
   const n = Number(unique);
   if (!Number.isInteger(n) || n < 0) throw err("BAD_UNIQUE", `--unique must be a non-negative integer, got: ${unique}`);
+  // Findings only the blind Claude reviewer raised in round 1 — optional, so older callers still work.
+  const cu = claudeUnique === undefined ? undefined : Number(claudeUnique);
+  if (cu !== undefined && (!Number.isInteger(cu) || cu < 0)) throw err("BAD_UNIQUE", `--claude-unique must be a non-negative integer, got: ${claudeUnique}`);
   if (!OUTCOMES.includes(outcome)) throw err("BAD_OUTCOME", `outcome must be one of ${OUTCOMES.join("|")}`);
   // Same lock as reservation: duplicate-rejection must not be a racy read-then-append.
   const lockPath = logPath + ".lock";
@@ -578,6 +581,7 @@ export function appendNote(logPath, { chainId, unique, outcome, comment }) {
     const line = {
       ts: new Date().toISOString(), chainId, mode: "note",
       unique: n, trigger: chain.open.trigger, outcome, comment: comment ?? "",
+      ...(cu === undefined ? {} : { claudeUnique: cu }),
     };
     appendFileSync(logPath, JSON.stringify(line) + "\n"); // throws on failure — fatal by design
   } finally {
@@ -636,9 +640,9 @@ export function runCodex(args, { cwd, timeoutMs }) {
 
 function die(msg, code = 1) { process.stderr.write(msg + "\n"); process.exit(code); }
 
-async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, model, effort, timeoutS, maxLines }) {
-  const logPath = logPathDefault();
-
+/** Resolve the artifact a round reviews: repo root, chain artifact id, content hash and, for diffs,
+ * the pinned range and file lists. Shared by runRound and `prompt`, so both see the same artifact. */
+function resolveArtifact(file, mode, maxLines) {
   let repoRoot, relPath, hash, diffFiles = [], diffUndiffable = [], pinnedRange = "";
   if (isDiffMode(mode)) {
     repoRoot = repoRootOfDir(process.cwd()); // NOT resolveRepoRoot — that dirname()s its argument
@@ -676,6 +680,13 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
     relPath = relativePath(repoRoot, abs) || abs;
     hash = contentHashOf(readFileSync(abs));
   }
+  return { repoRoot, relPath, hash, diffFiles, diffUndiffable, pinnedRange };
+}
+
+async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, model, effort, timeoutS, maxLines }) {
+  const logPath = logPathDefault();
+
+  const { repoRoot, relPath, hash, diffFiles, diffUndiffable, pinnedRange } = resolveArtifact(file, mode, maxLines);
   const repo = repoRoot.split("/").at(-1);
   let chainId = chain, trigger;
 
@@ -810,7 +821,7 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
   if (!result.ok) process.exit(4);
 }
 
-const USAGE = "usage: codex-review.mjs <review|diff|audit|diff-audit|note|stats> …";
+const USAGE = "usage: codex-review.mjs <review|diff|audit|diff-audit|prompt|note|stats> …";
 
 export async function main(argv) {
   const [cmd, ...rest] = argv;
@@ -822,11 +833,12 @@ export async function main(argv) {
         auto: { type: "boolean" }, force: { type: "boolean" },
         resume: { type: "string" }, chain: { type: "string" },
         "retry-verdict": { type: "boolean" },
-        model: { type: "string", default: "gpt-5.6-terra" },
+        model: { type: "string", default: "gpt-6-sol" },
         effort: { type: "string", default: "high" },
         timeout: { type: "string", default: "300" },
         "max-lines": { type: "string", default: "4000" },
         unique: { type: "string" }, outcome: { type: "string" }, comment: { type: "string" },
+        "claude-unique": { type: "string" },
       },
     }));
   } catch (e) {
@@ -846,10 +858,20 @@ export async function main(argv) {
   if (cmd === "audit") return runRound({ ...common, mode: "audit" });
   if (cmd === "diff") return runRound({ ...common, mode: "diff" });
   if (cmd === "diff-audit") return runRound({ ...common, mode: "diff-audit" });
+  if (cmd === "prompt") {
+    // The exact round-1 prompt the reviewer gets, for a second (Claude) reviewer to run blind in
+    // parallel. No codex call, no log write, no chain.
+    const [kind, target] = positionals;
+    if ((kind !== "review" && kind !== "diff") || !target) die(`prompt requires <review|diff> <file|range>\n${USAGE}`);
+    const a = resolveArtifact(target, kind, maxLines);
+    const prompt = kind === "diff" ? buildDiffPrompt(a.pinnedRange, a.diffFiles, a.diffUndiffable) : buildReviewPrompt(a.relPath);
+    process.stdout.write(JSON.stringify({ ok: true, mode: "prompt", kind, repoRoot: a.repoRoot, artifact: a.relPath, pinnedRange: a.pinnedRange, prompt }, null, 1) + "\n");
+    return;
+  }
   if (cmd === "note") {
     if (!values.chain || values.unique === undefined || !values.outcome) die("note requires --chain, --unique, --outcome");
     try {
-      appendNote(logPathDefault(), { chainId: values.chain, unique: values.unique, outcome: values.outcome, comment: values.comment });
+      appendNote(logPathDefault(), { chainId: values.chain, unique: values.unique, outcome: values.outcome, comment: values.comment, claudeUnique: values["claude-unique"] });
     } catch (e) { die(`note failed: ${e.message}`, 5); }
     process.stdout.write(JSON.stringify({ ok: true, mode: "note", chainId: values.chain }) + "\n");
     return;

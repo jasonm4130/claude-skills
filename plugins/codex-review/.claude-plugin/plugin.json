@@ -1,7 +1,7 @@
 {
   "name": "codex-review",
-  "description": "Cross-provider adversarial plan/design-doc review via OpenAI Codex (GPT-5.6 Terra): verdict-loop protocol, atomic chain guard, cross-repo decision-gate log.",
-  "version": "0.5.7",
+  "description": "Cross-provider adversarial plan/design-doc review via OpenAI Codex (GPT-6 Sol) plus a blind Opus reviewer: verdict-loop protocol, atomic chain guard, cross-repo decision-gate log.",
+  "version": "0.6.0",
   "author": {
     "name": "Jason Matthew",
     "email": "jasonm4130@gmail.com"
