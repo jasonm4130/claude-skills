@@ -36,6 +36,7 @@ test("parseEventStream: turn.failed and error events are terminal failures, and 
   for (const line of ['{"type":"turn.failed","error":{"message":"boom"}}', '{"type":"error","message":"boom"}']) {
     const r = parseEventStream(FIXTURE.replace(/^\{"type":"turn\.completed".*$/m, line));
     assert.equal(r.terminal, "failed");
+    assert.equal(r.errorMessage, "boom");
   }
   const sticky = FIXTURE.replace(/^\{"type":"turn\.completed".*$/m, '{"type":"turn.failed","error":{"message":"boom"}}')
     + '\n{"type":"turn.completed","usage":{}}';
@@ -392,7 +393,7 @@ test("e2e: fresh auto review — verdict, findings, log lines, exact codex args"
   assert.equal(out.pendingNoteChainId, out.chainId);
   const argv = shim.argv();
   assert.deepEqual(argv.slice(0, 3), ["exec", "--json", "--sandbox"]);
-  assert.ok(argv.includes("read-only") && argv.includes("-m") && argv.includes("gpt-5.6-terra"));
+  assert.ok(argv.includes("read-only") && argv.includes("-m") && argv.includes("gpt-6-sol"));
   assert.ok(argv.includes("model_reasoning_effort=high") && argv.includes("--skip-git-repo-check"));
   const lines = readLogLines(logPath);
   assert.equal(lines[0].mode, "open");
@@ -954,4 +955,86 @@ test("resolveDiff: a diff of exactly maxLines is accepted, not off-by-one refuse
     /too large|narrow/i,
     "one line over the limit is still refused",
   );
+});
+
+test("prompt: prints the exact round-1 review prompt, spends nothing, writes no log", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "ok");
+  const r = runCli(["prompt", "review", artifact], shim.env, logPath);
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.mode, "prompt");
+  assert.equal(out.prompt, buildReviewPrompt(out.artifact));
+  assert.equal(out.alreadyReviewed, false);
+  assert.equal(shim.argv(), null, "codex must not be invoked");
+  assert.equal(existsSync(logPath), false, "no log line for a prompt");
+  // The later real review round still opens a fresh chain for the same artifact.
+  const rv = runCli(["review", artifact, "--auto"], shim.env, logPath);
+  assert.equal(rv.status, 0, rv.stderr);
+  assert.equal(shim.argv().at(-1), out.prompt, "Claude and Codex get the same prompt");
+  const again = JSON.parse(runCli(["prompt", "review", artifact], shim.env, logPath).stdout);
+  assert.equal(again.alreadyReviewed, true, "same version now has a chain");
+  assert.equal(again.existingChainId, JSON.parse(rv.stdout).chainId);
+});
+
+test("prompt: rejects a missing kind or target", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const r = runCli(["prompt", "audit", "x.md"], process.env, logPath);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /prompt requires <review\|diff>/);
+});
+
+test("note: --claude-unique is recorded when given and validated", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const shim = makeShim(dir, "ok");
+  const first = JSON.parse(runCli(["review", artifact, "--auto"], shim.env, logPath).stdout);
+  const bad = runCli(["note", "--chain", first.chainId, "--unique", "1", "--outcome", "aborted", "--claude-unique", "-2"], shim.env, logPath);
+  assert.notEqual(bad.status, 0);
+  const ok = runCli(["note", "--chain", first.chainId, "--unique", "1", "--outcome", "aborted", "--claude-unique", "3"], shim.env, logPath);
+  assert.equal(ok.status, 0, ok.stderr);
+  const note = readLogLines(logPath).find((l) => l.mode === "note");
+  assert.equal(note.claudeUnique, 3);
+  const st = JSON.parse(runCli(["stats"], shim.env, logPath).stdout);
+  assert.equal(st.claudeNotes, 1);
+  assert.equal(st.claudeUniqueTotal, 3);
+});
+
+test("diff --expect-pinned: a commit between `prompt diff` and `diff` is refused before any call", (t) => {
+  const repo = fixtureRepo(t);
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const shim = makeShim(dir, "ok");
+  const p = JSON.parse(runCli(["prompt", "diff", "HEAD~1..HEAD"], shim.env, logPath, { cwd: repo }).stdout);
+  // Matching pin: the round runs and Codex gets the same prompt the Claude reviewer got.
+  const same = runCli(["diff", "HEAD~1..HEAD", "--auto", "--expect-pinned", p.pinnedRange], shim.env, logPath, { cwd: repo });
+  assert.equal(same.status, 0, same.stderr);
+  assert.equal(shim.argv().at(-1), p.prompt);
+  // A new commit moves HEAD: the old pin must be refused with no reservation and no codex call.
+  rmSync(join(dir, "argv.json"));
+  writeFileSync(path.join(repo, "a.txt"), "one\ntwo\nthree\n");
+  execFileSync("git", ["-C", repo, "commit", "-qam", "third"]);
+  const before = readLogLines(logPath).length;
+  const moved = runCli(["diff", "HEAD~1..HEAD", "--auto", "--expect-pinned", p.pinnedRange], shim.env, logPath, { cwd: repo });
+  assert.equal(moved.status, 2);
+  assert.match(moved.stderr, /not the expected/);
+  assert.equal(shim.argv(), null, "codex must not be invoked");
+  assert.equal(readLogLines(logPath).length, before, "no reservation");
+});
+
+test("failed round: errorDetail carries the cause, and abort-then-retry with --model opens a new chain", () => {
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const artifact = join(dir, "plan.md"); writeFileSync(artifact, "# a plan");
+  const failShim = makeShim(dir, "fail");
+  const r = runCli(["review", artifact, "--auto"], failShim.env, logPath);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.verdict, "error");
+  assert.equal(out.errorDetail, "boom");
+  const n = runCli(["note", "--chain", out.chainId, "--unique", "0", "--outcome", "aborted", "--comment", "model unavailable"], failShim.env, logPath);
+  assert.equal(n.status, 0, n.stderr);
+  const okShim = makeShim(dir, "ok");
+  const retry = runCli(["review", artifact, "--auto", "--model", "gpt-5.6-terra"], okShim.env, logPath);
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.notEqual(JSON.parse(retry.stdout).chainId, out.chainId);
+  assert.ok(okShim.argv().includes("gpt-5.6-terra"));
 });

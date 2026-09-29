@@ -14,7 +14,7 @@ import { join as joinPath } from "node:path";
 import { parseArgs } from "node:util";
 
 export function parseEventStream(stdoutText) {
-  let sessionId = null, finalMessage = null, terminal = "missing", usage = null;
+  let sessionId = null, finalMessage = null, terminal = "missing", usage = null, errorMessage = null;
   for (const line of stdoutText.split("\n")) {
     let ev;
     try { ev = JSON.parse(line); } catch { continue; }
@@ -22,9 +22,12 @@ export function parseEventStream(stdoutText) {
     if (ev.type === "thread.started" && ev.thread_id) sessionId = ev.thread_id;
     if (ev.type === "item.completed" && ev.item?.type === "agent_message") finalMessage = ev.item.text ?? finalMessage;
     if (ev.type === "turn.completed" && terminal !== "failed") { terminal = "completed"; usage = ev.usage ?? null; }
-    if (ev.type === "turn.failed" || ev.type === "error") terminal = "failed"; // sticky — a later turn.completed must not mask it
+    if (ev.type === "turn.failed" || ev.type === "error") {
+      terminal = "failed"; // sticky — a later turn.completed must not mask it
+      errorMessage ??= ev.error?.message ?? ev.message ?? null; // first failure is the cause, e.g. a rejected model
+    }
   }
-  return { sessionId, finalMessage, terminal, usage };
+  return { sessionId, finalMessage, terminal, usage, errorMessage };
 }
 
 export function parseVerdict(text, mode) {
@@ -544,9 +547,12 @@ export function appendResult(logPath, entry) {
   }
 }
 
-export function appendNote(logPath, { chainId, unique, outcome, comment }) {
+export function appendNote(logPath, { chainId, unique, outcome, comment, claudeUnique }) {
   const n = Number(unique);
   if (!Number.isInteger(n) || n < 0) throw err("BAD_UNIQUE", `--unique must be a non-negative integer, got: ${unique}`);
+  // Findings only the blind Claude reviewer raised in round 1 — optional, so older callers still work.
+  const cu = claudeUnique === undefined ? undefined : Number(claudeUnique);
+  if (cu !== undefined && (!Number.isInteger(cu) || cu < 0)) throw err("BAD_UNIQUE", `--claude-unique must be a non-negative integer, got: ${claudeUnique}`);
   if (!OUTCOMES.includes(outcome)) throw err("BAD_OUTCOME", `outcome must be one of ${OUTCOMES.join("|")}`);
   // Same lock as reservation: duplicate-rejection must not be a racy read-then-append.
   const lockPath = logPath + ".lock";
@@ -578,6 +584,7 @@ export function appendNote(logPath, { chainId, unique, outcome, comment }) {
     const line = {
       ts: new Date().toISOString(), chainId, mode: "note",
       unique: n, trigger: chain.open.trigger, outcome, comment: comment ?? "",
+      ...(cu === undefined ? {} : { claudeUnique: cu }),
     };
     appendFileSync(logPath, JSON.stringify(line) + "\n"); // throws on failure — fatal by design
   } finally {
@@ -602,7 +609,7 @@ export function computeStats(logPath) {
     try { lines.push(JSON.parse(line)); } catch { corruptLines++; }
   }
   const chains = chainStates(lines);
-  const s = { open: 0, byOutcome: {}, forced: 0, eligible: 0, uniqueTotal: 0, uniquePer5: null, openChainIds: [], corruptLines };
+  const s = { open: 0, byOutcome: {}, forced: 0, eligible: 0, uniqueTotal: 0, uniquePer5: null, claudeNotes: 0, claudeUniqueTotal: 0, openChainIds: [], corruptLines };
   for (const [chainId, { open, note }] of chains) {
     if (!note) { s.open++; s.openChainIds.push(chainId); continue; }
     s.byOutcome[note.outcome] = (s.byOutcome[note.outcome] ?? 0) + 1;
@@ -611,6 +618,8 @@ export function computeStats(logPath) {
       s.eligible++;
       s.uniqueTotal += note.unique || 0;
     }
+    // From 0.6.0 a note may carry claudeUnique (findings only the blind Claude reviewer raised).
+    if (Number.isInteger(note.claudeUnique)) { s.claudeNotes++; s.claudeUniqueTotal += note.claudeUnique; }
   }
   if (s.eligible > 0) s.uniquePer5 = (s.uniqueTotal / s.eligible) * 5;
   return s;
@@ -636,9 +645,9 @@ export function runCodex(args, { cwd, timeoutMs }) {
 
 function die(msg, code = 1) { process.stderr.write(msg + "\n"); process.exit(code); }
 
-async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, model, effort, timeoutS, maxLines }) {
-  const logPath = logPathDefault();
-
+/** Resolve the artifact a round reviews: repo root, chain artifact id, content hash and, for diffs,
+ * the pinned range and file lists. Shared by runRound and `prompt`, so both see the same artifact. */
+function resolveArtifact(file, mode, maxLines) {
   let repoRoot, relPath, hash, diffFiles = [], diffUndiffable = [], pinnedRange = "";
   if (isDiffMode(mode)) {
     repoRoot = repoRootOfDir(process.cwd()); // NOT resolveRepoRoot — that dirname()s its argument
@@ -675,6 +684,19 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
     repoRoot = resolveRepoRoot(abs);
     relPath = relativePath(repoRoot, abs) || abs;
     hash = contentHashOf(readFileSync(abs));
+  }
+  return { repoRoot, relPath, hash, diffFiles, diffUndiffable, pinnedRange };
+}
+
+async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, model, effort, timeoutS, maxLines, expectPinned }) {
+  const logPath = logPathDefault();
+
+  const { repoRoot, relPath, hash, diffFiles, diffUndiffable, pinnedRange } = resolveArtifact(file, mode, maxLines);
+  // The blind Claude reviewer got its prompt from `prompt diff`, which resolved the range on its own.
+  // If a commit landed in between, the two reviewers would see different diffs — refuse before any
+  // reservation or paid call.
+  if (expectPinned !== undefined && expectPinned !== pinnedRange) {
+    die(`refused: range now pins to ${pinnedRange || "(no range)"}, not the expected ${expectPinned}; re-run \`prompt\` and both reviewers`, 2);
   }
   const repo = repoRoot.split("/").at(-1);
   let chainId = chain, trigger;
@@ -801,6 +823,9 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
     finalMessage: stream.finalMessage, usage: stream.usage,
     durationMs: Date.now() - t0, pendingNoteChainId: chainId,
   };
+  // Surface why a round failed (e.g. the model is not available on this login), so the caller can
+  // close the chain and retry with --model rather than guess.
+  if (!result.ok) result.errorDetail = String(stream.errorMessage ?? stderr ?? "").slice(0, 500) || null;
   appendResult(logPath, {
     chainId, repo, artifact: relPath, contentHash: hash, mode, round, pinnedRange,
     verdict, findings, sessionId: stream.sessionId, model, effort,
@@ -810,7 +835,7 @@ async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, 
   if (!result.ok) process.exit(4);
 }
 
-const USAGE = "usage: codex-review.mjs <review|diff|audit|diff-audit|note|stats> …";
+const USAGE = "usage: codex-review.mjs <review|diff|audit|diff-audit|prompt|note|stats> …";
 
 export async function main(argv) {
   const [cmd, ...rest] = argv;
@@ -822,11 +847,12 @@ export async function main(argv) {
         auto: { type: "boolean" }, force: { type: "boolean" },
         resume: { type: "string" }, chain: { type: "string" },
         "retry-verdict": { type: "boolean" },
-        model: { type: "string", default: "gpt-5.6-terra" },
+        model: { type: "string", default: "gpt-6-sol" },
         effort: { type: "string", default: "high" },
         timeout: { type: "string", default: "300" },
         "max-lines": { type: "string", default: "4000" },
         unique: { type: "string" }, outcome: { type: "string" }, comment: { type: "string" },
+        "claude-unique": { type: "string" }, "expect-pinned": { type: "string" },
       },
     }));
   } catch (e) {
@@ -841,15 +867,39 @@ export async function main(argv) {
     file: positionals[0], resume: values.resume, chain: values.chain,
     retryVerdict: values["retry-verdict"], auto: !!values.auto, force: !!values.force,
     model: values.model, effort: values.effort, timeoutS: parseTimeoutS(values.timeout), maxLines,
+    expectPinned: values["expect-pinned"],
   };
   if (cmd === "review") return runRound({ ...common, mode: "review" });
   if (cmd === "audit") return runRound({ ...common, mode: "audit" });
   if (cmd === "diff") return runRound({ ...common, mode: "diff" });
   if (cmd === "diff-audit") return runRound({ ...common, mode: "diff-audit" });
+  if (cmd === "prompt") {
+    // The exact round-1 prompt the reviewer gets, for a second (Claude) reviewer to run blind in
+    // parallel. No codex call, no log write, no chain.
+    const [kind, target] = positionals;
+    if ((kind !== "review" && kind !== "diff") || !target) die(`prompt requires <review|diff> <file|range>\n${USAGE}`);
+    const a = resolveArtifact(target, kind, maxLines);
+    const prompt = kind === "diff" ? buildDiffPrompt(a.pinnedRange, a.diffFiles, a.diffUndiffable) : buildReviewPrompt(a.relPath);
+    // Mirror reserveChain's auto-mode duplicate rule, so the caller can skip the Claude reviewer for a
+    // version `review --auto` is about to refuse. Tolerant read: advisory only, reserveChain decides.
+    let existingChainId = null;
+    try {
+      for (const { open, note } of chainStates(readLogLines(logPathDefault())).values()) {
+        if (open.repoKey === a.repoRoot && open.artifact === a.relPath && open.contentHash === a.hash && note?.outcome !== "aborted") {
+          existingChainId = open.chainId;
+        }
+      }
+    } catch { /* unreadable log: reserveChain will fail closed and say why */ }
+    process.stdout.write(JSON.stringify({
+      ok: true, mode: "prompt", kind, repoRoot: a.repoRoot, artifact: a.relPath, pinnedRange: a.pinnedRange,
+      alreadyReviewed: existingChainId !== null, existingChainId, prompt,
+    }, null, 1) + "\n");
+    return;
+  }
   if (cmd === "note") {
     if (!values.chain || values.unique === undefined || !values.outcome) die("note requires --chain, --unique, --outcome");
     try {
-      appendNote(logPathDefault(), { chainId: values.chain, unique: values.unique, outcome: values.outcome, comment: values.comment });
+      appendNote(logPathDefault(), { chainId: values.chain, unique: values.unique, outcome: values.outcome, comment: values.comment, claudeUnique: values["claude-unique"] });
     } catch (e) { die(`note failed: ${e.message}`, 5); }
     process.stdout.write(JSON.stringify({ ok: true, mode: "note", chainId: values.chain }) + "\n");
     return;
