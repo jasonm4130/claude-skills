@@ -606,7 +606,7 @@ export function computeStats(logPath) {
     try { lines.push(JSON.parse(line)); } catch { corruptLines++; }
   }
   const chains = chainStates(lines);
-  const s = { open: 0, byOutcome: {}, forced: 0, eligible: 0, uniqueTotal: 0, uniquePer5: null, openChainIds: [], corruptLines };
+  const s = { open: 0, byOutcome: {}, forced: 0, eligible: 0, uniqueTotal: 0, uniquePer5: null, claudeNotes: 0, claudeUniqueTotal: 0, openChainIds: [], corruptLines };
   for (const [chainId, { open, note }] of chains) {
     if (!note) { s.open++; s.openChainIds.push(chainId); continue; }
     s.byOutcome[note.outcome] = (s.byOutcome[note.outcome] ?? 0) + 1;
@@ -615,6 +615,8 @@ export function computeStats(logPath) {
       s.eligible++;
       s.uniqueTotal += note.unique || 0;
     }
+    // From 0.6.0 a note may carry claudeUnique (findings only the blind Claude reviewer raised).
+    if (Number.isInteger(note.claudeUnique)) { s.claudeNotes++; s.claudeUniqueTotal += note.claudeUnique; }
   }
   if (s.eligible > 0) s.uniquePer5 = (s.uniqueTotal / s.eligible) * 5;
   return s;
@@ -683,10 +685,16 @@ function resolveArtifact(file, mode, maxLines) {
   return { repoRoot, relPath, hash, diffFiles, diffUndiffable, pinnedRange };
 }
 
-async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, model, effort, timeoutS, maxLines }) {
+async function runRound({ file, mode, resume, chain, retryVerdict, auto, force, model, effort, timeoutS, maxLines, expectPinned }) {
   const logPath = logPathDefault();
 
   const { repoRoot, relPath, hash, diffFiles, diffUndiffable, pinnedRange } = resolveArtifact(file, mode, maxLines);
+  // The blind Claude reviewer got its prompt from `prompt diff`, which resolved the range on its own.
+  // If a commit landed in between, the two reviewers would see different diffs — refuse before any
+  // reservation or paid call.
+  if (expectPinned !== undefined && expectPinned !== pinnedRange) {
+    die(`refused: range now pins to ${pinnedRange || "(no range)"}, not the expected ${expectPinned}; re-run \`prompt\` and both reviewers`, 2);
+  }
   const repo = repoRoot.split("/").at(-1);
   let chainId = chain, trigger;
 
@@ -838,7 +846,7 @@ export async function main(argv) {
         timeout: { type: "string", default: "300" },
         "max-lines": { type: "string", default: "4000" },
         unique: { type: "string" }, outcome: { type: "string" }, comment: { type: "string" },
-        "claude-unique": { type: "string" },
+        "claude-unique": { type: "string" }, "expect-pinned": { type: "string" },
       },
     }));
   } catch (e) {
@@ -853,6 +861,7 @@ export async function main(argv) {
     file: positionals[0], resume: values.resume, chain: values.chain,
     retryVerdict: values["retry-verdict"], auto: !!values.auto, force: !!values.force,
     model: values.model, effort: values.effort, timeoutS: parseTimeoutS(values.timeout), maxLines,
+    expectPinned: values["expect-pinned"],
   };
   if (cmd === "review") return runRound({ ...common, mode: "review" });
   if (cmd === "audit") return runRound({ ...common, mode: "audit" });
@@ -865,7 +874,20 @@ export async function main(argv) {
     if ((kind !== "review" && kind !== "diff") || !target) die(`prompt requires <review|diff> <file|range>\n${USAGE}`);
     const a = resolveArtifact(target, kind, maxLines);
     const prompt = kind === "diff" ? buildDiffPrompt(a.pinnedRange, a.diffFiles, a.diffUndiffable) : buildReviewPrompt(a.relPath);
-    process.stdout.write(JSON.stringify({ ok: true, mode: "prompt", kind, repoRoot: a.repoRoot, artifact: a.relPath, pinnedRange: a.pinnedRange, prompt }, null, 1) + "\n");
+    // Mirror reserveChain's auto-mode duplicate rule, so the caller can skip the Claude reviewer for a
+    // version `review --auto` is about to refuse. Tolerant read: advisory only, reserveChain decides.
+    let existingChainId = null;
+    try {
+      for (const { open, note } of chainStates(readLogLines(logPathDefault())).values()) {
+        if (open.repoKey === a.repoRoot && open.artifact === a.relPath && open.contentHash === a.hash && note?.outcome !== "aborted") {
+          existingChainId = open.chainId;
+        }
+      }
+    } catch { /* unreadable log: reserveChain will fail closed and say why */ }
+    process.stdout.write(JSON.stringify({
+      ok: true, mode: "prompt", kind, repoRoot: a.repoRoot, artifact: a.relPath, pinnedRange: a.pinnedRange,
+      alreadyReviewed: existingChainId !== null, existingChainId, prompt,
+    }, null, 1) + "\n");
     return;
   }
   if (cmd === "note") {

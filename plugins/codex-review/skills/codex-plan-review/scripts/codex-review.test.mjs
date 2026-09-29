@@ -965,12 +965,16 @@ test("prompt: prints the exact round-1 review prompt, spends nothing, writes no 
   const out = JSON.parse(r.stdout);
   assert.equal(out.mode, "prompt");
   assert.equal(out.prompt, buildReviewPrompt(out.artifact));
+  assert.equal(out.alreadyReviewed, false);
   assert.equal(shim.argv(), null, "codex must not be invoked");
   assert.equal(existsSync(logPath), false, "no log line for a prompt");
   // The later real review round still opens a fresh chain for the same artifact.
   const rv = runCli(["review", artifact, "--auto"], shim.env, logPath);
   assert.equal(rv.status, 0, rv.stderr);
   assert.equal(shim.argv().at(-1), out.prompt, "Claude and Codex get the same prompt");
+  const again = JSON.parse(runCli(["prompt", "review", artifact], shim.env, logPath).stdout);
+  assert.equal(again.alreadyReviewed, true, "same version now has a chain");
+  assert.equal(again.existingChainId, JSON.parse(rv.stdout).chainId);
 });
 
 test("prompt: rejects a missing kind or target", () => {
@@ -991,4 +995,28 @@ test("note: --claude-unique is recorded when given and validated", () => {
   assert.equal(ok.status, 0, ok.stderr);
   const note = readLogLines(logPath).find((l) => l.mode === "note");
   assert.equal(note.claudeUnique, 3);
+  const st = JSON.parse(runCli(["stats"], shim.env, logPath).stdout);
+  assert.equal(st.claudeNotes, 1);
+  assert.equal(st.claudeUniqueTotal, 3);
+});
+
+test("diff --expect-pinned: a commit between `prompt diff` and `diff` is refused before any call", (t) => {
+  const repo = fixtureRepo(t);
+  const dir = tmp(); const logPath = join(dir, "log.jsonl");
+  const shim = makeShim(dir, "ok");
+  const p = JSON.parse(runCli(["prompt", "diff", "HEAD~1..HEAD"], shim.env, logPath, { cwd: repo }).stdout);
+  // Matching pin: the round runs and Codex gets the same prompt the Claude reviewer got.
+  const same = runCli(["diff", "HEAD~1..HEAD", "--auto", "--expect-pinned", p.pinnedRange], shim.env, logPath, { cwd: repo });
+  assert.equal(same.status, 0, same.stderr);
+  assert.equal(shim.argv().at(-1), p.prompt);
+  // A new commit moves HEAD: the old pin must be refused with no reservation and no codex call.
+  rmSync(join(dir, "argv.json"));
+  writeFileSync(path.join(repo, "a.txt"), "one\ntwo\nthree\n");
+  execFileSync("git", ["-C", repo, "commit", "-qam", "third"]);
+  const before = readLogLines(logPath).length;
+  const moved = runCli(["diff", "HEAD~1..HEAD", "--auto", "--expect-pinned", p.pinnedRange], shim.env, logPath, { cwd: repo });
+  assert.equal(moved.status, 2);
+  assert.match(moved.stderr, /not the expected/);
+  assert.equal(shim.argv(), null, "codex must not be invoked");
+  assert.equal(readLogLines(logPath).length, before, "no reservation");
 });
