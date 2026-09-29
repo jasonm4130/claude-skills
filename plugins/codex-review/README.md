@@ -12,7 +12,7 @@ Design: [`2026-07-14-codex-plan-review-design.md`](https://github.com/jasonm4130
 ```
 
 Requirements: **Node.js 18+** on `PATH` (runs `scripts/codex-review.mjs` directly) and
-[Codex CLI](https://github.com/openai/codex) ≥ 0.144 (`brew install codex`), authenticated
+[Codex CLI](https://github.com/openai/codex) ≥ 0.158 (`brew install codex`, or `codex update`; older clients do not list the default `gpt-6-sol`), authenticated
 (`codex login`, ChatGPT subscription or API key).
 
 ## What it does
