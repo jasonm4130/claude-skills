@@ -85,16 +85,15 @@
     {
       "name": "session-retro",
       "source": "./plugins/session-retro",
-      "description": "Interactive session retrospectives \u2014 deterministic activity triggers, one end-of-day offer, batch-scoped diff- and event-log-driven interview, native memory entries. No external services.",
-      "version": "0.9.1",
+      "description": "Capture layer for a weekly self-healing review: one input-free, redacted JSON line per tool outcome, denial and session start, tagged with harness version. No stdout, no network.",
+      "version": "1.0.0",
       "author": {
         "name": "Jason Matthew"
       },
       "license": "MIT",
       "keywords": [
-        "session",
-        "retrospective",
-        "memory",
+        "telemetry",
+        "failures",
         "hooks"
       ],
       "category": "productivity"

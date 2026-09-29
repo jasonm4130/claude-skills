@@ -31,7 +31,7 @@ references one machine's paths, prose calibration, or state, it belongs in dotfi
 | `domain-modeling` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms; offers one once per repo that lacks it | Node 18+ | `/plugin install domain-modeling@jasonm4130-claude-skills` |
 | `gates` | Four PreToolUse gates — docs-drift commit gate, LSP-first search gate, Workflow and Agent model tiering — a PostToolUse JSON-config guard, and a non-blocking docs-consolidation nudge. Any of them can be switched off with `GATES_DISABLE` | Node 18+ | `/plugin install gates@jasonm4130-claude-skills` |
 | `handoff` | On-demand `/handoff` resume doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
-| `session-retro` | Session retrospectives that capture learnings to memory | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
+| `session-retro` | Capture layer for a weekly failure review: one redacted, input-free line per tool outcome and session | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
 | `writing-artifacts` | Positive writing system for durable artifacts (READMEs, ADRs, docs, runbooks) | – | `/plugin install writing-artifacts@jasonm4130-claude-skills` |
 
