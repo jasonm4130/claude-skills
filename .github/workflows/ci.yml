@@ -70,9 +70,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      # Install the exact `toolchain` patch from go.mod, not the `go 1.27` line:
+      # go-version-file resolves that to the newest 1.27.x, and GOTOOLCHAIN=auto
+      # never switches down, so a new patch release silently rebuilt the binary
+      # with a different compiler and failed the byte comparison below.
+      - name: Read the pinned Go toolchain
+        id: gotoolchain
+        run: echo "version=$(sed -n 's/^toolchain go//p' plugins/gates/go/go.mod)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v5
         with:
-          go-version-file: plugins/gates/go/go.mod
+          go-version: ${{ steps.gotoolchain.outputs.version }}
           cache-dependency-path: plugins/gates/go/go.mod
         env:
           GOTOOLCHAIN: auto
