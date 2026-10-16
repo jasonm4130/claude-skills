@@ -33,7 +33,7 @@ references one machine's paths, prose calibration, or state, it belongs in dotfi
 | `handoff` | On-demand `/handoff` resume doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
 | `session-retro` | Capture layer for a weekly failure review: one redacted, input-free line per tool outcome and session | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
-| `writing-artifacts` | Positive writing system for durable artifacts (READMEs, ADRs, docs, runbooks) | – | `/plugin install writing-artifacts@jasonm4130-claude-skills` |
+| `writing-artifacts` | Positive writing system for durable artifacts (READMEs, ADRs, docs, runbooks), plus a `readme` skill whose checker catches broken paths, links, anchors, commands and badges | Node 18+ for the README checker | `/plugin install writing-artifacts@jasonm4130-claude-skills` |
 
 Full details per plugin: see `plugins/<name>/README.md`.
 
