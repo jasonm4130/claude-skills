@@ -143,8 +143,8 @@ const haveWorkflow = runnable(IMPLS["agent-model"][0]);
 
 const skipMsg =
   "ccguard binary not present or not executable here — expected on Linux (the committed " +
-  "binary is a macOS universal build covering arm64 and x86_64). Build with " +
-  "`go build -ldflags=\"-s -w\" -trimpath` in plugins/gates/go/ and copy it into plugins/*/bin/ to run these.";
+  "binary is a macOS universal build covering arm64 and x86_64). On macOS, rebuild it with " +
+  "plugins/gates/go/build.sh to run these.";
 
 const haveGo = spawnSync("go", ["version"], { encoding: "utf8" }).status === 0;
 
