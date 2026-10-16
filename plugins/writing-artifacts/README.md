@@ -32,10 +32,30 @@ and every coherent writing *system* tested halved lint-scored slop while a
 banned-words list barely moved it (woosal1337 STE experiment, 2026). Grounding and
 sources: [`RESEARCH_writing-systems.md`](https://github.com/jasonm4130/claude-skills/blob/main/RESEARCH_writing-systems.md).
 
+## The readme skill
+
+`readme` applies the system to one artifact, a project's README.md, and adds checks
+that a README can be held to. Its procedure: build a fact inventory with `file:line`
+sources before drafting, score the first screen (what it is, who it is for, a picture,
+requirements, a first command), pick a short row of true badges, order sections as a
+reader funnel, define terms before their first use, and keep the prose plain.
+
+Its checker, `skills/readme/scripts/check-readme.mjs`, flags what a script can verify:
+backticked paths that do not exist, relative links and images with missing targets,
+`#anchor` links that match no heading under GitHub's slug rules (emoji headings
+included), `npm`/`pnpm`/`yarn`/`bun` scripts that `package.json` does not define,
+`node <file>` commands whose file is missing, CLI subcommands absent from the CLI's
+help, badges whose workflow, LICENSE or manifest version does not match, emoji, and
+leftover TODOs. Stdlib only; it needs Node 18+.
+
+```
+node skills/readme/scripts/check-readme.mjs README.md --cli "mytool=node bin/mytool.mjs --help"
+```
+
 ## Install
 
 ```
 /plugin install writing-artifacts@jasonm4130-claude-skills
 ```
 
-No hooks, no Node dependency — a single skill, loaded on demand.
+No hooks. `writing-artifacts` is prose guidance only; `readme`'s checker runs on Node.

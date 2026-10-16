@@ -1,7 +1,7 @@
 {
   "name": "writing-artifacts",
-  "description": "Positive writing system for durable written artifacts — READMEs, ADRs, PR descriptions, docs, runbooks. Reader-expectation prose, Diátaxis document jobs, plain-language structure.",
-  "version": "0.1.1",
+  "description": "Positive writing system for durable written artifacts — READMEs, ADRs, PR descriptions, docs, runbooks. Reader-expectation prose, Diátaxis document jobs, plain-language structure. Plus a readme skill: fact inventory, first-screen and funnel checks, and a checker for broken paths, links, anchors, commands and badges.",
+  "version": "0.2.0",
   "author": {
     "name": "Jason Matthew"
   },
@@ -13,6 +13,7 @@
     "documentation",
     "prose",
     "diataxis",
+    "readme",
     "plain-language",
     "claude-code"
   ],
