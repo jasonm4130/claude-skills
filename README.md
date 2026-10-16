@@ -23,17 +23,24 @@ references one machine's paths, prose calibration, or state, it belongs in dotfi
 
 ```
 /plugin marketplace add jasonm4130/claude-skills
+/plugin install <plugin>@jasonm4130-claude-skills
 ```
 
-| Plugin | Description | Requirements | Install command |
-|---|---|---|---|
-| `codex-review` | Cross-provider plan/design review via OpenAI Codex (GPT-6 Sol) plus a blind Opus reviewer | Node 18+ · [Codex CLI](https://github.com/openai/codex) | `/plugin install codex-review@jasonm4130-claude-skills` |
-| `domain-modeling` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms; offers one once per repo that lacks it | Node 18+ | `/plugin install domain-modeling@jasonm4130-claude-skills` |
-| `gates` | Four PreToolUse gates — docs-drift commit gate, LSP-first search gate, Workflow and Agent model tiering — a PostToolUse JSON-config guard, and a non-blocking docs-consolidation nudge. Any of them can be switched off with `GATES_DISABLE` | Node 18+ | `/plugin install gates@jasonm4130-claude-skills` |
-| `handoff` | On-demand `/handoff` resume doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
-| `session-retro` | Capture layer for a weekly failure review: one redacted, input-free line per tool outcome and session | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
-| `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
-| `writing-artifacts` | Positive writing system for durable artifacts (READMEs, ADRs, docs, runbooks) | – | `/plugin install writing-artifacts@jasonm4130-claude-skills` |
+Each plugin installs on its own. Read the Skills and Hooks columns before you pick one.
+A plugin's hooks run on every matching event in every session, and its skill names and
+descriptions sit in context on every turn. **Kind** is `unit` (one capability) or
+`bundle` (installs several units through `dependencies`); see
+[Units and bundles](docs/developing.md#units-and-bundles).
+
+| Plugin | Kind | Skills | Hooks | What it does | Requirements |
+|---|---|---|---|---|---|
+| `codex-review` | unit | `codex-plan-review` | – | Cross-provider plan/design review via OpenAI Codex (GPT-6 Sol) plus a blind Opus reviewer | Node 18+ · [Codex CLI](https://github.com/openai/codex) |
+| `domain-modeling` | unit | `domain-modeling` | `PostToolUse`, `Stop`, `UserPromptSubmit` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms; offers one once per repo that lacks it. The hooks are how the skill gets offered | Node 18+ |
+| `gates` | unit | `docs-consolidate` | `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, `UserPromptSubmit` | Three PreToolUse gates — docs-drift commit gate, Workflow and Agent model tiering — a PostToolUse JSON-config guard, a 1Password signing nudge, and a non-blocking docs-consolidation nudge. Any of them can be switched off with `GATES_DISABLE` | Node 18+ |
+| `handoff` | unit | `handoff` | `SessionStart` | On-demand `/handoff` resume doc, auto-loaded next session | Node 18+ |
+| `session-retro` | unit | – | `PermissionDenied`, `PostToolBatch`, `PostToolUse`, `PostToolUseFailure`, `SessionStart`, `StopFailure` | Capture layer for a weekly failure review: one redacted, input-free line per tool outcome and session | Node 18+ |
+| `ship-gate` | unit | – | `Stop`, `UserPromptSubmit` | Turn-end nudge to review + push unshipped commits | Node 18+ |
+| `writing-artifacts` | unit | `writing-artifacts` | – | Positive writing system for durable artifacts (READMEs, ADRs, docs, runbooks) | – |
 
 Full details per plugin: see `plugins/<name>/README.md`.
 
