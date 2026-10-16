@@ -110,23 +110,7 @@ function denial(resp, tool) {
   return ["other", null];
 }
 
-function readHead(git) {
-  const head = fs.readFileSync(`${git}/HEAD`, "utf8").trim();
-  if (!head.startsWith("ref: ")) return head;
-  const ref = head.slice(5);
-  try {
-    return fs.readFileSync(`${git}/${ref}`, "utf8").trim();
-  } catch {
-    const line = fs.readFileSync(`${git}/packed-refs`, "utf8").split("\n").find((l) => l.endsWith(` ${ref}`));
-    return line ? line.slice(0, 40) : "";
-  }
-}
-
 async function context(p) {
-  let sha = "?";
-  try {
-    sha = pick(readHead(`${env.HOME}/.local/share/chezmoi/.git`).slice(0, 12), /^[0-9a-f]{12}$/) || "?";
-  } catch {}
   let ver = "?";
   try {
     ver = JSON.parse(fs.readFileSync(`${env.CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`, "utf8")).version;
@@ -140,7 +124,7 @@ async function context(p) {
       if (t) pstart = new Date(t).toISOString();
     } catch {}
   }
-  return { harness: `${sha}+${ver}`, pstart, pid: env.CLAUDE_PID || null, model: pick(p.model, NAME) };
+  return { harness: ver, pstart, pid: env.CLAUDE_PID || null, model: pick(p.model, NAME) };
 }
 
 function tail(file, n = 65536) {

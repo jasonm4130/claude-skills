@@ -86,7 +86,7 @@
       "name": "session-retro",
       "source": "./plugins/session-retro",
       "description": "Capture layer for a weekly self-healing review: one input-free, redacted JSON line per tool outcome, denial and session start, tagged with harness version. No stdout, no network.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": {
         "name": "Jason Matthew"
       },

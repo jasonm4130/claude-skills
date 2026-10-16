@@ -4,7 +4,7 @@ Capture layer for a weekly, human-reviewed failure review. One hook script,
 `scripts/capture.mjs`, writes one JSON line per tool outcome, denial, API stop
 failure and session start. It stores no tool input, output, prompt or path: only
 the tool, a two-token command head, a file extension, a redacted first line of
-the error, and context (`harness` = chezmoi HEAD + plugin version, `cc`,
+the error, and context (`harness` = plugin version, `cc`,
 `model`, `pstart`, `arm` from `CLAUDE_HEAL_ARM`).
 
 ```

@@ -12,13 +12,14 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const HOOKS = JSON.parse(readFileSync(join(ROOT, "hooks", "hooks.json"), "utf8")).hooks;
 const today = () => new Date().toISOString().slice(0, 10);
 const PEM = "-----BEGIN " + "RSA PRIVATE KEY-----"; // split so secret scanners pass
+const VERSION = JSON.parse(readFileSync(join(ROOT, ".claude-plugin", "plugin.json"), "utf8")).version;
 
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), "sr-cap-"));
+  // A dotfiles checkout the hook must ignore: harness is the plugin version only.
   const git = join(dir, "home", ".local/share/chezmoi/.git");
   mkdirSync(git, { recursive: true });
-  writeFileSync(join(git, "HEAD"), "ref: refs/heads/main\n");
-  writeFileSync(join(git, "packed-refs"), "# pack-refs\nfeedfacefeedfacefeedfacefeedfacefeedface refs/heads/main\n");
+  writeFileSync(join(git, "HEAD"), "feedfacefeedfacefeedfacefeedfacefeedface\n");
   const env = {
     PATH: process.env.PATH, HOME: join(dir, "home"), CLAUDE_PLUGIN_ROOT: ROOT,
     CLAUDE_PLUGIN_DATA: join(dir, "data"), CLAUDE_PID: String(process.pid),
@@ -48,13 +49,13 @@ test("one dispatcher for every registered event, 2 s timeout, no matcher", () =>
   }
 });
 
-test("session start caches context from packed-refs; tool events copy it", () => {
+test("session start caches context; harness is the plugin version, never a dotfiles HEAD", () => {
   const { run, recs } = setup();
   run({ hook_event_name: "SessionStart", session_id: "s1", source: "startup", model: "claude-opus-5-5", cwd: "/w/repo" });
   run({ hook_event_name: "PostToolUse", session_id: "s1", tool_name: "Bash", tool_use_id: "t1", duration_ms: 5,
     tool_input: { command: "A=1 /usr/bin/git -C /private/dir push origin main" }, tool_response: { stdout: "x" } });
   const [s, t] = recs();
-  assert.deepEqual([s.outcome, s.ok, s.src, s.proj, s.harness], ["session", null, "startup", "repo", "feedfacefeed+1.0.0"]);
+  assert.deepEqual([s.outcome, s.ok, s.src, s.proj, s.harness], ["session", null, "startup", "repo", VERSION]);
   assert.deepEqual([t.ok, t.verb, t.model, t.cc, t.harness], [true, "git", "claude-opus-5-5", "2.1.284", s.harness]);
 });
 
