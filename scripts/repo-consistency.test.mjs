@@ -246,3 +246,31 @@ test("shipped plugin files cite no path outside their own payload", () => {
     `shipped files cite paths absent from the install cache — link to github.com instead:\n${offenders.join("\n")}`,
   );
 });
+
+test("gates descriptions name no retired gate, and the bundle's name every unit", () => {
+  const bundle = JSON.parse(
+    readFileSync(join(root, "plugins", "gates", ".claude-plugin", "plugin.json"), "utf8"),
+  );
+  const readmeRows = readFileSync(join(root, "README.md"), "utf8").split("\n");
+  for (const name of ["gates", ...bundle.dependencies]) {
+    const pj = JSON.parse(
+      readFileSync(join(root, "plugins", name, ".claude-plugin", "plugin.json"), "utf8"),
+    );
+    const texts = {
+      "marketplace.json": entries.find((e) => e.name === name)?.description,
+      "plugin.json": pj.description,
+      "README.md": readmeRows.find((l) => l.startsWith(`| \`${name}\` |`)),
+    };
+    for (const [where, text] of Object.entries(texts)) {
+      assert.ok(text, `${where}: no ${name} description`);
+      // The LSP-first gate and the scaffold (design) gate are retired.
+      assert.doesNotMatch(text, /LSP|scaffold/i, `${where}: ${name} names a retired gate`);
+      // The bundle ships no hooks, so its manifests describe it by its dependency list;
+      // the root README gives each unit its own row instead, checked above.
+      if (name !== "gates" || where === "README.md") continue;
+      for (const unit of bundle.dependencies) {
+        assert.match(text, new RegExp(`\\b${unit}\\b`), `${where}: the bundle does not name ${unit}`);
+      }
+    }
+  }
+});

@@ -184,8 +184,8 @@
     {
       "name": "writing-artifacts",
       "source": "./plugins/writing-artifacts",
-      "description": "Positive writing system for durable written artifacts (READMEs, ADRs, PR descriptions, docs, runbooks): reader-expectation prose, Di\u00e1taxis document jobs, plain-language structure. Complements reply-style rules in global CLAUDE.md.",
-      "version": "0.1.1",
+      "description": "Positive writing system for durable written artifacts (READMEs, ADRs, PR descriptions, docs, runbooks): reader-expectation prose, Di\u00e1taxis document jobs, plain-language structure. Complements reply-style rules in global CLAUDE.md. Plus a readme skill with a checker for broken paths, links, anchors, commands and badges.",
+      "version": "0.2.0",
       "author": {
         "name": "Jason Matthew"
       },

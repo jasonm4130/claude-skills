@@ -20,13 +20,14 @@ test("go.mod pins a patch toolchain, and mise.toml pins the same one", () => {
   assert.equal(mise[1], toolchain[1], "mise.toml and go.mod pin different Go toolchains");
 });
 
-test("CI installs exactly go.mod's toolchain patch", () => {
+test("CI installs exactly go.mod's toolchain patch and lets the directive apply", () => {
+  const ci = read(".github/workflows/ci.yml");
   // go-version-file resolves the `go 1.27` line to the newest 1.27.x, so CI reads
   // the `toolchain` line itself and hands setup-go that exact patch.
-  const ci = read(".github/workflows/ci.yml");
   assert.match(ci, /sed -n 's\/\^toolchain go\/\/p' plugins\/gates-config\/go\/go\.mod/);
-  assert.match(ci, /go-version: \$\{\{ steps\.gotoolchain\.outputs\.version \}\}/);
-  assert.doesNotMatch(ci, /go-version: ["']?\d/, "a literal go-version floats away from the go.mod pin");
+  const versions = [...ci.matchAll(/^\s*go-version:\s*(.+)$/gm)].map((m) => m[1].trim());
+  assert.deepEqual(versions, ["${{ steps.gotoolchain.outputs.version }}"], "a floating go-version overrides the go.mod pin");
+  assert.doesNotMatch(ci, /go-version-file:/, "go-version-file installs the newest patch, not the pinned one");
   // A runner defaulting to GOTOOLCHAIN=local silently ignores the directive.
   assert.match(ci, /GOTOOLCHAIN: auto/);
 });
