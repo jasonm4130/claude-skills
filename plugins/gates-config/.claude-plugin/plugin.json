@@ -1,0 +1,21 @@
+{
+  "name": "gates-config",
+  "description": "PostToolUse JSON-config guard: re-parses settings.json, settings.local.json and .mcp.json after an edit or shell write and reports a syntax error, which Claude Code otherwise swallows by silently dropping the config it cannot parse. Runs a committed macOS binary; does not run elsewhere.",
+  "version": "0.7.0",
+  "author": {
+    "name": "Jason Matthew",
+    "email": "jasonm4130@gmail.com"
+  },
+  "homepage": "https://github.com/jasonm4130/claude-skills",
+  "repository": "https://github.com/jasonm4130/claude-skills",
+  "license": "MIT",
+  "keywords": [
+    "guard",
+    "hooks",
+    "settings",
+    "claude-code"
+  ],
+  "engines": {
+    "claude-code": ">=2.1.110"
+  }
+}

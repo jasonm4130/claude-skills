@@ -29,7 +29,11 @@ references one machine's paths, prose calibration, or state, it belongs in dotfi
 |---|---|---|---|
 | `codex-review` | Cross-provider plan/design review via OpenAI Codex (GPT-6 Sol) plus a blind Opus reviewer | Node 18+ · [Codex CLI](https://github.com/openai/codex) | `/plugin install codex-review@jasonm4130-claude-skills` |
 | `domain-modeling` | Ubiquitous-language `CONTEXT.md` glossary — challenge, sharpen, and pin down domain terms; offers one once per repo that lacks it | Node 18+ | `/plugin install domain-modeling@jasonm4130-claude-skills` |
-| `gates` | Four PreToolUse gates — docs-drift commit gate, LSP-first search gate, Workflow and Agent model tiering — a PostToolUse JSON-config guard, and a non-blocking docs-consolidation nudge. Any of them can be switched off with `GATES_DISABLE` | Node 18+ | `/plugin install gates@jasonm4130-claude-skills` |
+| `gates` | Bundle: installs the four `gates-*` units below in one step. Ships no hooks of its own | – | `/plugin install gates@jasonm4130-claude-skills` |
+| `gates-config` | PostToolUse JSON-config guard: reports a `settings.json` / `.mcp.json` syntax error as soon as a write leaves one | macOS | `/plugin install gates-config@jasonm4130-claude-skills` |
+| `gates-docs` | Docs-drift commit gate and a non-blocking docs-consolidation nudge (`/docs-consolidate`) | Node 18+ | `/plugin install gates-docs@jasonm4130-claude-skills` |
+| `gates-models` | Workflow and Agent model-tiering gates: no fan-out or dispatch without a deliberate model | Node 18+ off macOS | `/plugin install gates-models@jasonm4130-claude-skills` |
+| `gates-signing` | Nudge to ask for a 1Password unlock when git signing or an SSH push fails on a locked agent | Node 18+ | `/plugin install gates-signing@jasonm4130-claude-skills` |
 | `handoff` | On-demand `/handoff` resume doc, auto-loaded next session | Node 18+ | `/plugin install handoff@jasonm4130-claude-skills` |
 | `session-retro` | Capture layer for a weekly failure review: one redacted, input-free line per tool outcome and session | Node 18+ | `/plugin install session-retro@jasonm4130-claude-skills` |
 | `ship-gate` | Turn-end nudge to review + push unshipped commits | Node 18+ | `/plugin install ship-gate@jasonm4130-claude-skills` |
@@ -51,7 +55,7 @@ Full details per plugin: see `plugins/<name>/README.md`.
 - **[Developing](docs/developing.md)** — repo layout, tests, local install, releasing
 - **[Renamed and removed plugins](docs/migrations.md)** — where an old plugin went
 - **[harness-review/](harness-review/README.md)** — versioned failure matchers for the weekly Claude Code failure review; not a plugin
-- **[plugins/gates/go/](plugins/gates/go/README.md)** — the compiled guard binary and why it is committed
+- **[plugins/gates-config/go/](plugins/gates-config/go/README.md)** — the compiled guard binary and why it is committed
 
 ## License
 

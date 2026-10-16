@@ -49,8 +49,42 @@
     {
       "name": "gates",
       "source": "./plugins/gates",
-      "description": "Five stateless PreToolUse gates, a PostToolUse JSON-config guard, and a docs-consolidation trigger. Denies a git commit that changes code without staging its covering docs (per-plugin README/CLAUDE.md pairs, or the nearest README/CLAUDE/AGENTS walking up); asks before a new-project scaffold command runs ahead of an approved design; denies a high-fan-out Workflow script with no per-agent model: override, and asks before a denylisted built-in named workflow; denies an ad-hoc Agent dispatch that omits model unless the agent type pins one in frontmatter; and redirects a shell or Grep search for a code symbol to the LSP tool, but only when the language server it names actually resolves on PATH. A never-blocking trigger counts commits since the .docs-sync record and nudges toward /docs-consolidate. Every gate has an ack marker. Separately, a PostToolUse hook re-parses settings.json/.mcp.json after an edit and reports a syntax error, which Claude Code otherwise swallows by silently dropping the config it cannot parse.",
-      "version": "0.6.1",
+      "description": "Bundle of the gates units: installs gates-docs, gates-models, gates-config and gates-signing together. Ships no hooks of its own; install a unit alone to take only that guard.",
+      "version": "0.7.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": [
+        "guard",
+        "hooks",
+        "bundle",
+        "claude-code"
+      ],
+      "category": "productivity"
+    },
+    {
+      "name": "gates-config",
+      "source": "./plugins/gates-config",
+      "description": "PostToolUse JSON-config guard: re-parses settings.json, settings.local.json and .mcp.json after an edit or shell write and reports a syntax error, which Claude Code otherwise swallows by silently dropping the config it cannot parse. Runs a committed macOS binary; does not run elsewhere.",
+      "version": "0.7.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": [
+        "guard",
+        "hooks",
+        "settings",
+        "claude-code"
+      ],
+      "category": "productivity"
+    },
+    {
+      "name": "gates-docs",
+      "source": "./plugins/gates-docs",
+      "description": "Docs-drift commit gate and docs-consolidation trigger. Denies a git commit that changes code without staging its covering docs (per-plugin README/CLAUDE.md pairs, or the nearest README/CLAUDE/AGENTS walking up), with a docs-sync:ack escape. A never-blocking Stop/UserPromptSubmit pair counts commits since the .docs-sync record and nudges toward the /docs-consolidate skill. GATES_DISABLE turns either off.",
+      "version": "0.7.0",
       "author": {
         "name": "Jason Matthew"
       },
@@ -59,8 +93,40 @@
         "guard",
         "hooks",
         "docs-drift",
-        "design-gate",
+        "claude-code"
+      ],
+      "category": "productivity"
+    },
+    {
+      "name": "gates-models",
+      "source": "./plugins/gates-models",
+      "description": "Model-tiering gates for delegation. Denies a high-fan-out Workflow script with no per-agent model: override and asks before a denylisted built-in named workflow; denies an ad-hoc Agent dispatch that omits model unless the agent type pins one in frontmatter. model-guard:ack bypasses; GATES_DISABLE turns either off. Runs a committed macOS binary with a node fallback.",
+      "version": "0.7.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": [
+        "guard",
+        "hooks",
         "model-selection",
+        "claude-code"
+      ],
+      "category": "productivity"
+    },
+    {
+      "name": "gates-signing",
+      "source": "./plugins/gates-signing",
+      "description": "PostToolUseFailure nudge for a git commit or SSH push that failed because the 1Password SSH agent is locked or unreachable: tells Claude to ask the user to unlock rather than retry or change git/SSH config. Never blocks.",
+      "version": "0.7.0",
+      "author": {
+        "name": "Jason Matthew"
+      },
+      "license": "MIT",
+      "keywords": [
+        "hooks",
+        "git",
+        "1password",
         "claude-code"
       ],
       "category": "productivity"

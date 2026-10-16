@@ -55,6 +55,24 @@ while IFS=$'\t' read -r name avail; do
     || echo "  (update failed for $name)" >&2
 done < <(jq -r '.plugins[] | "\(.name)\t\(.version)"' "$META")
 
+# A plugin whose update adds a dependency (gates 0.7.0 became a bundle of units)
+# does not get it from `claude plugin update`: it stays "failed to load" until the
+# dependency is installed. Each `claude plugin install` of the dependent plugin,
+# and each /reload-plugins, adds only one missing dependency (measured on Claude
+# Code 2.1.301, 2026-10-16), so repeat until none is reported. The cap stops a
+# dependency that cannot install from looping forever.
+for _ in 1 2 3 4 5 6 7 8; do
+  needs=$(claude plugin list --json 2>/dev/null \
+    | jq -r --arg m "@$MARKETPLACE" \
+      '.[] | select(.id | endswith($m)) | select(any(.errorDetails[]?; .type == "dependency-unsatisfied")) | .id' \
+    | sort -u)
+  [ -n "$needs" ] || break
+  while IFS= read -r id; do
+    echo "Installing a missing dependency of $id"
+    claude plugin install "$id" >/dev/null || echo "  (install failed for $id)" >&2
+  done <<< "$needs"
+done
+
 fetched=$(comm -13 <(printf '%s\n' "$before") <(snapshot))
 
 if [ -z "$fetched" ]; then

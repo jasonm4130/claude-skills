@@ -1,0 +1,21 @@
+{
+  "name": "gates-models",
+  "description": "Model-tiering gates for delegation. Denies a high-fan-out Workflow script with no per-agent model: override and asks before a denylisted built-in named workflow; denies an ad-hoc Agent dispatch that omits model unless the agent type pins one in frontmatter. model-guard:ack bypasses; GATES_DISABLE turns either off. Runs a committed macOS binary with a node fallback.",
+  "version": "0.7.0",
+  "author": {
+    "name": "Jason Matthew",
+    "email": "jasonm4130@gmail.com"
+  },
+  "homepage": "https://github.com/jasonm4130/claude-skills",
+  "repository": "https://github.com/jasonm4130/claude-skills",
+  "license": "MIT",
+  "keywords": [
+    "guard",
+    "hooks",
+    "model-selection",
+    "claude-code"
+  ],
+  "engines": {
+    "claude-code": ">=2.1.110"
+  }
+}

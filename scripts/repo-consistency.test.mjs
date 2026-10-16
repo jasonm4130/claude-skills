@@ -125,17 +125,17 @@ test("hook-emitted skill references are plugin-qualified", () => {
   // Deliberately NOT wrapped in a try/catch that shrugs off a missing directory.
   // The previous version did, so when the crate moved the scan would simply have
   // stopped covering the compiled guards — passing green while checking less. If
-  // plugins/gates/go/ is gone or renamed, this must fail and be fixed, not quietly narrow.
-  const goSources = readdirSync(join(root, "plugins", "gates", "go"), { withFileTypes: true })
+  // plugins/gates-config/go/ is gone or renamed, this must fail and be fixed, not quietly narrow.
+  const goSources = readdirSync(join(root, "plugins", "gates-config", "go"), { withFileTypes: true })
     .filter((e) => e.isFile() && e.name.endsWith(".go") && !e.name.endsWith("_test.go"))
     .map((e) => e.name);
   assert.ok(
     goSources.length > 0,
-    "found no plugins/gates/go/*.go sources to scan — the compiled guards emit hook text too, so this " +
+    "found no plugins/gates-config/go/*.go sources to scan — the compiled guards emit hook text too, so this " +
       "check must cover them; if the module moved, update this path rather than deleting it",
   );
   for (const name of goSources) {
-    sources.push({ label: `go/${name}`, path: join(root, "plugins", "gates", "go", name) });
+    sources.push({ label: `go/${name}`, path: join(root, "plugins", "gates-config", "go", name) });
   }
 
   const offenders = [];
