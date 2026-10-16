@@ -60,12 +60,18 @@ done < <(jq -r '.plugins[] | "\(.name)\t\(.version)"' "$META")
 # dependency is installed. Each `claude plugin install` of the dependent plugin,
 # and each /reload-plugins, adds only one missing dependency (measured on Claude
 # Code 2.1.301, 2026-10-16), so repeat until none is reported. The cap stops a
-# dependency that cannot install from looping forever.
+# dependency that cannot install from looping forever. A listing that fails or does
+# not parse skips this step with a warning rather than ending the script under
+# `set -e`, so the summary below still prints.
 for _ in 1 2 3 4 5 6 7 8; do
-  needs=$(claude plugin list --json 2>/dev/null \
-    | jq -r --arg m "@$MARKETPLACE" \
+  if ! listing=$(claude plugin list --json 2>/dev/null) \
+    || ! needs=$(jq -r --arg m "@$MARKETPLACE" \
       '.[] | select(.id | endswith($m)) | select(any(.errorDetails[]?; .type == "dependency-unsatisfied")) | .id' \
-    | sort -u)
+      <<< "$listing" 2>/dev/null); then
+    echo "  (could not list plugins; skipping the missing-dependency check)" >&2
+    break
+  fi
+  needs=$(sort -u <<< "$needs")
   [ -n "$needs" ] || break
   while IFS= read -r id; do
     echo "Installing a missing dependency of $id"
