@@ -38,14 +38,24 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
  */
 const IMPLS = {
   "agent-model": [
-    join(root, "plugins/gates/bin/ccguard"),
-    join(root, "plugins/gates/scripts/pretooluse-guard-agent-model.mjs"),
+    join(root, "plugins/gates-models/bin/ccguard"),
+    join(root, "plugins/gates-models/scripts/pretooluse-guard-agent-model.mjs"),
   ],
   "workflow-model": [
-    join(root, "plugins/gates/bin/ccguard"),
-    join(root, "plugins/gates/scripts/pretooluse-guard-workflow-model.mjs"),
+    join(root, "plugins/gates-models/bin/ccguard"),
+    join(root, "plugins/gates-models/scripts/pretooluse-guard-workflow-model.mjs"),
   ],
 };
+
+/**
+ * Every committed copy of the binary. gates-models and gates-config each ship
+ * one, because a plugin cannot reach into another's install directory; both are
+ * built from plugins/gates-config/go/ and must stay the same bytes.
+ */
+const BINARIES = [
+  join(root, "plugins/gates-models/bin/ccguard"),
+  join(root, "plugins/gates-config/bin/ccguard"),
+];
 
 /**
  * Is the binary present AND runnable here? An arm64-macOS binary on Linux or
@@ -144,7 +154,7 @@ const haveWorkflow = runnable(IMPLS["agent-model"][0]);
 const skipMsg =
   "ccguard binary not present or not executable here — expected on Linux (the committed " +
   "binary is a macOS universal build covering arm64 and x86_64). On macOS, rebuild it with " +
-  "plugins/gates/go/build.sh to run these.";
+  "plugins/gates-config/go/build.sh to run these.";
 
 const haveGo = spawnSync("go", ["version"], { encoding: "utf8" }).status === 0;
 
@@ -161,7 +171,7 @@ const stalenessSkip = !haveGo
     : false;
 
 test(
-  "the committed binary is not stale relative to plugins/gates/go/",
+  "the committed binary is not stale relative to plugins/gates-config/go/",
   { skip: stalenessSkip },
   () => {
     // The binary is a build artifact in git, because the marketplace install path
@@ -178,7 +188,7 @@ test(
     //
     // The committed file is a macOS universal binary, so thin it to this machine's
     // arch before comparing against a native `go build`.
-    const goDir = join(root, "plugins", "gates", "go");
+    const goDir = join(root, "plugins", "gates-config", "go");
     const fresh = join(tmpdir(), `ccguard-fresh-${process.pid}`);
     const built = spawnSync(join(goDir, "build.sh"), [fresh, "native"], {
       cwd: goDir,
@@ -186,7 +196,7 @@ test(
     });
     assert.equal(built.status, 0, `build.sh failed:\n${built.stderr}`);
 
-    for (const bin of new Set(Object.values(IMPLS).map(([b]) => b))) {
+    for (const bin of BINARIES) {
       const thin = join(tmpdir(), `ccguard-thin-${process.pid}`);
       const arch = process.arch === "arm64" ? "arm64" : "x86_64";
       const lipo = spawnSync("lipo", [bin, "-thin", arch, "-output", thin], { encoding: "utf8" });
@@ -200,7 +210,7 @@ test(
         readFileSync(fresh),
         `${bin} is stale or was built from different source.\n` +
           `Rebuild it with the one definition of the build:\n` +
-          `    plugins/gates/go/build.sh`,
+          `    plugins/gates-config/go/build.sh`,
       );
     }
   },
@@ -213,7 +223,7 @@ test(
     // Shipping arm64 only means every Intel-Mac installer silently falls through to
     // the `|| node` fallback in hooks.json and pays ~21ms of interpreter start per
     // tool call, with nothing anywhere reporting that it happened.
-    for (const bin of new Set(Object.values(IMPLS).map(([b]) => b))) {
+    for (const bin of BINARIES) {
       const archs = spawnSync("lipo", ["-archs", bin], { encoding: "utf8" }).stdout.trim().split(/\s+/);
       assert.deepEqual(
         [...archs].sort(),

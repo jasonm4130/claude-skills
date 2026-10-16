@@ -125,17 +125,17 @@ test("hook-emitted skill references are plugin-qualified", () => {
   // Deliberately NOT wrapped in a try/catch that shrugs off a missing directory.
   // The previous version did, so when the crate moved the scan would simply have
   // stopped covering the compiled guards — passing green while checking less. If
-  // plugins/gates/go/ is gone or renamed, this must fail and be fixed, not quietly narrow.
-  const goSources = readdirSync(join(root, "plugins", "gates", "go"), { withFileTypes: true })
+  // plugins/gates-config/go/ is gone or renamed, this must fail and be fixed, not quietly narrow.
+  const goSources = readdirSync(join(root, "plugins", "gates-config", "go"), { withFileTypes: true })
     .filter((e) => e.isFile() && e.name.endsWith(".go") && !e.name.endsWith("_test.go"))
     .map((e) => e.name);
   assert.ok(
     goSources.length > 0,
-    "found no plugins/gates/go/*.go sources to scan — the compiled guards emit hook text too, so this " +
+    "found no plugins/gates-config/go/*.go sources to scan — the compiled guards emit hook text too, so this " +
       "check must cover them; if the module moved, update this path rather than deleting it",
   );
   for (const name of goSources) {
-    sources.push({ label: `go/${name}`, path: join(root, "plugins", "gates", "go", name) });
+    sources.push({ label: `go/${name}`, path: join(root, "plugins", "gates-config", "go", name) });
   }
 
   const offenders = [];
@@ -247,30 +247,30 @@ test("shipped plugin files cite no path outside their own payload", () => {
   );
 });
 
-test("gates descriptions match the gates its hooks.json registers", () => {
-  const hooks = JSON.parse(
-    readFileSync(join(root, "plugins", "gates", "hooks", "hooks.json"), "utf8"),
-  ).hooks;
-  const count = ["One", "Two", "Three", "Four", "Five", "Six"][hooks.PreToolUse.length - 1];
-  const pj = JSON.parse(
+test("gates descriptions name no retired gate, and the bundle's name every unit", () => {
+  const bundle = JSON.parse(
     readFileSync(join(root, "plugins", "gates", ".claude-plugin", "plugin.json"), "utf8"),
   );
-  const readmeRow = readFileSync(join(root, "README.md"), "utf8")
-    .split("\n")
-    .find((l) => l.startsWith("| `gates` |"));
-  const texts = {
-    "marketplace.json": entries.find((e) => e.name === "gates")?.description,
-    "plugin.json": pj.description,
-    "README.md": readmeRow,
-  };
-  for (const [where, text] of Object.entries(texts)) {
-    assert.ok(text, `${where}: no gates description`);
-    // The LSP-first gate and the scaffold (design) gate are retired.
-    assert.doesNotMatch(text, /LSP|scaffold/i, `${where}: names a retired gate`);
-    assert.match(
-      text,
-      new RegExp(`\\b${count}\\b[\\w ]* PreToolUse gates`),
-      `${where}: PreToolUse gate count is not ${count}`,
+  const readmeRows = readFileSync(join(root, "README.md"), "utf8").split("\n");
+  for (const name of ["gates", ...bundle.dependencies]) {
+    const pj = JSON.parse(
+      readFileSync(join(root, "plugins", name, ".claude-plugin", "plugin.json"), "utf8"),
     );
+    const texts = {
+      "marketplace.json": entries.find((e) => e.name === name)?.description,
+      "plugin.json": pj.description,
+      "README.md": readmeRows.find((l) => l.startsWith(`| \`${name}\` |`)),
+    };
+    for (const [where, text] of Object.entries(texts)) {
+      assert.ok(text, `${where}: no ${name} description`);
+      // The LSP-first gate and the scaffold (design) gate are retired.
+      assert.doesNotMatch(text, /LSP|scaffold/i, `${where}: ${name} names a retired gate`);
+      // The bundle ships no hooks, so its manifests describe it by its dependency list;
+      // the root README gives each unit its own row instead, checked above.
+      if (name !== "gates" || where === "README.md") continue;
+      for (const unit of bundle.dependencies) {
+        assert.match(text, new RegExp(`\\b${unit}\\b`), `${where}: the bundle does not name ${unit}`);
+      }
+    }
   }
 });

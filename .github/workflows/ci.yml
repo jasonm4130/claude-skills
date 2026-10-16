@@ -76,18 +76,18 @@ jobs:
       # with a different compiler and failed the byte comparison below.
       - name: Read the pinned Go toolchain
         id: gotoolchain
-        run: echo "version=$(sed -n 's/^toolchain go//p' plugins/gates/go/go.mod)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(sed -n 's/^toolchain go//p' plugins/gates-config/go/go.mod)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ steps.gotoolchain.outputs.version }}
-          cache-dependency-path: plugins/gates/go/go.mod
+          cache-dependency-path: plugins/gates-config/go/go.mod
         env:
           GOTOOLCHAIN: auto
       - name: Vet and unit tests
         env:
           GOTOOLCHAIN: auto
         run: |
-          cd plugins/gates/go
+          cd plugins/gates-config/go
           go vet ./...
           go test ./...
       - name: Committed binary was built from the committed source
@@ -105,23 +105,27 @@ jobs:
           GOTOOLCHAIN: auto
         run: |
           set -euo pipefail
-          want=$(sed -n 's/^toolchain //p' plugins/gates/go/go.mod)
-          got=$(go version -m plugins/gates/bin/ccguard | head -1 | awk '{print $2}')
-          if [ "$got" != "$want" ]; then
-            echo "::error::binary stamped $got, go.mod toolchain is $want"
-            exit 1
-          fi
-          plugins/gates/go/build.sh /tmp/fresh-universal
+          want=$(sed -n 's/^toolchain //p' plugins/gates-config/go/go.mod)
+          for bin in plugins/gates-config/bin/ccguard plugins/gates-models/bin/ccguard; do
+            got=$(go version -m "$bin" | head -1 | awk '{print $2}')
+            if [ "$got" != "$want" ]; then
+              echo "::error::$bin stamped $got, go.mod toolchain is $want"
+              exit 1
+            fi
+          done
+          plugins/gates-config/go/build.sh /tmp/fresh-universal
           fresh=$(go version -m /tmp/fresh-universal | head -1 | awk '{print $2}')
           if [ "$fresh" != "$want" ]; then
             echo "::error::fresh build stamped $fresh, go.mod toolchain is $want — build.sh did not pin GOTOOLCHAIN"
             exit 1
           fi
-          if ! cmp -s /tmp/fresh-universal plugins/gates/bin/ccguard; then
-            echo "::error::plugins/gates/bin/ccguard does not match a fresh build of plugins/gates/go/ — rebuild and re-copy (see plugins/gates/go/README.md)"
-            exit 1
-          fi
-          echo "the committed binary matches the committed source"
+          for bin in plugins/gates-config/bin/ccguard plugins/gates-models/bin/ccguard; do
+            if ! cmp -s /tmp/fresh-universal "$bin"; then
+              echo "::error::$bin does not match a fresh build of plugins/gates-config/go/ — rebuild with plugins/gates-config/go/build.sh, which writes both copies"
+              exit 1
+            fi
+          done
+          echo "both committed binaries match the committed source"
       - name: Differential test against the .mjs reference
         run: node --test scripts/ccguard-differential.test.mjs
 
