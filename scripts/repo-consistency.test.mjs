@@ -289,3 +289,31 @@ test("shipped plugin files cite no path outside their own payload", () => {
     `shipped files cite paths absent from the install cache — link to github.com instead:\n${offenders.join("\n")}`,
   );
 });
+
+test("gates descriptions match the gates its hooks.json registers", () => {
+  const hooks = JSON.parse(
+    readFileSync(join(root, "plugins", "gates", "hooks", "hooks.json"), "utf8"),
+  ).hooks;
+  const count = ["One", "Two", "Three", "Four", "Five", "Six"][hooks.PreToolUse.length - 1];
+  const pj = JSON.parse(
+    readFileSync(join(root, "plugins", "gates", ".claude-plugin", "plugin.json"), "utf8"),
+  );
+  const readmeRow = readFileSync(join(root, "README.md"), "utf8")
+    .split("\n")
+    .find((l) => l.startsWith("| `gates` |"));
+  const texts = {
+    "marketplace.json": entries.find((e) => e.name === "gates")?.description,
+    "plugin.json": pj.description,
+    "README.md": readmeRow,
+  };
+  for (const [where, text] of Object.entries(texts)) {
+    assert.ok(text, `${where}: no gates description`);
+    // The LSP-first gate and the scaffold (design) gate are retired.
+    assert.doesNotMatch(text, /LSP|scaffold/i, `${where}: names a retired gate`);
+    assert.match(
+      text,
+      new RegExp(`\\b${count}\\b[\\w ]* PreToolUse gates`),
+      `${where}: PreToolUse gate count is not ${count}`,
+    );
+  }
+});

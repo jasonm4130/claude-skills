@@ -40,7 +40,7 @@ descriptions sit in context on every turn. **Kind** is `unit` (one capability) o
 | `handoff` | unit | `handoff` | `SessionStart` | On-demand `/handoff` resume doc, auto-loaded next session | Node 18+ |
 | `session-retro` | unit | – | `PermissionDenied`, `PostToolBatch`, `PostToolUse`, `PostToolUseFailure`, `SessionStart`, `StopFailure` | Capture layer for a weekly failure review: one redacted, input-free line per tool outcome and session | Node 18+ |
 | `ship-gate` | unit | – | `Stop`, `UserPromptSubmit` | Turn-end nudge to review + push unshipped commits | Node 18+ |
-| `writing-artifacts` | unit | `writing-artifacts` | – | Positive writing system for durable artifacts (READMEs, ADRs, docs, runbooks) | – |
+| `writing-artifacts` | unit | `readme`, `writing-artifacts` | – | Positive writing system for durable artifacts (READMEs, ADRs, docs, runbooks), plus a `readme` skill whose checker catches broken paths, links, anchors, commands and badges | Node 18+ for the README checker |
 
 Full details per plugin: see `plugins/<name>/README.md`.
 

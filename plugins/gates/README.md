@@ -1,6 +1,6 @@
 # gates
 
-Four stateless `PreToolUse` gates, a `PostToolUse` config guard and two
+Three stateless `PreToolUse` gates, a `PostToolUse` config guard and two
 never-blocking nudges, in one plugin.
 Each intercepts a *specific, high-signal action* at the moment it is about to
 happen, and each carries an ack marker so a deliberate override costs one token in
