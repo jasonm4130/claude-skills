@@ -204,6 +204,10 @@ function pathCandidate(token, exists) {
   return p;
 }
 
+// Node options whose value is the next argument, so it is not the script.
+const NODE_VALUE_OPTIONS = new Set(
+  "-r --require --import --loader --experimental-loader --env-file --env-file-if-exists -C --conditions --input-type --watch-path --test-reporter --test-reporter-destination --test-name-pattern --test-skip-pattern --title".split(" "),
+);
 const NPM_SCRIPT_ALIASES = new Set(["test", "t", "tst", "start", "stop", "restart"]);
 const PNPM_BUILTINS = new Set(
   "add install i update up upgrade remove rm uninstall un link ln unlink import rebuild rb prune fetch dedupe patch patch-commit audit list ls ll la outdated why licenses exec dlx create env setup store config c init publish pack root bin server deploy help self-update cat-file cat-index find-hash approve-builds ignored-builds".split(" "),
@@ -305,7 +309,9 @@ export function checkReadme(opts) {
     if (stat && version) {
       const parts = decodeURIComponent(stat[1]).replace(/--/g, "\0").split("-").map((s) => s.replace(/\0/g, "-").replace(/_/g, " "));
       const [label, message] = parts.length >= 3 ? parts : ["", parts[0]];
-      if (/^v$|version|release/i.test(label) || (/version/i.test(alt) && parts.length >= 2)) {
+      // A labelled badge says what it is; the alt text decides only for an
+      // unlabelled one, or "Node.js version" (label "node") would read as ours.
+      if (/^v$|version|release/i.test(label) || (parts.length === 2 && /version/i.test(alt))) {
         const shown = message.replace(/^v/i, "");
         if (shown !== version.version) add(n, "badge", `version badge says ${message}, but ${version.file} says ${version.version}`);
       }
@@ -376,7 +382,14 @@ export function checkReadme(opts) {
       if (a0 === "run" && args[1] && !args[1].startsWith("-") && !FILE_EXT.test(args[1])) needScript(n, args[1], cmd);
     } else if (bin === "node") {
       if (args.some((x) => /^(-e|-p|--eval|--print)$/.test(x))) return;
-      const file = args.find((x) => !x.startsWith("-"));
+      let file;
+      for (let i = 0; i < args.length; i++) {
+        if (NODE_VALUE_OPTIONS.has(args[i])) i++;
+        else if (!args[i].startsWith("-")) {
+          file = args[i];
+          break;
+        }
+      }
       if (file && !/[<$*]/.test(file) && !existsIn(file)) add(n, "command", `\`${cmd}\` runs ${file}, which does not exist`);
     }
   };

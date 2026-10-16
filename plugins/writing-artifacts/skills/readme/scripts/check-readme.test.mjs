@@ -274,6 +274,29 @@ test("node <file> must name a file that exists; globs are left to the shell", ()
   assert.match(c[0].message, /src\/gone\.ts/);
 });
 
+test("the value of a node option is not taken for the script", () => {
+  const f = check({
+    "index.js": "",
+    "README.md": "```sh\nnode -r dotenv/config index.js\nnode --import tsx index.js\nnode --env-file .env gone.js\n```\n",
+  });
+  const c = ofKind(f, "command");
+  assert.equal(c.length, 1, c.map((x) => x.message).join("\n"));
+  assert.match(c[0].message, /gone\.js/);
+});
+
+test("bun run must name a package.json script", () => {
+  const f = check({ "package.json": PKG, "README.md": "```sh\nbun run build\nbun run nope\n```\n" });
+  const c = ofKind(f, "command");
+  assert.equal(c.length, 1);
+  assert.match(c[0].message, /nope/);
+});
+
+test("npm start needs no script when server.js exists", () => {
+  const files = { "package.json": JSON.stringify({ name: "demo" }), "README.md": "```sh\nnpm start\n```\n" };
+  assert.equal(ofKind(check(files), "command").length, 1);
+  assert.deepEqual(ofKind(check({ ...files, "server.js": "" }), "command"), []);
+});
+
 test("subcommands of a declared CLI must appear in its --help output", () => {
   const cli = 'console.log("Usage: demo <command>\\n\\nCommands:\\n  status   show state\\n  open     open the view");\n';
   const f = check(
@@ -385,6 +408,27 @@ test("a version badge is compared with plugin.json when there is no package.json
     "README.md": "![version](https://img.shields.io/badge/version-0.3.0-blue)\n",
   });
   assert.equal(ofKind(f, "badge").length, 1);
+});
+
+test("a runtime badge whose alt mentions a version is not the project's version badge", () => {
+  const f = check({
+    "package.json": PKG,
+    "README.md": "![Node.js version](https://img.shields.io/badge/node-%3E%3D18-brightgreen)\n![Python version](https://img.shields.io/badge/python-3.11%2B-blue)\n",
+  });
+  assert.deepEqual(ofKind(f, "badge"), []);
+});
+
+test("an unlabelled badge counts as the version badge when its alt says so", () => {
+  const f = check({ "package.json": PKG, "README.md": "![version](https://img.shields.io/badge/1.0.0-blue)\n" });
+  assert.equal(ofKind(f, "badge").length, 1);
+});
+
+test("a version badge is compared with pyproject.toml or Cargo.toml", () => {
+  const readme = "![version](https://img.shields.io/badge/version-0.9.0-blue)\n";
+  const py = check({ "pyproject.toml": '[project]\nname = "x"\nversion = "1.0.0"\n', "README.md": readme });
+  assert.match(ofKind(py, "badge")[0]?.message ?? "", /pyproject\.toml says 1\.0\.0/);
+  const cargo = check({ "Cargo.toml": '[package]\nname = "x"\nversion = "2.0.0"\n', "README.md": readme });
+  assert.match(ofKind(cargo, "badge")[0]?.message ?? "", /Cargo\.toml says 2\.0\.0/);
 });
 
 test("shields.io badges that query GitHub are flagged on a private repo only", () => {
