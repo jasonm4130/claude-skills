@@ -68,6 +68,11 @@ plugins/gates/go/build.sh
 test both call it, so a flag change cannot leave the committed binary disagreeing
 with what the checks rebuild.
 
+It also sets `GOTOOLCHAIN` to the exact `toolchain` line in `go.mod`. That line on its
+own is only a minimum: a newer local Go, such as the 1.27.2 that CI's `setup-go`
+picked up from the `go 1.27` line, builds with itself and stamps different bytes.
+If 1.27.1 is not installed locally, `go` downloads it.
+
 ## Equivalence with the `.mjs` guards
 
 The `.mjs` guards are **kept, not deleted**. They are the fallback when the binary

@@ -105,6 +105,11 @@ jobs:
             exit 1
           fi
           plugins/gates/go/build.sh /tmp/fresh-universal
+          fresh=$(go version -m /tmp/fresh-universal | head -1 | awk '{print $2}')
+          if [ "$fresh" != "$want" ]; then
+            echo "::error::fresh build stamped $fresh, go.mod toolchain is $want — build.sh did not pin GOTOOLCHAIN"
+            exit 1
+          fi
           if ! cmp -s /tmp/fresh-universal plugins/gates/bin/ccguard; then
             echo "::error::plugins/gates/bin/ccguard does not match a fresh build of plugins/gates/go/ — rebuild and re-copy (see plugins/gates/go/README.md)"
             exit 1

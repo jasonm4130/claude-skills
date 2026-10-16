@@ -28,6 +28,17 @@ test("CI takes its Go from go.mod and lets the toolchain directive apply", () =>
   assert.match(ci, /GOTOOLCHAIN: auto/);
 });
 
+test("build.sh builds with exactly the go.mod toolchain, not a newer local one", () => {
+  // go.mod's `toolchain` line is a minimum: under GOTOOLCHAIN=auto a newer local Go
+  // builds with itself. setup-go installs the newest 1.27.x from the `go 1.27` line,
+  // so CI went red the day 1.27.2 shipped. GOTOOLCHAIN=<exact> is the only pin.
+  const build = read("plugins/gates/go/build.sh");
+  assert.match(build, /^export GOTOOLCHAIN=.*\btoolchain\b.*go\.mod/m);
+  // CI checks what it just built, not only what is committed, so a toolchain
+  // mismatch reports as drift rather than as a stale binary.
+  assert.match(read(".github/workflows/ci.yml"), /go version -m \/tmp\/fresh-universal/);
+});
+
 test("only build.sh writes out the ccguard build flags", () => {
   // Dated plans and research are records of what was true then; they are not
   // instructions anything runs.

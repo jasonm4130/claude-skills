@@ -298,7 +298,8 @@ winner reproducible.
 `go/build.sh` is the one definition of the build flags. CI and the staleness test in
 `scripts/ccguard-differential.test.mjs` both call it, so a flag change cannot leave the
 committed binary disagreeing with what the checks rebuild. Rebuild with `go/build.sh`,
-never by retyping the flags.
+never by retyping the flags. It also pins `GOTOOLCHAIN` to go.mod's exact
+`toolchain` line, because that line alone lets a newer local Go do the build.
 
 `bin/ccguard` is the one exception to "no build artifacts": the marketplace install
 path is `git clone` + copy with no build step anywhere, so a compiled hook has to ship

@@ -16,8 +16,15 @@
 #
 # `native` exists for the staleness test, which compares a native build against one
 # slice of the committed universal binary rather than rebuilding both.
+#
+# GOTOOLCHAIN is pinned to go.mod's `toolchain` line exactly. That line alone is a
+# minimum: a newer local Go builds with itself and stamps different bytes. CI's
+# setup-go installs the newest 1.27.x, so the check went red the day 1.27.2 shipped.
 set -euo pipefail
 cd "$(dirname "$0")"
+
+export GOTOOLCHAIN="$(sed -n 's/^toolchain //p' go.mod)"
+[ -n "$GOTOOLCHAIN" ] || { echo "go.mod has no toolchain line" >&2; exit 1; }
 
 flags=(-buildvcs=false "-ldflags=-s -w" -trimpath)
 out="${1:-../bin/ccguard}"

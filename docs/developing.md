@@ -65,6 +65,9 @@ The rebuild calls `plugins/gates/go/build.sh`, which is the only place the build
 flags are written down. The staleness test calls it too. Rebuild the binary with
 that script rather than retyping the flags, or the comparison fails and reports a
 stale binary when the real fault is a flag mismatch.
+It also pins `GOTOOLCHAIN` to the exact `toolchain` line, because `setup-go` installs
+the newest 1.27.x and a newer Go would otherwise build with itself. CI then checks
+the fresh build's stamp, so a toolchain mismatch is reported as one.
 
 ## Updating an installed plugin
 
