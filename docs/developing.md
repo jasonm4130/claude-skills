@@ -37,6 +37,9 @@ Local Node is pinned to 24 (`mise.toml`), matching the version CI tests on.
 Go is pinned to 1.27.1 in both `mise.toml` and `plugins/gates/go/go.mod`'s `toolchain` line. The
 two must match: CI rebuilds `plugins/gates/bin/ccguard` from source and compares
 bytes against the committed binary, so a patch mismatch fails the `go-guards` job.
+`scripts/go-toolchain-pin.test.mjs` fails sooner, in the node tests, when the two
+pins disagree, when CI stops taking its Go from `go.mod`, or when a file other than
+`build.sh` writes out the build flags.
 
 The whole `plugins/<name>/` tree is copied into the install cache — `README.md`,
 `CLAUDE.md` and `tests/` included — so anything a shipped file cites must resolve
@@ -62,6 +65,9 @@ The rebuild calls `plugins/gates/go/build.sh`, which is the only place the build
 flags are written down. The staleness test calls it too. Rebuild the binary with
 that script rather than retyping the flags, or the comparison fails and reports a
 stale binary when the real fault is a flag mismatch.
+It also pins `GOTOOLCHAIN` to the exact `toolchain` line, because `setup-go` installs
+the newest 1.27.x and a newer Go would otherwise build with itself. CI then checks
+the fresh build's stamp, so a toolchain mismatch is reported as one.
 
 ## Updating an installed plugin
 
