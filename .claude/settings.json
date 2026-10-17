@@ -1,21 +1,4 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(gh pr merge:*)",
-      "Bash(scripts/check:*)",
-      "Bash(./scripts/check:*)",
-      "Bash(git:*)",
-      "Bash(gh:*)",
-      "Bash(npm:*)",
-      "Bash(node:*)",
-      "Bash(bash scripts/check:*)",
-      "Bash(bash scripts/run-node-tests.sh:*)",
-      "Bash(jq:*)"
-    ],
-    "deny": [
-      "Bash(gh pr merge --admin:*)"
-    ]
-  },
   "hooks": {
     "PreToolUse": [
       {
