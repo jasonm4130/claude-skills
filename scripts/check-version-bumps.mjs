@@ -12,7 +12,7 @@
 // ANY changed file under it requires a bump EXCEPT the dev-only set:
 //   - plugins/<name>/.claude-plugin/**  (manifest — where the version itself lives)
 //   - any tests/ dir, or any *.test.* file, or any *_test.go file
-//   - the plugin's own top-level README.md / CLAUDE.md, and gates/go/README.md
+//   - the plugin's own top-level README.md / CLAUDE.md, and gates-config/go/README.md
 //
 // Marketplace ↔ plugin.json version equality is enforced separately by
 // scripts/repo-consistency.test.mjs, so an increase here implies the marketplace

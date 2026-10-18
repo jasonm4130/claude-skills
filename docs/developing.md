@@ -12,13 +12,15 @@ plugins/<name>/
   hooks/hooks.json                # hook registrations (where applicable)
   scripts/ tests/                 # stdlib-only .mjs + node:test suites
   bin/ccguard                     # committed Go guard binary, macOS universal
-                                  #   (plugins/gates only). agent-model and
+                                  #   (gates-models and gates-config, the same
+                                  #   bytes in both). agent-model and
                                   #   workflow-model keep their .mjs as both
                                   #   fallback and reference impl; json-config-guard
                                   #   is Go only and simply does not run where the
                                   #   binary cannot
   go/                             # source for bin/ccguard, and build.sh, the one
-                                  #   definition of the build (plugins/gates only)
+                                  #   definition of the build (plugins/gates-config
+                                  #   only; build.sh writes both binary copies)
 docs/superpowers/{specs,plans}/   # design specs and implementation plans
 docs/research/                    # dated research + triage records
 RESEARCH_*.md                     # standalone research write-ups
@@ -34,9 +36,9 @@ bash scripts/run-node-tests.sh    # run every *.test.mjs in one process
 
 Local Node is pinned to 24 (`mise.toml`), matching the version CI tests on.
 
-Go is pinned to 1.27.1 in both `mise.toml` and `plugins/gates/go/go.mod`'s `toolchain` line. The
-two must match: CI rebuilds `plugins/gates/bin/ccguard` from source and compares
-bytes against the committed binary, so a patch mismatch fails the `go-guards` job.
+Go is pinned to 1.27.1 in both `mise.toml` and `plugins/gates-config/go/go.mod`'s `toolchain` line. The
+two must match: CI rebuilds `ccguard` from source and compares
+bytes against both committed copies, so a patch mismatch fails the `go-guards` job.
 `scripts/go-toolchain-pin.test.mjs` fails sooner, in the node tests, when the two
 pins disagree, when CI stops taking its Go from `go.mod`, or when a file other than
 `build.sh` writes out the build flags.
@@ -58,10 +60,10 @@ CI (`.github/workflows/ci.yml`) validates all JSON manifests, runs `claude plugi
 validate` against every `plugins/<name>/` directory (catches malformed skill
 frontmatter that the JSON check above doesn't reach), runs the node test suite
 on ubuntu+macos (Node 24), runs `go-guards`
-(the `plugins/gates/go/` unit tests, a rebuild-and-compare against the committed
+(the `plugins/gates-config/go/` unit tests, a rebuild-and-compare against the committed
 binary, plus the differential test), and runs `version-bump-check` (see Releasing).
 
-The rebuild calls `plugins/gates/go/build.sh`, which is the only place the build
+The rebuild calls `plugins/gates-config/go/build.sh`, which is the only place the build
 flags are written down. The staleness test calls it too. Rebuild the binary with
 that script rather than retyping the flags, or the comparison fails and reports a
 stale binary when the real fault is a flag mismatch.

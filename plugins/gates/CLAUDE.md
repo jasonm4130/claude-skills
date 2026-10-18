@@ -2,50 +2,47 @@
 
 ## What this is
 
-Three `PreToolUse` gates, a `PostToolUse` config guard, a `PostToolUseFailure`
-signing nudge and a two-hook consolidation trigger, in one plugin because they are
-one design:
+A bundle. `plugin.json` holds a `dependencies` list naming the four units and nothing
+else: no hooks, no scripts, no binary. `scripts/gates-units.test.mjs` fails if a
+component lands here.
 
-- **docs-sync** (matcher `Bash`) — gates `git commit` with two rules: (1)
-  plugins-monorepo pairs — executable plugin code staged without that plugin's
-  README.md/CLAUDE.md → **deny** with the offending plugin names; (2) generic
-  nearest-covering-doc — any other code file whose nearest ancestor
-  README.md/CLAUDE.md/AGENTS.md exists but isn't staged → **deny**; a root-level doc
-  counts only when it mentions the file (basename, stem, top-level dir, chezmoi
-  target name). `docs-sync:ack`
-  in the commit command bypasses (and self-documents in history).
-- **workflow-model** (matcher `Workflow`) — for a script it can read (inline `script`
-  or one read from `scriptPath`), **denies** an expensive fan-out with no per-agent
-  `model:` override; the reason is fed back to Claude, which tiers the workers and
-  re-runs. For a `name:`-invoked built-in it can't edit, it **asks the user**, since a
-  deny would dead-end. `model-guard:ack` bypasses.
-- **agent-model** (matcher `Agent`) — **denies** an ad-hoc Agent dispatch that omits
-  the `model` param, unless the type is `fork` (model param ignored by design) or the
-  `subagent_type` resolves to a custom agent definition with pinned frontmatter
-  `model:` (≠ `inherit`). Any explicit `model` — including `fable` — passes: setting it
-  IS the ack. Design rationale + probe evidence:
-  [`RESEARCH_delegation_model_tiering.md`](https://github.com/jasonm4130/claude-skills/blob/main/RESEARCH_delegation_model_tiering.md).
-- **json-config-guard** (`PostToolUse`, matcher `Edit|Write|MultiEdit|Bash`) — re-parses
-  `settings.json` / `settings.local.json` / `.mcp.json` after a write and **exits 2 with
-  the parse error on stderr**. PostToolUse runs after the write, so it cannot deny; the
-  point is that Claude Code silently drops config it cannot parse, so a stray comma
-  disables every hook here with nothing to trace it back to. Matched by **basename**, so
-  it covers a project's `.claude/settings.json` too. `Bash` is in the matcher because a
-  `sed -i`, heredoc redirect or `tee` rewrites a config without the write tools ever
-  being involved. Adopted from jasonm4130/dotfiles, where it was machine-level; it guards
-  by basename rather than by absolute path, which is what makes it distributable.
-- **signing-nudge** (`PostToolUseFailure`, matcher `Bash`) — when the error text is a
-  locked or unreachable 1Password SSH agent, adds `additionalContext` telling Claude to
-  ask Jason to unlock rather than retry or touch git/SSH config. Never blocks.
-- **consolidation trigger** — `Stop` measures commits since the `.docs-sync` record's
-  `audited=` SHA and arms a flag; `UserPromptSubmit` consumes it fire-once and suggests
-  `gates:docs-consolidate`. Never blocks. See README.md for the user-facing contract.
+| Unit | Hooks |
+|---|---|
+| `gates-docs` | PreToolUse `Bash` (docs-sync), Stop + UserPromptSubmit (consolidation trigger), the `docs-consolidate` skill |
+| `gates-models` | PreToolUse `Workflow` and `Agent`, `bin/ccguard` with `.mjs` fallbacks |
+| `gates-config` | PostToolUse `Edit\|Write\|MultiEdit\|Bash` (json-config-guard), `bin/ccguard`, and the Go source in `go/` |
+| `gates-signing` | PostToolUseFailure `Bash` (signing-nudge) |
 
-Each gate names itself in its decision reason (`docs-sync-guard:`,
-`workflow-model-guard:`, `agent-model-guard:`). Those are guard
-identifiers, not plugin names — `workflow-model` and `agent-model` are byte-locked to
-the committed `bin/ccguard`, and the differential test fails on any drift between the
-two implementations' output.
+## Why it was split (gates 0.7.0, 2026-10-16)
+
+Up to 0.6.x every guard lived in this one plugin. A user who wanted only the Agent
+model guard also took the docs commit gate, the consolidation trigger, the JSON-config
+guard and the signing nudge, because Claude Code enables and disables whole plugins and
+has no per-hook switch. `GATES_DISABLE` turns a guard off, but the user still has to
+learn the list exists.
+
+The 2026-09-04 guards packaging verdict (under `docs/research/` in the repo) chose one
+plugin, partly because "Claude Code has no dependency field" and a unit installed
+without its shared binary plugin would sit silently inert. Both premises changed:
+`plugin.json` now takes `dependencies`, and no unit depends on another. Each carries its
+own `lib.mjs` and, where it needs one, its own `bin/ccguard`. The verdict's version-churn
+point still holds for the binary: `gates-models` and `gates-config` ship the same bytes,
+so a rebuild that changes them bumps both.
+
+**Updating an existing install does not install new dependencies in one step.**
+Measured on Claude Code 2.1.301 in a scratch `CLAUDE_CONFIG_DIR` against a local
+marketplace: a fresh `claude plugin install` of a bundle installs every dependency, but
+`claude plugin update` of an installed plugin that gains dependencies installs none, and
+the plugin shows "failed to load". Each later `claude plugin install <bundle>` or
+`/reload-plugins` adds one missing dependency. The bundle ships no hooks, so between
+the update and the last unit landing, the missing units' gates do not run.
+`scripts/update-plugins.sh` re-runs the install until no dependency is reported missing,
+and the README gives the per-unit install commands.
+
+**Plugin data does not carry over.** `CLAUDE_PLUGIN_DATA` is keyed by plugin id, so
+`gates-docs` starts with an empty data dir. Only the consolidation trigger used
+`gates`'s: its nudge flag and per-session throttle. Losing them costs at most one repeat
+nudge. The defer marker lives in `.git/`, not the data dir, so it is unaffected.
 
 ## The shared design
 
@@ -69,244 +66,6 @@ two implementations' output.
   resolves by guessing, and it guesses wrong; `session-retro` lost 4 nudges to exactly
   that before it was caught. Enforced by `scripts/repo-consistency.test.mjs`.
 
-## Design decisions — docs-sync (2026-07-11)
-
-- **Commit gate, not turn-end nudge**: Stop-hook stdout is not injected into model
-  context (verified community post-mortem); UserPromptSubmit/pre-commit blocking is
-  what works. The commit is the last moment code and docs share working memory.
-  *(The `Stop` hook the trigger adds does not contradict this — it is exactly why Stop
-  writes a flag instead of printing, and `UserPromptSubmit` does the injecting. Do not
-  "simplify" it into a Stop hook that prints.)*
-- **Flag, don't rewrite**: the hook never edits docs; it feeds the deny reason back so
-  Claude (or the human) makes the update deliberately.
-- **Explicit not-to-flag list** (coder/coder doc-check pattern): tests, version bumps,
-  skills/commands markdown. Noise makes ack reflexive and kills the gate.
-- **`skills/`+`commands/` are docs, not code**: SKILL.md content is the feature and
-  self-describes; only `scripts|hooks|agents|workflows` count as executable surface.
-
-## Design decisions — consolidation trigger (2026-07-25)
-
-Codex-reviewed: 3 rounds + audit, chain `881f87716802`, 14 unique findings.
-
-- **Contradiction detection stays OFF the blocking path.** Google requires
-  build-blocking checks to "produce no effective false positives"; review-time checks
-  tolerate <10%, and Tricorder puts an analyzer on probation at a 10% not-useful rate,
-  off at 25%. A secret-detection gate that missed that bar saw 44.2% one-time and 7.2%
-  permanent bypass, with developers calling 50% of warnings false positives regardless
-  of accuracy. An LLM contradiction check on the gate would be bypassed about half the
-  time *and* spend the credibility the deterministic path check has.
-- **But the nudge must arrive in-session.** Facebook: >70% fix rate for issues raised
-  on the introducing diff, "near silence" for an offline bug list. A report written to
-  a file would be inert.
-- **Every anomaly is silent, never stale.** This one choice removes shallow-clone
-  special-casing entirely: `--depth 1` (audited commit unfetched) and
-  `--depth 1 --no-single-branch` (object alive via another branch, path to HEAD cut)
-  both land on already-silent paths. The predecessor design warned on ambiguity and
-  needed an explicit `--is-shallow-repository` check plus two separate fixes, the
-  second of which hid behind the first. Both variants have their own regression test.
-- **`audited=` is explicit, not derived from the record's last-touched commit.**
-  `git log -1 -- .docs-sync` is elegant — the SHA always exists and is always an
-  ancestor — but then *any* touch of the file records an audit, and merge-conflict
-  resolution on the record is likely, not contrived. An explicit SHA survives that:
-  conflict resolution picks one side's real audit SHA, a prose fix touches nothing.
-- **Read existence from the working tree, the SHA from `HEAD:.docs-sync`.** Deleting
-  the record is the opt-out and must work before it is committed; an abandoned
-  `--init` or a hand-edited line must not silence a stale repo. Two reads, two
-  distinct failures — do not collapse them.
-- **`isAncestor` uses `rev-parse --verify --quiet`, not `cat-file -e`.** Callers
-  delete state on a verified `false`, so "object is gone" (exit 1) and "git could not
-  answer" (exit 128) must not collapse. `cat-file -e <missing>^{commit}` returns 128
-  for both, because peeling an absent object is fatal rather than a negative answer.
-  Verify exit codes by spawning git directly; a shell can mangle `^{commit}`.
-- **No pathspec on the count.** `rev-list --count A..HEAD -- ':(exclude)path'`
-  triggers history simplification and stops meaning `total − excluded`. The cost is
-  that a fresh record reads 1; that is asserted in the tests so nobody "fixes" it.
-- **The defer marker lives in `.git/`, not in `CLAUDE_PLUGIN_DATA`.** That variable is
-  **not exported to session shells** (verified: unset in the Bash tool's environment),
-  and `--defer` runs from a session, so a data-dir path would have the writer and the
-  reader disagreeing about the directory — deferral would silently never work. `.git/`
-  is computable identically from both sides and is per-clone, which is the correct
-  scope. The nudge flag and throttle stay in the data dir, keyed session+repo, because
-  only hooks ever touch them. A session-keyed defer would silently mean "not this
-  session", which is the one thing defer exists to prevent.
-- **`--defer` is a shipped script, not skill prose.** Instructions telling the agent to
-  "write the defer file" cannot work when the path depends on state the session cannot
-  see; the script and the hook call the same helper. The skill resolves it relative to
-  **its own base directory** — `${CLAUDE_PLUGIN_ROOT}` is unset in session shells too,
-  so a command built from it expands to `node "/scripts/…"` and dies with
-  MODULE_NOT_FOUND. A test pins the relative hop and forbids the variable.
-- **A defer marker that exists but cannot be read is silence, not permission.** An
-  unreadable (or empty) marker used to fall through and arm a nudge the user had
-  explicitly deferred, because the catch set `deferred = null` and the block was
-  skipped. Present-but-unparseable is "cannot tell" and takes the silent path.
-- **UserPromptSubmit re-checks the record before speaking.** Stop arms at end of turn;
-  the user may delete `.docs-sync` before the next prompt, and the documented opt-out
-  is immediate. Consuming the flag and then staying silent is deliberate — opting out
-  should also clear anything already armed.
-- **`.docs-sync` is in `SKIP_RE`.** Without it the gate denies its own record file
-  (not Markdown → treated as code → nearest covering doc is the root README, unstaged),
-  which would block `--init` and every re-stamp in every repo that has a root README.
-- **No dismissal registry.** An intentional contradiction gets its rationale written
-  into the doc, which silences future passes by giving them the reason to read. A
-  suppression list that grows is how a not-useful rate climbs invisibly.
-
-## Design decisions — the model gates
-
-**Why `ask` for `name:` but `deny` for scripts?** A `deny` is meant to make Claude
-*rewrite* the offending script — but a built-in or saved `name:` workflow isn't
-editable from the session, so a deny would dead-end (and there's nowhere to put a
-`model-guard:ack` marker). `ask` routes the call to the human, who can switch the
-session to Sonnet before running it, or proceed deliberately.
-
-**What the `deep-research` denylist entry is, and is not.** It is a **cost speed-bump
-on a high-fan-out built-in**: the workflow spawns many workers, pins no tier of its
-own, and therefore inherits whatever the session is set to. It is **not** a claim that
-the built-in is all-Opus — that rationale was carried in these docs and is false;
-inheritance is not pinning, and the same run is cheap on a Sonnet session. Since the
-hook cannot see the session model, it cannot make the call itself, so it surfaces the
-run once per invocation and lets the user decide. Do not re-introduce an all-Opus
-framing; if a named workflow is ever found to pin a tier, that is a different fact and
-needs its own probe.
-
-`agentCount` is a static lower bound (`/\bagent\s*\(/g`); loops and `.map()` over items
-mean the real spawn count is higher, so fan-out/loop presence is the stronger signal.
-The detection is heuristic on purpose: it errs toward silence on small workflows and
-only speaks up on clearly-expensive ones, so it doesn't fight the Workflow tool's own
-"omit `model` by default" guidance.
-
-**The Agent gate's order of checks:** (1) `tool_input.model` set (any non-empty
-string) → exit 0 — explicit is deliberate, and the model param itself is the ack;
-(2) `subagent_type === "fork"` → exit 0 (forks always inherit; a deny would loop);
-(3) scan `<cwd>/.claude/agents/*.md` then `~/.claude/agents/*.md` (that precedence,
-mirroring Claude Code's own project-over-user resolution), matching frontmatter `name:`
-first and filename second — first resolving definition decides, pinned `model:`
-(≠ `inherit`) → exit 0; (4) deny with the tier calculus (sonnet for
-search/mechanical/verify, haiku for enumeration, opus/fable deliberately). No scale
-gate: one frontier dispatch is the unit of waste and the deny costs one round trip.
-
-**Empirical grounding (probes re-run 2026-08-26 on Claude Code 2.1.246; first run
-2026-07-11 on 2.1.206, sandboxed `claude -p`):** PreToolUse fires on `Agent`
-dispatches (stale issue #56151 doesn't reproduce), `deny` is enforced — subagent never
-spawns, reason reaches the model (#44534 doesn't reproduce) — and `updatedInput` can
-silently rewrite the dispatch model (rejected as design: hides the decision). The
-legacy `Task` matcher also fires for `Agent` calls — never register both, or the guard
-double-fires. Re-verify after major Claude Code upgrades and move the stamp forward.
-
-## Gotchas — docs-sync
-
-- macOS symlinked cwds (`/var` → `/private/var`): git prints the REAL toplevel, so
-  `cwd` is realpath'd before computing repo-relative paths for `git add` unions.
-  Same trap bites the trigger's tests: state files are keyed off
-  `git rev-parse --show-toplevel`, so a test using a raw `mkdtemp` path computes a
-  different `repoHash` than the hook does and hunts for a flag that never existed.
-- `git add X && git commit` in one command: X isn't in the index when the hook runs —
-  `pathsFromGitAdd()` parses add segments and unions them in.
-- `git commit <pathspec>` is NOT parsed (documented limitation).
-- **Argument splitting is quote-aware (`splitArgs`), and it has to be.** A bare
-  `.split(/\s+/)` fragments any quoted path containing a space:
-  `git add "Daily/2026-08-03 - Daily.md"` yielded `Daily/2026-08-03` + `-` +
-  `Daily.md"`. The `-` was dropped as a flag, `Daily.md` passed the markdown skip, and
-  the extensionless `Daily/2026-08-03` was classified as CODE — so a markdown-only
-  commit was denied. Found on an Obsidian vault, where every daily note has a space in
-  its name. Both directions are tested: a quoted *code* path with a space must still be
-  caught.
-- **Heredoc bodies are stripped before anything parses the command
-  (`stripHeredocs`).** A body is text being written, not commands to run, so
-  `cat >> notes.md <<'EOF' … git add x && git commit … EOF` must not read as a commit.
-  This bit twice for real while writing the quoting tests above — the fixture strings
-  tripped the gate the tests exercise. Stripping happens first, so commit detection and
-  the `git add` union always see the stripped form. Only the bodies must go here.
-
-- **One carve-out: the stdin-message form.** `splitHeredocs` returns the bodies
-  alongside the stripped command, and the `docs-sync:ack` check also scans them when
-  the command is `git commit -F -` / `--file=-` / `--file -` — where the heredoc body
-  *is* the commit message. Without it the marker's stated contract was unachievable:
-  inside the heredoc it was stripped so the gate still denied, and outside it satisfied
-  the gate while never reaching the message, which is a silent bypass with no audit
-  trail. Scoping the scan to the stdin form keeps the original property — this plugin's
-  own README documents the literal token and still cannot bypass, because a README is
-  written with a file redirect, not a `commit -F -`.
-
-  Each body is kept **with its introducer line**, and only the body whose own
-  introducer is the `commit -F -` counts. `introIsGitCommitFromStdin` took **four**
-  attempts to get there, each bypass found by review after the previous fix. The
-  pattern is the lesson, not the regexes:
-
-  | attempt | bypass it left open |
-  |---|---|
-  | scan every heredoc body | `cat >/dev/null <<'DOC'` decoy elsewhere in the command |
-  | bind body to its introducer line, match tokens | `echo git commit -F - <<'DOC'` — tokens present, `echo` consumes the body |
-  | split introducer on `;&&\|\|` for a git head | `echo 'note; git commit -F - '` — an unquoted split *fabricates* a git head from quoted text |
-  | tokenise with `splitArgs`, operators must be their own token | — |
-
-  Plus `git commit -F - <<'ACK' <<'MSG'`: bash applies the **last** redirection, so a
-  marker in the discarded first body authorised a message that never had one. More than
-  one `<<` token on the line now refuses outright. The same review surfaced a
-  pre-existing parser bug — `splitHeredocs` consumed only the first heredoc per line,
-  leaving B's body in the "stripped" command of `cat <<'A' <<'B'`, which fed the marker
-  check, commit detection and the `git add` union alike. All introducers on a line are
-  now consumed in order.
-
-  The through-line: a regex cannot tell a command from text that looks like one. The
-  fix that held reuses the quote-aware `splitArgs` already in this file and requires
-  `seg[0]` to be exactly `git`. Anything unrecognised denies — a false deny costs one
-  `-m` flag, a false allow is a silent bypass. All five variants have regression tests,
-  as does `git -C <path> commit -F -`, and a commit split across lines matches neither
-  binding and denies.
-
-- **An unparseable payload exits before anything else.** Both consolidation hooks used
-  to fall through to `process.cwd()` and `session_id: "unknown"` when stdin did not
-  parse, so a malformed call armed and then consumed a nudge flag for whatever repo the
-  hook was spawned in. It was invisible until that repo crossed the drift threshold —
-  this repo's own suite went red at 52 commits and had passed at 39. The `PreToolUse`
-  guard already exited on `!payload`; these two were the outliers. Fail-open means
-  silent, not "assume the ambient shell".
-
-## The compiled guards
-
-Four of the six guards run a committed **Go** binary. Two of them keep the `.mjs` as
-fallback and reference implementation:
-
-```
-"${CLAUDE_PLUGIN_ROOT}/bin/ccguard" agent-model    "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs"    || node "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-agent-model.mjs"
-"${CLAUDE_PLUGIN_ROOT}/bin/ccguard" workflow-model "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs" || node "${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse-guard-workflow-model.mjs"
-```
-
-`json-config-guard` is Go only and has no `||` clause, so on Linux it simply does
-not run. 35.7ms → 3.1ms on the Agent gate, which fires on every
-dispatch. The docs-sync gate is **not** compiled: git subprocesses dominate its 61ms,
-so compiling it would buy a third of what it buys here.
-
-Consolidating the three plugins into this one collapsed two byte-identical copies of
-`ccguard` into one — plugins cannot share files, so each consuming plugin used to
-carry its own. There is now exactly one committed binary in the repo.
-
-The `.mjs` path appears twice on purpose: the `||` covers a binary that never executes
-(127 missing, 126 wrong architecture), and the **argv** covers a binary that ran but
-hit a payload it cannot represent, where the `||` is useless because stdin is already
-drained. `go/README.md` has the full argument.
-
-**The `.mjs` files are not dead code — do not delete them.** They are both the
-fallback and the reference implementation that `scripts/ccguard-differential.test.mjs`
-checks the binary against. **Any behaviour change must land in BOTH**, or that test
-fails — including the decision-reason strings, which is why those still say
-`workflow-model-guard:` / `agent-model-guard:`. Note the Agent guard reads
-`~/.claude/agents/*.md` and the project's `.claude/agents/*.md`: the Go port sorts
-directory entries where `readdirSync` does not, which only becomes visible
-if two definitions declare the same frontmatter `name` — sorted at least makes the
-winner reproducible.
-
-`go/build.sh` is the one definition of the build flags. CI and the staleness test in
-`scripts/ccguard-differential.test.mjs` both call it, so a flag change cannot leave the
-committed binary disagreeing with what the checks rebuild. Rebuild with `go/build.sh`,
-never by retyping the flags. It also pins `GOTOOLCHAIN` to go.mod's exact
-`toolchain` line, because that line alone lets a newer local Go do the build.
-
-`bin/ccguard` is the one exception to "no build artifacts": the marketplace install
-path is `git clone` + copy with no build step anywhere, so a compiled hook has to ship
-pre-built. Source lives in `go/`; see `go/README.md` for the rebuild command and
-the staleness fingerprint.
-
 ## Design decisions — per-gate disable (2026-09-14)
 
 `GATES_DISABLE` is a comma-separated list of gate names, read from the environment.
@@ -326,9 +85,10 @@ precedent here in 2026-07-25.
 remember and seven to keep documented. One list adds a gate by adding a row to the
 README table.
 
-**Why both implementations carry the parser.** `go/config.go` and `lib.mjs` read the
-same variable the same way, and that duplication is deliberate. The binary exits 0
-when a gate is disabled, so `|| node` never fires on a machine that runs the binary.
+**Why both implementations carry the parser.** `go/config.go` (in gates-config) and
+each unit's `lib.mjs` read the same variable the same way, and that duplication is
+deliberate. The binary exits 0 when a gate is disabled, so `|| node` never fires on a
+machine that runs the binary.
 It fires on every machine that does not — Linux, Intel Mac, a stripped install — and
 `docs-sync` and `docs-consolidate` have no binary path at all. Disable in Go alone
 and the gate comes back wherever the fallback runs.
@@ -347,42 +107,7 @@ ordering rather than exiting first.
 hooks run on every matching tool call, so a warning about a typo would be a warning
 on every call. The README table is the reference.
 
-## Conventions
-
-- **ESM only.** Every script is `.mjs`. No CommonJS, no `package.json`, no `require`.
-- **Stdlib only.** Allowed imports: `node:fs`, `node:path`, `node:os`, `node:process`,
-  `node:child_process`, `node:crypto`, `node:url`, `node:test`, `node:assert/strict`.
-- **`// @ts-check` at the top of every file**, with JSDoc `@typedef` for stdin payload
-  shapes. Editors get IntelliSense without a build step.
-- **Graceful degradation.** Any JSON parse error or missing payload → `process.exit(0)`
-  silently. The hook never crashes the session.
-- **Decision output** uses the `hookSpecificOutput` envelope with `permissionDecision`
-  / `permissionDecisionReason` (the reliably-documented PreToolUse feedback channel);
-  the trigger uses `additionalContext`.
-- **Own `lib.mjs`.** Its hook-I/O half duplicates the other plugins' copies — CC
-  plugins can't share files across boundaries, so duplication is intentional, and
-  `scripts/lib-drift.test.mjs` fails the build if any function exported by two or more
-  plugins' `lib.mjs` differs by even a byte. The invariant exists because the real
-  hazard of one copy per plugin is a bug fixed in one and left in all the others. This
-  file's `emitAdditionalContext` was the first casualty: it had drifted to a
-  semantically-identical but differently-formatted five-line form and was normalised
-  back. If a divergence is ever genuinely wanted, rename the diverging copy so it stops
-  claiming to be the shared primitive.
-
 ## Development
 
-```bash
-node --test plugins/gates/tests/*.test.mjs             # real temp git repos throughout
-node --test scripts/ccguard-differential.test.mjs      # binary vs .mjs equivalence
-(cd go && go test ./...)                               # the binary's own units
-```
-
-Glob the files — Node 24 regressed bare-directory invocation (`node --test <dir>` →
-MODULE_NOT_FOUND); see the header of `scripts/run-node-tests.sh`, which is what CI runs.
-
-The docs-sync boundary test builds 49 commits, so the suite takes ~1min. Filler commits
-use `--allow-empty` — `rev-list --count` counts them identically and it avoids both the
-file I/O and a per-call filename counter that collides across calls.
-
-After editing `go/`, rebuild and re-copy the binary (see `go/README.md`) — the
-differential test rebuilds and compares bytes, so a stale one cannot ship.
+Each unit has its own suite under `plugins/<unit>/tests/`. `bash scripts/run-node-tests.sh`
+runs every one, and `scripts/gates-units.test.mjs` pins which unit owns which hook.

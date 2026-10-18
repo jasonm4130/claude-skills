@@ -1,0 +1,21 @@
+{
+  "name": "gates-signing",
+  "description": "PostToolUseFailure nudge for a git commit or SSH push that failed because the 1Password SSH agent is locked or unreachable: tells Claude to ask the user to unlock rather than retry or change git/SSH config. Never blocks.",
+  "version": "0.7.0",
+  "author": {
+    "name": "Jason Matthew",
+    "email": "jasonm4130@gmail.com"
+  },
+  "homepage": "https://github.com/jasonm4130/claude-skills",
+  "repository": "https://github.com/jasonm4130/claude-skills",
+  "license": "MIT",
+  "keywords": [
+    "hooks",
+    "git",
+    "1password",
+    "claude-code"
+  ],
+  "engines": {
+    "claude-code": ">=2.1.110"
+  }
+}

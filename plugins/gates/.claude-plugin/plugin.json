@@ -1,7 +1,7 @@
 {
   "name": "gates",
-  "description": "Three stateless PreToolUse gates, a PostToolUse JSON-config guard, a 1Password signing nudge, and a docs-consolidation trigger. Denies a git commit that changes code without staging its covering docs (per-plugin README/CLAUDE.md pairs, or the nearest README/CLAUDE/AGENTS walking up); denies a high-fan-out Workflow script with no per-agent model: override and asks before a denylisted built-in named workflow; denies an ad-hoc Agent dispatch that omits model unless the agent type pins one in frontmatter. Separately, a never-blocking trigger counts commits since the .docs-sync record and nudges toward /docs-consolidate, and when a Bash command fails on a locked 1Password SSH agent, a nudge tells Claude to ask you to unlock it instead of retrying. Every gate has an ack marker, and GATES_DISABLE turns any of them off from a settings.json env block. Separately, a PostToolUse hook re-parses settings.json/.mcp.json after an edit and reports a syntax error, which Claude Code otherwise swallows by silently dropping the config it cannot parse.",
-  "version": "0.6.2",
+  "description": "Bundle of the gates units: installs gates-docs, gates-models, gates-config and gates-signing together. Ships no hooks of its own; install a unit alone to take only that guard.",
+  "version": "0.7.0",
   "author": {
     "name": "Jason Matthew",
     "email": "jasonm4130@gmail.com"
@@ -12,9 +12,14 @@
   "keywords": [
     "guard",
     "hooks",
-    "docs-drift",
-    "model-selection",
+    "bundle",
     "claude-code"
+  ],
+  "dependencies": [
+    "gates-docs",
+    "gates-models",
+    "gates-config",
+    "gates-signing"
   ],
   "engines": {
     "claude-code": ">=2.1.110"
