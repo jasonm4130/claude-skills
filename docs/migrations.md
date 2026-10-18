@@ -14,6 +14,14 @@ The marketplace `renames` field is deliberately not used for the three-guards �
 `gates` bundle for someone who had only one of the guards would widen what they
 opted into. The migration stays manual — the table below says what to run.
 
+Splitting a plugin into units goes the other way, and needs no manual step: the
+old name stays as a bundle that depends on the new units (see
+[Units and bundles](developing.md#units-and-bundles)). `<name>@jasonm4130-claude-skills`
+keeps working, and the next update installs the units it now names. Each piece that
+moves gets a row below, in the form `<plugin>`'s `<piece>` → `<unit>`, so a user
+who wants only that piece knows which unit to keep. Its "What to do" cell names any
+state left behind in the old plugin's data directory, when the new unit does not read it.
+
 | Removed | Date | Replaced by | What to do |
 |---|---|---|---|
 | `deep-dive` (and its earlier name `deep-research`) | 2026-08-26 | Claude Code's built-in `/deep-research` | Uninstall. The built-in now inherits the session model instead of pinning Opus, and votes on claims adversarially — the two things this plugin existed to add (verified 2026-08-26). |

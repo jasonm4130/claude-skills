@@ -1,6 +1,6 @@
 # Developing
 
-Working on the plugins in this repo: layout, tests, local install, and releasing.
+Working on the plugins in this repo: layout, units and bundles, tests, local install, and releasing.
 
 ## Repo layout
 
@@ -25,6 +25,60 @@ RESEARCH_*.md                     # standalone research write-ups
 scripts/run-node-tests.sh         # CI test runner (globs files — `node --test <dir>`
                                   #   is broken on Node 24)
 ```
+
+## Units and bundles
+
+A user picks from this marketplace one plugin at a time. Claude Code enables and
+disables a whole plugin. The docs describe no switch for a single hook. So a plugin
+is the smallest thing anyone can choose, and whatever it holds, they get all of it.
+
+- **A unit** is one capability: one skill, one hook set, or one skill together
+  with the hooks it cannot work without. Installing it adds nothing the user did
+  not ask for.
+- **A bundle** is a plugin whose `plugin.json` lists other plugins in
+  `dependencies`. It ships no skills or hooks of its own. Installing it installs
+  and enables every unit it names, so one command gives a curated set.
+
+Put a hook in the same unit as a skill only when one does not work without the
+other. Two do this today, by design:
+
+- `domain-modeling`: its hooks are the skill's only inbound trigger (ADR
+  [2026-08-03](adr/2026-08-03-skill-topology-and-gate-integrity.md)).
+- `handoff`: the skill writes the resume doc, and the `SessionStart` hook loads it.
+
+Every other skill or hook set gets its own unit. Each enabled plugin's skill names and
+descriptions sit in context on every turn, so an unwanted unit costs tokens as well as
+hooks.
+
+Today every plugin here is a unit, and the README install table says so in its Kind
+column. `gates` is the exception in practice. It holds several independent guards
+behind one plugin, and `GATES_DISABLE` is how a user switches one guard off.
+
+What Claude Code does with a bundle (plugin manifest reference and plugin
+dependencies docs, checked 2026-10-16):
+
+- `dependencies` entries are `"name"`, `"name@marketplace"` or
+  `{ "name", "marketplace", "version" }`. A bare name resolves in this marketplace.
+- Install, `/reload-plugins`, a marketplace auto-update and re-running
+  `claude plugin install` all install any missing dependency. So a new bundle
+  version that adds a unit reaches users through the normal update path.
+- If a user disables a unit that an enabled bundle depends on, the bundle is
+  disabled at the next plugin load. Uninstalling the bundle leaves its units installed.
+  `claude plugin prune` removes auto-installed dependencies that no plugin needs.
+
+### Splitting a plugin into units
+
+1. Keep the old name as the bundle. Its `<name>@jasonm4130-claude-skills` key
+   stays in users' `enabledPlugins`, so existing installs keep working and pull in
+   the new units on their next update. Bump the bundle's version (major, since it
+   no longer ships the components itself).
+2. Give each new unit its own `plugins/<unit>/`, marketplace entry, version and
+   README row.
+3. Move state on purpose. `${CLAUDE_PLUGIN_DATA}` is keyed by plugin id, so a new
+   unit starts with an empty `~/.claude/plugins/data/<unit>/`. Either read the old
+   bundle's directory once, or say in the migration row what is left behind.
+4. Add a row per unit to [docs/migrations.md](migrations.md): what moved, from
+   which plugin, and whether the user has to do anything.
 
 ## Development
 

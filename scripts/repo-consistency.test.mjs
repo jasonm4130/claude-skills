@@ -44,6 +44,49 @@ test("README documents every plugin", () => {
   }
 });
 
+// The install table is what a user picks from, so it must say what each plugin
+// puts in their session: its skills and every hook event it registers. Prose
+// descriptions drifted before (gates' text named a retired LSP gate for a
+// month), so these two columns are read from the plugin's own files instead.
+// Kind follows docs/developing.md "Units and bundles": a plugin whose
+// plugin.json lists dependencies is a bundle, every other plugin is a unit.
+test("README install table states each plugin's kind, skills and hook events", () => {
+  const readme = readFileSync(join(root, "README.md"), "utf8");
+  const lines = readme.split("\n");
+  const head = lines.findIndex((l) => /^\| Plugin \| Kind \| Skills \| Hooks \|/.test(l));
+  assert.ok(head >= 0, "README has no install table headed | Plugin | Kind | Skills | Hooks |");
+  /** @type {Map<string, string[]>} */
+  const rows = new Map();
+  for (const l of lines.slice(head + 2)) {
+    if (!l.startsWith("|")) break;
+    const cells = l.split(" | ").map((c) => c.replace(/^\|\s*|\s*\|$/g, "").trim());
+    rows.set(cells[0].replace(/`/g, ""), cells);
+  }
+  assert.deepEqual([...rows.keys()].sort(), entries.map((e) => e.name).sort());
+
+  /** @param {string} cell */
+  const names = (cell) => (cell === "–" ? [] : [...cell.matchAll(/`([^`]+)`/g)].map((m) => m[1]).sort());
+  for (const e of entries) {
+    const dir = join(root, "plugins", e.name);
+    const pj = JSON.parse(readFileSync(join(dir, ".claude-plugin", "plugin.json"), "utf8"));
+    const kind = (pj.dependencies ?? []).length > 0 ? "bundle" : "unit";
+    const skills = existsSync(join(dir, "skills"))
+      ? readdirSync(join(dir, "skills"), { withFileTypes: true })
+          .filter((d) => d.isDirectory())
+          .map((d) => d.name)
+          .sort()
+      : [];
+    const hooksPath = join(dir, "hooks", "hooks.json");
+    const events = existsSync(hooksPath)
+      ? Object.keys(JSON.parse(readFileSync(hooksPath, "utf8")).hooks).sort()
+      : [];
+    const [, k, s, h] = /** @type {string[]} */ (rows.get(e.name));
+    assert.equal(k, kind, `${e.name}: README kind ${k}, expected ${kind}`);
+    assert.deepEqual(names(s), skills, `${e.name}: README skills column`);
+    assert.deepEqual(names(h), events, `${e.name}: README hooks column`);
+  }
+});
+
 test("plugin READMEs' install commands use the marketplace id", () => {
   const installRe = /\/plugin install ([\w-]+)@([\w.-]+)/g;
   for (const name of dirs) {
