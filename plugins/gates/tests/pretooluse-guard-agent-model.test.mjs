@@ -145,8 +145,7 @@ test("deny reason names the tier calculus and the explicit-model escape hatch", 
       { HOME: home.root },
     );
     const reason = parseDecision(stdout).permissionDecisionReason;
-    assert.match(reason, /model:\s*'sonnet'/);
-    assert.match(reason, /haiku/);
+    assert.match(reason, /model:'haiku' for file search/);
     assert.match(reason, /explicit model always passes/i);
   } finally {
     home.cleanup();

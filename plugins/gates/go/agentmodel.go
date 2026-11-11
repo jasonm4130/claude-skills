@@ -240,10 +240,9 @@ func agentModel(p map[string]any, why readFailure) outcome {
 	}
 	reason := "agent-model-guard: this Agent dispatch" + suffix + " sets no model, " +
 		"so the subagent inherits the session's main-loop model — an expensive default on a " +
-		"frontier-tier session. Re-dispatch with an explicit tier: model:'sonnet' for " +
-		"search/reads/mechanical implementation/verification, model:'haiku' for pure " +
-		"enumeration, or model:'opus'/'fable' deliberately if the task genuinely needs " +
-		"frontier reasoning. An explicit model always passes this guard."
+		"frontier-tier session. Re-dispatch with an explicit model: model:'opus' for " +
+		"implementation and judgement, or model:'haiku' for file search on the built-in " +
+		"Explore agent. An explicit model always passes this guard."
 
 	emitPermissionDecision("deny", reason)
 	return outcomeHandled
