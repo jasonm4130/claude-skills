@@ -77,11 +77,15 @@ test("deny reason names the estimated agent count", () => {
   assert.match(parseDecision(stdout).permissionDecisionReason, /~2 agent\(\) calls/);
 });
 
-test("deny reason recommends a tier alias, not a full model id", () => {
+test("deny reason recommends opus by default, sonnet for mechanical, haiku for search", () => {
   const { stdout } = run(
     wf('await agent("a"); await agent("b"); await agent("c"); await agent("d")'),
   );
-  assert.match(parseDecision(stdout).permissionDecisionReason, /model:'sonnet'/);
+  const reason = parseDecision(stdout).permissionDecisionReason;
+  assert.match(reason, /model:'opus' to worker agents by default/);
+  assert.match(reason, /model:'sonnet' to workers that do specified mechanical work/);
+  assert.match(reason, /model:'haiku' to workers that only search/);
+  assert.match(reason, /If every agent genuinely needs the session model/);
 });
 
 test("deny reason omits the count when no agent() calls are statically visible", () => {
@@ -184,6 +188,7 @@ test("asks the user before the un-editable high-fan-out built-in name:deep-resea
   assert.equal(d.permissionDecision, "ask");
   assert.match(d.permissionDecisionReason, /workflow-model-guard/);
   assert.match(d.permissionDecisionReason, /frontier-tier/i);
+  assert.match(d.permissionDecisionReason, /switch this session to Opus \(\/model opus\)/);
 });
 
 test("ignores named workflows not on the denylist", () => {

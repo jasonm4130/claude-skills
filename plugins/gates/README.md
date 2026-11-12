@@ -173,7 +173,7 @@ which model the built-in runs. `deep-research` spawns many workers and pins no t
 its own, so each one inherits the session model: cheap on a Sonnet session, expensive
 on a frontier-tier one, and invisible either way until the usage graph moves. The hook
 cannot see the session model (see below), so it cannot make that call for you — it
-puts the run in front of you once, and you either proceed or `/model sonnet` first.
+puts the run in front of you once, and you either proceed or `/model opus` first.
 
 ### Agent (matcher `Agent`)
 

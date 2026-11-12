@@ -63,8 +63,8 @@ if (!script) {
       `workflow-model-guard: the "${name}" workflow sets no per-agent model: override, so ` +
         "every agent it spawns inherits this session's model — on a frontier-tier session " +
         "that is an expensive default, and it can't be tiered from here (it's not an " +
-        "editable script). Cheaper: switch this session to Sonnet " +
-        "(/model sonnet) before running it, or run a model-tiered workflow instead. Proceed anyway?",
+        "editable script). Cheaper: switch this session to Opus " +
+        "(/model opus) before running it, or run a model-tiered workflow instead. Proceed anyway?",
     );
   }
   process.exit(0);
@@ -98,8 +98,9 @@ const what = signals.join(" + ");
 const reason =
   `workflow-model-guard: this workflow has ${what} and no per-agent model: override — ` +
   "every spawned agent defaults to the main-loop model, which burns usage limits fast " +
-  "on frontier-tier sessions. Add model:'sonnet' (or 'haiku') to worker agents that " +
-  "don't need the top tier. If the top tier is genuinely required for all of them, add a " +
+  "on frontier-tier sessions. Add model:'opus' to worker agents by default, " +
+  "model:'sonnet' to workers that do specified mechanical work, or model:'haiku' to " +
+  "workers that only search. If every agent genuinely needs the session model, add a " +
   "`// model-guard:ack` comment to the script and re-run.";
 
 emitPermissionDecision("deny", reason);

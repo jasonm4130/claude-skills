@@ -14,7 +14,8 @@
 //   - subagent_type resolves to a custom agent definition (project .claude/agents/
 //     over ~/.claude/agents/) whose frontmatter pins `model:` (≠ inherit) → allow.
 //     Claude Code's own resolution will apply that pinned tier.
-//   - otherwise → deny with the tier calculus; Claude re-dispatches with a model.
+//   - otherwise → deny naming the tiers (opus by default, sonnet for specified
+//     mechanical work, haiku for search); Claude re-dispatches with a model.
 //
 // Verified on Claude Code 2.1.246 (probes re-run 2026-08-26; first run on 2.1.206,
 // 2026-07-11): PreToolUse fires on Agent dispatch, tool_input carries
@@ -119,8 +120,8 @@ const reason =
   `agent-model-guard: this Agent dispatch${type ? ` (${type})` : ""} sets no model, ` +
   "so the subagent inherits the session's main-loop model — an expensive default on a " +
   "frontier-tier session. Re-dispatch with an explicit model: model:'opus' for " +
-  "implementation and judgement, or model:'haiku' for file search on the built-in " +
-  "Explore agent. An explicit model always passes this guard.";
+  "implementation and judgement, model:'sonnet' for specified mechanical work, or " +
+  "model:'haiku' for search. An explicit model always passes this guard.";
 
 emitPermissionDecision("deny", reason);
 process.exit(0);

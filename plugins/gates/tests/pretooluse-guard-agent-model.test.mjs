@@ -137,7 +137,7 @@ test("denies when subagent_type is absent (defaults to an inheriting built-in)",
   }
 });
 
-test("deny reason names the tier calculus and the explicit-model escape hatch", () => {
+test("deny reason names opus by default, sonnet for mechanical, haiku for search, and the escape hatch", () => {
   const home = emptyHome();
   try {
     const { stdout } = run(
@@ -145,7 +145,9 @@ test("deny reason names the tier calculus and the explicit-model escape hatch", 
       { HOME: home.root },
     );
     const reason = parseDecision(stdout).permissionDecisionReason;
-    assert.match(reason, /model:'haiku' for file search/);
+    assert.match(reason, /model:'opus' for implementation and judgement/);
+    assert.match(reason, /model:'sonnet' for specified mechanical work/);
+    assert.match(reason, /model:'haiku' for search\./);
     assert.match(reason, /explicit model always passes/i);
   } finally {
     home.cleanup();

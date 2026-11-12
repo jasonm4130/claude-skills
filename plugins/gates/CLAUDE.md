@@ -150,7 +150,7 @@ Codex-reviewed: 3 rounds + audit, chain `881f87716802`, 14 unique findings.
 *rewrite* the offending script — but a built-in or saved `name:` workflow isn't
 editable from the session, so a deny would dead-end (and there's nowhere to put a
 `model-guard:ack` marker). `ask` routes the call to the human, who can switch the
-session to Sonnet before running it, or proceed deliberately.
+session to Opus before running it, or proceed deliberately.
 
 **What the `deep-research` denylist entry is, and is not.** It is a **cost speed-bump
 on a high-fan-out built-in**: the workflow spawns many workers, pins no tier of its
@@ -174,8 +174,8 @@ string) → exit 0 — explicit is deliberate, and the model param itself is the
 (3) scan `<cwd>/.claude/agents/*.md` then `~/.claude/agents/*.md` (that precedence,
 mirroring Claude Code's own project-over-user resolution), matching frontmatter `name:`
 first and filename second — first resolving definition decides, pinned `model:`
-(≠ `inherit`) → exit 0; (4) deny with the tier calculus (sonnet for
-search/mechanical/verify, haiku for enumeration, opus/fable deliberately). No scale
+(≠ `inherit`) → exit 0; (4) deny naming the tiers (opus by default,
+sonnet for specified mechanical work, haiku for search). No scale
 gate: one frontier dispatch is the unit of waste and the deny costs one round trip.
 
 **Empirical grounding (probes re-run 2026-08-26 on Claude Code 2.1.246; first run
