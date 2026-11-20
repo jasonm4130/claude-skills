@@ -1,13 +1,34 @@
 #!/usr/bin/env python3
 """Run directory: a local git repo with no remote, tagged at every phase gate.
 
-  run.py init <dir>                  create the run dir and its first commit
+  run.py init <dir> [--size small|medium|large] [--set key=value ...]
+                                     create the run dir, run/swarm.json and the
+                                     first commit
   run.py phase <name> [--dir <dir>]  commit everything, tag phase/<name>
   run.py status [--dir <dir>]        list phase tags
+  run.py config [--set key=value ...] [--dir <dir>]
+                                     show or change run/swarm.json
+  run.py size [--claims N] [--grok] [--dir <dir>]
+                                     agent counts the config implies
+  run.py roster <agent-id> [--start HH:MM] [--dir <dir>]
+                                     add an agent to the roster watch.py reads
+  run.py budget [--start PCT] [--now PCT] [--hours H] [--agents N]
+                [--stop-points P] [--ceiling PCT] [--rate R] [--dir <dir>]
+                                     max concurrent agents, and when to stop
+
+Sizes (researchers are one per approved angle, bounded by the max):
+  small   max 3 researchers, 1 round,  2 designers, Codex gate
+  medium  max 6 researchers, 2 rounds, 3 designers, Codex gate
+  large   max 12 researchers, 3 rounds, 3 designers, Codex + Grok gates
+Verifiers: ceil(load-bearing claims / 10), at least 1.
+Keys for --set: researchers_max, researchers, rounds, designers, reviewers,
+angles, claims_per_verifier, time_box_min, budget.start_pct,
+budget.stop_points, budget.ceiling_pct, budget.points_per_agent_hour.
+Values parse as JSON when they can: --set 'reviewers=["codex","grok"]'.
 
 Layout created by init:
 
-  <dir>/run/          shared with agents: BRIEF.md, board.md, roster.txt,
+  <dir>/run/          shared with agents: BRIEF.md, board.md, swarm.json,
                       state.md, ledger/, kb/, designs/, review/
   <dir>/run-private/  lead only (mode 0700): rubric.md, planted.json, judge
                       notes. Agents are told never to read it.
@@ -25,6 +46,7 @@ Exit codes: 0 ok, 1 refused, 2 usage error.
 
 import argparse
 import datetime
+import json
 import os
 import re
 import shutil
@@ -34,6 +56,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import gate  # noqa: E402
+import swarmconfig  # noqa: E402
 
 TEMPLATES = os.path.join(os.path.dirname(HERE), "templates")
 GIT_ID = ["-c", "user.name=research-swarm", "-c", "user.email=research-swarm@localhost",
@@ -42,7 +65,6 @@ NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 SEED = {
     "run/board.md": "# Board (append-only; protocol in BRIEF.md)\n",
-    "run/roster.txt": "# <agent-id> <HH:MM start>, one per line\n",
     "run/state.md": "# Run state (lead only)\n",
     "run/review/log.md": "# Review log (gate.py parse --log appends; lead dispositions each finding)\n",
     "run/ledger/.keep": "",
@@ -82,7 +104,11 @@ def remotes(root):
     return [l for l in git(root, "remote").stdout.split() if l]
 
 
-def init(target):
+def init(target, size="medium", overrides=None):
+    try:
+        cfg = swarmconfig.make(size, overrides)
+    except swarmconfig.ConfigError as e:
+        raise Refused(str(e))
     target = os.path.abspath(target)
     if os.path.exists(target) and os.listdir(target):
         raise Refused("%s exists and is not empty" % target)
@@ -94,6 +120,7 @@ def init(target):
         os.makedirs(os.path.dirname(p), exist_ok=True)
         with open(p, "w", encoding="utf-8") as f:
             f.write(body)
+    swarmconfig.save(os.path.join(target, "run", "swarm.json"), cfg)
     os.makedirs(os.path.join(target, "run-private"), exist_ok=True)
     for src, rel in COPY.items():
         s = os.path.join(TEMPLATES, src)
@@ -143,11 +170,54 @@ def phase(root, name):
     return "%s at %s" % (tag, sha)
 
 
+def config_path(root):
+    return os.path.join(root, "run", "swarm.json")
+
+
+def describe_size(cfg, claims=None, grok=False):
+    parts = ["size %s" % cfg["size"],
+             "researchers %d (max %d, %d angles)" % (swarmconfig.researchers(cfg), cfg["researchers_max"], len(cfg["angles"])),
+             "rounds %d" % cfg["rounds"], "designers %d" % cfg["designers"]]
+    if claims is not None:
+        parts.append("verifiers %d for %d claims" % (swarmconfig.verifiers(cfg, claims), claims))
+    parts.append("reviewers %s" % "+".join(swarmconfig.reviewers(cfg, grok)))
+    return "; ".join(parts)
+
+
+def describe_budget(b, hours, agents):
+    lines = ["stop at %s%% usage; %s points left" % (b["limit_pct"], b["remaining"])]
+    if b["stop"]:
+        lines.append("STOP: the budget is spent; finish the current phase with what you have")
+    if b["max_agents"] is not None:
+        lines.append("max concurrent agents for %sh: %d" % (hours, b["max_agents"]))
+    if b["hours_left"] is not None:
+        lines.append("with %d agents running: stop in %.1fh" % (agents, b["hours_left"]))
+    return "\n".join(lines)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd")
     i = sub.add_parser("init")
     i.add_argument("dir")
+    i.add_argument("--size", default="medium", choices=sorted(swarmconfig.PRESETS))
+    i.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
+    c = sub.add_parser("config")
+    c.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
+    c.add_argument("--dir", default=".")
+    z = sub.add_parser("size")
+    z.add_argument("--claims", type=int, default=None)
+    z.add_argument("--grok", action="store_true", help="the user asked for a Grok gate too")
+    z.add_argument("--dir", default=".")
+    r = sub.add_parser("roster")
+    r.add_argument("agent")
+    r.add_argument("--start", default=None, help="HH:MM (default now)")
+    r.add_argument("--dir", default=".")
+    b = sub.add_parser("budget")
+    for flag, typ in (("--start", float), ("--now", float), ("--hours", float), ("--agents", int),
+                      ("--stop-points", float), ("--ceiling", float), ("--rate", float)):
+        b.add_argument(flag, type=typ, default=None)
+    b.add_argument("--dir", default=None, help="read defaults from this run's swarm.json")
     p = sub.add_parser("phase")
     p.add_argument("name")
     p.add_argument("--dir", default=".")
@@ -159,7 +229,39 @@ def main(argv=None):
         return 2
     try:
         if args.cmd == "init":
-            print("initialised %s: %s" % (os.path.abspath(args.dir), init(args.dir)))
+            msg = init(args.dir, args.size, swarmconfig.parse_sets(args.set))
+            cfg = swarmconfig.load(config_path(os.path.abspath(args.dir)))
+            print("initialised %s: %s\n%s" % (os.path.abspath(args.dir), msg, describe_size(cfg)))
+        elif args.cmd in ("config", "size", "roster"):
+            path = config_path(find_root(args.dir))
+            cfg = swarmconfig.load(path)
+            if args.cmd == "config":
+                for k, v in swarmconfig.parse_sets(args.set).items():
+                    swarmconfig.set_key(cfg, k, v)
+                if args.set:
+                    swarmconfig.save(path, cfg)
+                print(json.dumps(cfg, indent=2))
+            elif args.cmd == "size":
+                print(describe_size(cfg, args.claims, args.grok))
+            else:
+                start = args.start or datetime.datetime.now().strftime("%H:%M")
+                if any(x["id"] == args.agent for x in cfg["roster"]):
+                    raise Refused("%s is already on the roster" % args.agent)
+                cfg["roster"].append({"id": args.agent, "start": start})
+                swarmconfig.save(path, cfg)
+                print("roster: %d agents (%s added at %s)" % (len(cfg["roster"]), args.agent, start))
+        elif args.cmd == "budget":
+            bud = dict(swarmconfig.BASE["budget"])
+            if args.dir:
+                bud.update(swarmconfig.load(config_path(find_root(args.dir)))["budget"])
+            for key, val in (("start_pct", args.start), ("stop_points", args.stop_points),
+                             ("ceiling_pct", args.ceiling), ("points_per_agent_hour", args.rate)):
+                if val is not None:
+                    bud[key] = val
+            res = swarmconfig.budget(bud["start_pct"], args.now, bud["stop_points"], bud["ceiling_pct"],
+                                     bud["points_per_agent_hour"], args.hours, args.agents)
+            print(describe_budget(res, args.hours, args.agents))
+            return 1 if res["stop"] else 0
         elif args.cmd == "phase":
             print("tagged " + phase(find_root(args.dir), args.name))
         else:
@@ -169,6 +271,9 @@ def main(argv=None):
     except Refused as e:
         print("refused: %s" % e, file=sys.stderr)
         return 1
+    except (swarmconfig.ConfigError, OSError, ValueError) as e:
+        print("run: %s" % e, file=sys.stderr)
+        return 2
     return 0
 
 

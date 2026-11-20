@@ -13,7 +13,7 @@ Requirements: `python3` 3.9 or newer and `git` on `PATH`. The cross-family gate 
 
 ## When to use it
 
-Use it for open-ended research or design questions where the answer is a decision document. The work then splits into breadth (many sources), judgment (competing designs) and synthesis (one coherent write-up). Its premise is that a fixed structure beats free self-organisation for this kind of work. The phases, caps and stopping rules are set in advance, and agents choose only within a phase.
+Use it for open-ended research or design questions where the answer is a decision document. The work then splits into breadth (many sources), judgment (competing designs) and synthesis (one coherent write-up). Its premise is that a fixed structure beats free self-organisation for this kind of work. The phases, size limits and stopping rules are set in advance, and agents choose only within a phase.
 
 Do not use it for:
 
@@ -29,7 +29,7 @@ The skill only runs when asked for explicitly.
 
 1. Scope: one clarifying question to the user.
 2. Perspective questions.
-3. Capped research: at most 5 researchers and 3 rounds, each time-boxed.
+3. Research sized by a run config (`run/swarm.json`): one researcher per approved angle up to a preset maximum, 1–3 rounds, each time-boxed.
 4. Key claims.
 5. Outline.
 6. 2–3 blind designs.
@@ -41,6 +41,7 @@ Each mechanism and the evidence behind it:
 
 | Mechanism | Why |
 |---|---|
+| Presets grow breadth (more angles), not agents per angle | Kim et al. (Nature Machine Intelligence) found a mean multi-agent gain of 0.0% across benchmarks (95% CI −58.7 to +77.2), and little help above a single-agent baseline of about 45%. The Claude Code agent-teams docs advise starting with 3–5. |
 | Parallel researchers for breadth, one writer for synthesis | On the measured leaderboards, gains come from the harness rather than the agent count. Merging the context-builder and the writer into one agent cost 10 RACE points in the FS-Researcher ablation (ACL 2026). LangChain's Open Deep Research moved from parallel section writers to a single writer after getting "disjoint" reports. |
 | Perspective-driven questions before research | STORM (NAACL 2024) improved organisation with this step, as rated by Wikipedia editors. Decomposing a question into core sub-questions raised coverage in Xie et al. (NAACL 2025). |
 | Append-only typed board; first TAKE wins | One shared store with typed entries keeps live claims visible to everyone, and the first-TAKE rule settles collisions without a manager. |
@@ -60,12 +61,15 @@ All live in `skills/research-swarm/scripts/` and use the Python standard library
 
 - **`run.py`** sets up the run directory and its phase tags.
   - `init <dir>` creates `run/`, which agents share, and `run-private/`, which only the lead reads and which has mode 0700. It seeds both from the templates and makes a git repo with no remote. It refuses inside another git work tree.
+  - `init --size small|medium|large [--set key=value]` also writes `run/swarm.json`. The presets allow at most 3, 6 or 12 researchers (one per approved angle), 1, 2 or 3 rounds, and 2, 3 or 3 designers. Verifiers are one per 10 load-bearing claims. The gate is Codex, plus Grok at large or on request.
+  - `config`, `size` and `roster` read and change that config. `size` prints the agent counts it implies, and `roster` registers an agent for `watch.py`.
+  - `budget` takes the starting usage, the stop rule (+20 points or 85% by default) and a points-per-agent-hour rate (default 0.6, from the figures below). It prints the maximum concurrent agents for a phase and when to stop, and exits 1 once the budget is spent.
   - `phase <name>` commits everything and tags `phase/<name>`. It refuses if a remote exists, if the tag exists, or while the review log has an open finding.
 - **`ledger.py`** keeps the source ledger, `run/ledger/sources.json`.
   - `add <url | path[:A-B] | file:///path#LA-LB> --excerpt "..."` fetches the source and stores its id, URL, fetch time, sha256, excerpt and status. The status is VERIFIED if the normalised excerpt occurs in the text, UNVERIFIED if not, and NOFETCH if the fetch failed. Normalisation covers whitespace, case, curly quotes and dashes, HTML entities, markdown escapes, inline tags, and `...` elisions. Raw `.jsonl` transcript lines also match their decoded text. Web excerpts under 5 words are UNVERIFIED, and a line range is matched only within that range. Concurrent `add` calls are locked, and re-adding a failed entry retries it under the same id.
   - `check <board.md>` requires every FACT, MEASURE and CLAIM to cite a VERIFIED `[S#]`, and every `quote:` line to appear in the cited page. It reports counts.
   - `gate <doc.md>` is the writer gate. It fails on any citation to a non-VERIFIED or unknown id, and on any `[K#]` key-claim line that states a number without an `[S#]`. Ids such as `D1`, list markers and heading numbers do not count as numbers.
-- **`watch.py <board> <roster> [--idle N] [--undelivered M]`** lists agents with no entry in N minutes and TAKEs with no FACT, MEASURE or FAIL after M minutes. It exits 1 if it flags anything.
+- **`watch.py <board> <run/swarm.json | roster.txt> [--idle N] [--undelivered M]`** lists agents with no entry in N minutes and TAKEs with no FACT, MEASURE or FAIL after M minutes. It exits 1 if it flags anything.
 - **`gate.py`** handles the cross-family verdict.
   - `parse <reply> [--log review/log.md]` reads a strict `VERDICT: PASS|REJECT` block with numbered `file:line` findings. It exits 0 on PASS, 1 on REJECT and 3 if the reply cannot be parsed. With `--log`, it appends each finding as `Disposition: TODO`.
   - `check-log <log>` fails until every finding is ACCEPTED, REJECTED with a reason, or PLANT.
@@ -83,7 +87,7 @@ A swarm is the most expensive thing you can ask Claude Code to do. The figures b
 - **A 3-hour run** of 5–8 Opus agents came to roughly $165–440. That was 7–25% of a weekly subscription allowance, and a central case of 6 agents was about 10%.
 - **A 17-agent scripted workflow** cost about $96 over 100 minutes.
 
-The skill's guards against overspend are the caps: 5 researchers, 3 rounds, 2–3 designers and 2 gate rounds. On top of them sits a stop rule: halt at any phase gate once usage has risen 20 points or passed 85%. Measure your own rate with a usage reading before and after the first run.
+Those figures give the budget guard its default of about 0.6 points of a weekly allowance per Opus agent-hour. At each phase gate the lead runs `run.py budget` with a fresh usage reading. If the planned agents exceed the budget, it scales down (fewer researchers next round, fewer designers, or one fewer round) instead of overrunning. It halts once usage has risen 20 points or passed 85%. Measure your own rate with a usage reading before and after the first run.
 
 ## Tests
 
