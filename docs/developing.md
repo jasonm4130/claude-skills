@@ -34,6 +34,10 @@ bash scripts/run-node-tests.sh    # run every *.test.mjs in one process
 
 Local Node is pinned to 24 (`mise.toml`), matching the version CI tests on.
 
+`research-swarm` ships stdlib-only Python scripts (3.9+) with a `unittest` suite.
+Its `scripts/tests/python.test.mjs` runs that suite from the node runner, so CI
+covers it without a separate job.
+
 Go is pinned to 1.27.1 in both `mise.toml` and `plugins/gates/go/go.mod`'s `toolchain` line. The
 two must match: CI rebuilds `plugins/gates/bin/ccguard` from source and compares
 bytes against the committed binary, so a patch mismatch fails the `go-guards` job.

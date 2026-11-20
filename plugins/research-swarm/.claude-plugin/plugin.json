@@ -1,0 +1,13 @@
+{
+  "name": "research-swarm",
+  "description": "Lead-run, fixed-phase research and design swarm: perspective questions, capped parallel research on an append-only typed board, a source ledger that string-matches every quote, blind designers, a sealed judge, a cross-family PASS/REJECT gate with planted controls, and one writer.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Jason Matthew",
+    "email": "jasonm4130@gmail.com"
+  },
+  "homepage": "https://github.com/jasonm4130/claude-skills",
+  "repository": "https://github.com/jasonm4130/claude-skills",
+  "license": "MIT",
+  "keywords": ["claude-code", "research", "multi-agent", "deep-research", "citations", "cross-family-review"]
+}
