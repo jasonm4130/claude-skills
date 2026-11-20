@@ -1,0 +1,10 @@
+{
+  "name": "pstack",
+  "description": "A vendored subset of Lauren Tan's pstack (MIT): /no-comments with its Comment Sicko agent and the skills it calls, plus unslop and correct.",
+  "version": "0.1.0",
+  "author": { "name": "Jason Matthew" },
+  "homepage": "https://github.com/jasonm4130/claude-skills",
+  "repository": "https://github.com/jasonm4130/claude-skills",
+  "license": "MIT",
+  "keywords": ["pstack", "comments", "code-review", "unslop", "claude-code"]
+}
