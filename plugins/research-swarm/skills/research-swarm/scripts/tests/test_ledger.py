@@ -15,7 +15,7 @@ import swarmlib  # noqa: E402
 PAGE = (b"<html><body><h1>Title</h1><p>Agents that summarise one document make "
         b"few mistakes (0.9&ndash;6.4%). Agents that <b>synth</b>esise across many "
         b"documents make 47&#8211;71% &amp; more.</p><p>It&#8217;s &quot;fine&quot;, "
-        b"they said.</p><script>var x = 'Agents that hide';</script></body></html>")
+        b"they said, again and again.</p><script>var x = 'Agents that hide';</script></body></html>")
 
 
 class FakeWeb(object):
@@ -100,9 +100,9 @@ class LedgerTest(unittest.TestCase):
         self.assertIn("pdf", p["reason"])
 
     def test_duplicate_add_returns_existing_without_refetch(self):
-        ledger.add(self.led, "https://ex.org/a", "It's \"fine\", they said.")
+        ledger.add(self.led, "https://ex.org/a", "It's \"fine\", they said, again and again.")
         calls = self.web.calls
-        e, new = ledger.add(self.led, "https://ex.org/a", "It's \"fine\", they said.")
+        e, new = ledger.add(self.led, "https://ex.org/a", "It's \"fine\", they said, again and again.")
         self.assertFalse(new)
         self.assertEqual(e["id"], "S1")
         self.assertEqual(self.web.calls, calls)
@@ -144,6 +144,20 @@ class LedgerTest(unittest.TestCase):
         ids = [s["id"] for s in self.led.load()["sources"]]
         self.assertEqual(len(ids), 12)
         self.assertEqual(len(set(ids)), 12)
+
+    def test_jsonl_transcript_line_matches_decoded_quote(self):
+        p = self.write("t.jsonl", '{"role":"user","text":"first line\\nIt\\u2019s a \\"quoted\\" word"}\n')
+        e, _ = ledger.add(self.led, p + ":1", "first line It's a \"quoted\" word")
+        self.assertEqual(e["status"], "VERIFIED", e["reason"])
+
+    def test_failed_entry_is_retried_under_same_id(self):
+        e, _ = ledger.add(self.led, "https://ex.org/later", "this page will exist on retry ok")
+        self.assertEqual((e["id"], e["status"]), ("S1", "NOFETCH"))
+        self.web.pages["https://ex.org/later"] = b"<p>this page will exist on retry ok</p>"
+        e2, new = ledger.add(self.led, "https://ex.org/later", "this page will exist on retry ok")
+        self.assertTrue(new)
+        self.assertEqual((e2["id"], e2["status"]), ("S1", "VERIFIED"))
+        self.assertEqual(len(self.led.load()["sources"]), 1)
 
     # ---- check
     def board_with_sources(self):
@@ -205,7 +219,10 @@ class LedgerTest(unittest.TestCase):
         doc_ok = ("# Report\nSummarisers err rarely [K1] [%s].\n"
                   "A line with 12 numbers but no claim tag passes.\n"
                   "Background claim with no number [K2].\n"
-                  "See https://ex.org/a/2026/11 [K3].\n" % g)
+                  "See https://ex.org/a/2026/11 [K3].\n"
+                  "D1 keeps the store as it is [K4].\n"
+                  "1. Keep the Q07 answer [K5].\n"
+                  "## 2.1 Decision D2 [K6]\n" % g)
         problems, cited = ledger.gate_doc(self.led, doc_ok)
         self.assertEqual(problems, [])
         self.assertEqual(cited, 1)

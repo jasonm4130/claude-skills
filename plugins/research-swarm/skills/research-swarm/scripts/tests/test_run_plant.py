@@ -79,7 +79,12 @@ class RunTest(unittest.TestCase):
         with self.assertRaises(run.Refused) as cm:
             run.phase(root, "write")
         self.assertIn("undispositioned", str(cm.exception))
-        self.assertIn("phase/write", run.phase(root, "write", allow_open=True))
+        log = os.path.join(root, "run", "review", "log.md")
+        with open(log) as f:
+            text = f.read()
+        with open(log, "w") as f:
+            f.write(text.replace("Disposition: TODO", "Disposition: ACCEPTED - fixed"))
+        self.assertIn("phase/write", run.phase(root, "write"))
         # a remote blocks every later phase
         git(root, "remote", "add", "origin", "https://example.invalid/x.git")
         with self.assertRaises(run.Refused) as cm:

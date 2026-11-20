@@ -127,6 +127,19 @@ def normalise(text):
     return text
 
 
+_JSON_ESC_RE = re.compile(r'\\(u[0-9a-fA-F]{4}|[nrt"\\/])')
+_JSON_MAP = {"n": "\n", "r": "\r", "t": "\t", '"': '"', "\\": "\\", "/": "/"}
+
+
+def json_unescape(text):
+    """Decode JSON string escapes left in raw text (a .jsonl transcript line
+    holds literal \\n and \\uXXXX), so a quote of the decoded text matches."""
+    def rep(m):
+        g = m.group(1)
+        return chr(int(g[1:], 16)) if g[0] == "u" else _JSON_MAP[g]
+    return _JSON_ESC_RE.sub(rep, text)
+
+
 def excerpt_in(excerpt, haystack_norm):
     """True if the excerpt occurs in already-normalised text. An excerpt may
     elide with '...' (or the unicode ellipsis); every piece must then occur in
@@ -153,13 +166,18 @@ LOC_RE = re.compile(r"([\w./~-]+\.\w+):(\d+)(?:-(\d+))?")
 
 def parse_findings(text):
     """Numbered findings: '1. path/file.md:12 - what is wrong', optionally
-    followed by indented or 'evidence:' continuation lines. Returns a list of
-    dicts with n, text, file, line, evidence."""
+    followed by indented or 'evidence:' continuation lines. If the text has a
+    VERDICT line, only lines after it are read, so a numbered preamble is not
+    taken for findings. Returns a list of dicts with n, text, file, line,
+    evidence."""
     out = []
     cur = None
-    for raw in text.splitlines():
+    lines = text.splitlines()
+    for k, raw in enumerate(lines):
         if VERDICT_RE.match(raw):
-            continue
+            lines = lines[k + 1:]
+            break
+    for raw in lines:
         m = FINDING_RE.match(raw)
         if m:
             cur = {"n": int(m.group(1)), "text": m.group(2), "file": None,

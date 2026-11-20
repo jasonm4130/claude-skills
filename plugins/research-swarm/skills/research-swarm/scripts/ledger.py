@@ -39,6 +39,8 @@ MIN_WEB_WORDS = 5
 STATUSES = ("VERIFIED", "UNVERIFIED", "NOFETCH")
 CLAIM_TAG_RE = re.compile(r"\[K\d+\]")
 URL_RE = re.compile(r"https?://\S+")
+ID_TOKEN_RE = re.compile(r"\b[A-Z]{1,3}\d+\b")  # D1, Q07, K3: ids, not quantities
+LEAD_MARKER_RE = re.compile(r"^\s*(?:#+\s*(?:\d+(?:\.\d+)*\.?\s+)?|\d+[.)]\s+|[-*+]\s+)")
 RANGE_SUFFIX_RE = re.compile(r"^(.*?)(?::|#L)(\d+)(?:-L?(\d+))?$")
 
 
@@ -152,21 +154,25 @@ def add(ledger, source, excerpt, min_words=MIN_WEB_WORDS):
     kind, loc, rng = parse_source(source)
     with ledger.lock():
         data = ledger.load()
+        prior = None
         for s in data["sources"]:
             if s["source"] == source and s["excerpt"] == excerpt:
-                return s, False
+                if s["status"] == "VERIFIED":
+                    return s, False
+                prior = s  # retry a failed fetch or match under the same id
         status, text, sha, reason = fetch(kind, loc, rng)
         if status is None:
             if not swarmlib.normalise(text):
                 status, reason = "UNVERIFIED", "empty text after fetch"
             elif kind == "web" and len(swarmlib.normalise(excerpt).split()) < min_words:
                 status, reason = "UNVERIFIED", "excerpt shorter than %d words" % min_words
-            elif swarmlib.excerpt_in(excerpt, swarmlib.normalise(text)):
+            elif swarmlib.excerpt_in(excerpt, swarmlib.normalise(text)) or (
+                    "\\" in text and swarmlib.excerpt_in(excerpt, swarmlib.normalise(swarmlib.json_unescape(text)))):
                 status = "VERIFIED"
             else:
                 status, reason = "UNVERIFIED", "excerpt not found in fetched text"
         nums = [int(s["id"][1:]) for s in data["sources"]]
-        sid = "S%d" % (max(nums) + 1 if nums else 1)
+        sid = prior["id"] if prior else "S%d" % (max(nums) + 1 if nums else 1)
         entry = {
             "id": sid,
             "source": source,
@@ -183,7 +189,10 @@ def add(ledger, source, excerpt, min_words=MIN_WEB_WORDS):
             os.makedirs(ledger.pages, exist_ok=True)
             with open(os.path.join(ledger.pages, sid + ".txt"), "w", encoding="utf-8") as f:
                 f.write(text)
-        data["sources"].append(entry)
+        if prior:
+            data["sources"][data["sources"].index(prior)] = entry
+        else:
+            data["sources"].append(entry)
         ledger.save(data)
         return entry, True
 
@@ -241,6 +250,7 @@ def gate_doc(ledger, text):
                 problems.append("line %d: cites %s, status %s" % (i, c, s["status"]))
         if CLAIM_TAG_RE.search(line) and not cites:
             bare = URL_RE.sub("", CLAIM_TAG_RE.sub("", line))
+            bare = ID_TOKEN_RE.sub("", LEAD_MARKER_RE.sub("", bare))
             if re.search(r"\d", bare):
                 problems.append("line %d: numeric key-claim line with no [S#] citation: %s" % (i, line.strip()[:100]))
     return problems, cited

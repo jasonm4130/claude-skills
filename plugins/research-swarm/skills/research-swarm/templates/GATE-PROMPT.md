@@ -1,6 +1,6 @@
 # Gate prompt (cross-family reviewer)
 
-Fill the angle-bracket fields and send the text below to the reviewer from the other model family. Do not add your own assessment, confidence, or "tests pass" claims. Do not mention planted errors.
+Fill the angle-bracket fields and send the text below to the reviewer from the other model family. Do not add your own assessment, confidence, or "tests pass" claims.
 
 ---
 

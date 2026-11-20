@@ -116,7 +116,7 @@ def find_root(start):
         d = parent
 
 
-def phase(root, name, allow_open=False):
+def phase(root, name):
     if not NAME_RE.match(name):
         raise Refused("phase name must match %s" % NAME_RE.pattern)
     rs = remotes(root)
@@ -126,7 +126,7 @@ def phase(root, name, allow_open=False):
     if git(root, "rev-parse", "-q", "--verify", "refs/tags/" + tag, check=False).returncode == 0:
         raise Refused("tag %s already exists; pick a new phase name" % tag)
     log = os.path.join(root, "run", "review", "log.md")
-    if os.path.exists(log) and not allow_open:
+    if os.path.exists(log):
         with open(log, encoding="utf-8") as f:
             open_ = gate.open_findings(f.read())
         if open_:
@@ -151,8 +151,6 @@ def main(argv=None):
     p = sub.add_parser("phase")
     p.add_argument("name")
     p.add_argument("--dir", default=".")
-    p.add_argument("--allow-open-findings", action="store_true",
-                   help="tag even with undispositioned review findings (say why in state.md)")
     s = sub.add_parser("status")
     s.add_argument("--dir", default=".")
     args = ap.parse_args(argv)
@@ -163,7 +161,7 @@ def main(argv=None):
         if args.cmd == "init":
             print("initialised %s: %s" % (os.path.abspath(args.dir), init(args.dir)))
         elif args.cmd == "phase":
-            print("tagged " + phase(find_root(args.dir), args.name, args.allow_open_findings))
+            print("tagged " + phase(find_root(args.dir), args.name))
         else:
             root = find_root(args.dir)
             tags = git(root, "tag", "--list", "phase/*", "--sort=creatordate").stdout.split()

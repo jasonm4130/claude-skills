@@ -89,6 +89,12 @@ class GateTest(unittest.TestCase):
         self.assertIn("make 47-71%", f[0]["evidence"])
         self.assertIn("latency", f[1]["evidence"])
 
+    def test_numbered_preamble_is_not_a_finding(self):
+        text = "I checked:\n1. the ledger\n2. the outline\n\nVERDICT: REJECT\n\n1. doc.md:4 - wrong number\n"
+        v, f, _ = gate.parse_reply(text)
+        self.assertEqual(v, "REJECT")
+        self.assertEqual([(x["n"], x["line"]) for x in f], [(1, 4)])
+
     def test_parse_pass_with_minor_findings(self):
         v, f, _ = gate.parse_reply(PASS)
         self.assertEqual(v, "PASS")
